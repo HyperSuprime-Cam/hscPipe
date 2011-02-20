@@ -1,0 +1,2 @@
+setupRequired('pipette -t DC2')
+setupRequired('newpbasf -t DC2')
