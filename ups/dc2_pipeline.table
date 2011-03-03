@@ -1,2 +1,6 @@
-setupRequired('pipette -t DC2')
-setupRequired('newpbasf -t DC2')
+setupRequired(pipette)
+setupRequired(newpbasf)
+setupRequired(boostmpi)
+
+pathPrepend(PATH, ${PRODUCT_DIR}/bin)
+
