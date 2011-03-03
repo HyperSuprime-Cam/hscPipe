@@ -11,10 +11,11 @@ def sigalrm_handler(signum, frame):
     sys.stderr.write('Signal handler called with signal %s\n' % (signum))
 signal.signal(signal.SIGALRM, sigalrm_handler)
     
-def main(rerun, lFrameId):
+def main(instrument, rerun, lFrameId):
+    print "running inst=%s rerun=%s frames=%s" % (instrument, rerun, lFrameId)
     try:
         for frameId in lFrameId:
-            ProcessFrame(rerun, frameId)
+            ProcessFrame(instrument, rerun, frameId)
         return 0
     except:
         flow.ReportError("Total catastrophic failure processing frame %s" % (frameId))
@@ -25,14 +26,14 @@ def main(rerun, lFrameId):
 # end
 
 
-def ProcessFrame(rerun, frameId):
+def ProcessFrame(instrument, rerun, frameId):
     comm = boostmpi.world
 
     # create ccdId's
     lCcdId = range(g_nCCD)
 
     # phase 1
-    phase1 = Phase1Worker(rerun=rerun)
+    phase1 = Phase1Worker(rerun=rerun, instrument=instrument)
     matchListAll = flow.ScatterJob \
     (   comm
     ,   phase1                                 # worker
@@ -43,6 +44,9 @@ def ProcessFrame(rerun, frameId):
     # phase 2
     if boostmpi.rank == 0:
         resultWcs = flow.SafeCall(phase2, matchListAll)
+        if not resultWcs:
+            sys.stderr.write("no global astrometric solution!!\n")
+            resultWcs = [None] * g_nCCD
         ccdIdToWcs = dict(zip(lCcdId, resultWcs))
 
     # phase 3
@@ -57,8 +61,9 @@ def ProcessFrame(rerun, frameId):
 #end
 
 class Phase1Worker:
-    def __init__(self, rerun=None):
+    def __init__(self, rerun=None, instrument="hsc"):
         self.rerun = rerun
+        self.instrument = instrument
         self.ccdIdToCache = dict()
 
     def __call__(self, t_frameId_ccdId):
@@ -68,16 +73,16 @@ class Phase1Worker:
         frameId = t_frameId_ccdId[0]
         # process ccdId
 
-        sys.stderr.write("phase 1 launching for %d\n" % (ccdId))
         obj = lsst.pipette.runHsc.doRun \
               (   rerun          = self.rerun
+              ,   instrument     = self.instrument
               ,   frameId        = frameId
               ,   ccdId          = ccdId
+              ,   doMerge        = False
               )
 
         # remember the obj for phase3
         self.ccdIdToCache[ccdId] = obj
-        sys.stderr.write("phase 1 returned for %d (len=%d)\n" % (ccdId, len(self.ccdIdToCache)))
 
         # return matchList to the root
         return obj.matchlist
@@ -88,13 +93,15 @@ class Phase1Worker:
 def phase2(matchListAllCcd):
     import lsst.obs.hscSim as hscSim
     from  hsc.meas.tansip.doTansip import doTansip
-    import lsst.pex.policy as pexPolicy
+    import lsst.pipette.config as pipConfig
     
     hscMapper = hscSim.HscSimMapper()
-    policyPath = os.path.join(os.getenv("SOLVETANSIP_DIR"), "policy", "WCS_MAKEAPROP.paf")
-    policy = pexPolicy.Policy.createPolicy(policyPath)
+
+    policyPath = os.path.join(os.getenv("PIPETTE_DIR"), "policy", "hsc.paf")
+    fullPolicy = pipConfig.configuration(policyPath)
+    policy = fullPolicy['instrumentExtras']['solveTansip'].getPolicy()
     
-    sys.stderr.write("phase 2 being sent %d matches, #0 is %s\n" % (len(matchListAllCcd), matchListAllCcd[0]))
+    #sys.stderr.write("phase 2 being sent %d matches, #0 is %s\n" % (len(matchListAllCcd), matchListAllCcd[0]))
     return doTansip \
            (   matchListAllCcd
                ,   policy=policy
@@ -120,6 +127,8 @@ class Phase3Worker:
 #end
 
 if __name__ == "__main__":
-    rerun = sys.argv[1]
-    frames = [int(f) for f in sys.argv[2:]]
-    main(rerun, frames)
+    print "argv=", sys.argv
+    instrument = sys.argv[1]
+    rerun = sys.argv[2]
+    frames = [int(f) for f in sys.argv[3:]]
+    main(instrument, rerun, frames)

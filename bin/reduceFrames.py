@@ -7,16 +7,17 @@ import stat
 import sys
 
 def CreatePBSScript \
-(   lFrameId
-,   sRerunName
-,   sJobName
-,   nNodes
-,   nProcsPerNode
-,   secCpuTime
-,   sOutputDir
-,   sQueueName="astro"
-,   sProc="blammo"
-):
+        (   lFrameId
+            ,   sRerunName
+            ,   sJobName
+            ,   nNodes
+            ,   nProcsPerNode
+            ,   secCpuTime
+            ,   sOutputDir
+            ,   sQueueName = None
+            ,   sInstrument = "hsc"
+            ,   sProc="blammo"
+            ):
     """
         Create PBS script that launches pbasf.
         Return: Path of the PBS script
@@ -46,7 +47,8 @@ def CreatePBSScript \
     print >>f, "#PBS -l walltime=%d"         % (2*frameWallTime,     )
     print >>f, "#PBS -o %s"                  % (sOutputDir,          )
     print >>f, "#PBS -N %s"                  % (sJobName,            )
-    print >>f, "#PBS -q %s"                  % (sQueueName           )
+    if sQueueName:
+        print >>f, "#PBS -q %s"                  % (sQueueName           )
     print >>f, "#PBS -j oe"
     print >>f, "#PBS -W umask=02"
     print >>f, ""
@@ -63,7 +65,9 @@ def CreatePBSScript \
     print >>f, ""
     print >>f, "cd %s" % (sCwd,)
     print >>f, ""
-    print >>f, "mpiexec --verbose python %s %s %s" % (sPBASFScriptPath, sRerunName, ' '.join(str(i) for i in lFrameId))
+    print >>f, "mpiexec --verbose python %s %s %s %s" % (sPBASFScriptPath,
+                                                         sInstrument, sRerunName,
+                                                         ' '.join(str(i) for i in lFrameId))
     print >>f, ""
 
     del f
@@ -195,6 +199,19 @@ g_descript.append \
 +   "\n    Specify whereon to write stdin/err log. (current directory)."
 )
 
+def CmdOption_Instrument(val):
+    g_globalVars["instrument"] = val
+
+g_shortopts +=    "i:"
+g_dispacher[     '-i'          ] = CmdOption_Instrument
+g_longopts.append("instrument=")
+g_dispacher[    '--instrument' ] = CmdOption_Instrument
+g_globalVars[     "instrument" ] = "hsc"
+g_descript.append \
+(   "\n-i, --instrument"
++   "\n    Specify which instrument to reduce for (hsc)."
+)
+
 # Help Messages
 def OnHelp():
     print "Reduce frames. The job is posted to PBS queue."
@@ -259,6 +276,7 @@ sScriptName = CreatePBSScript \
 ,   nProcsPerNode = g_globalVars["procs-per-node"]
 ,   secCpuTime    = g_globalVars["cpu-time"]
 ,   sOutputDir    = g_globalVars["output-dir"]
+,   sInstrument   = g_globalVars["instrument"]
 ,   sProc         = "DC2-phase1.py"
 )
 
