@@ -35,7 +35,10 @@ def CreatePBSScript \
     if not sOutputDir:
         sOutputDir = sCwd
 
-    nCcd = 100
+    if sInstrument == "hsc":
+        nCcd = 100
+    else:
+        nCcd = 10
     frameCpuTime = len(lFrameId) * nCcd * secCpuTime 
     frameWallTime = frameCpuTime / (float(nNodes)*nProcsPerNode)
     
@@ -271,7 +274,7 @@ lFrameId = [ str(int(i)) for i in args[1:] ]
 sScriptName = CreatePBSScript \
 (   lFrameId      = lFrameId
 ,   sRerunName    = g_globalVars["rerun-name"]
-,   sJobName      = g_globalVars["job-name"]
+,   sJobName      = "%s-%s" % (g_globalVars["job-name"], g_globalVars["instrument"]) 
 ,   nNodes        = g_globalVars["nodes"]
 ,   nProcsPerNode = g_globalVars["procs-per-node"]
 ,   secCpuTime    = g_globalVars["cpu-time"]

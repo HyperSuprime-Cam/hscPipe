@@ -5,8 +5,6 @@ import os
 import signal
 import time
 
-g_nCCD           = 100
-
 def sigalrm_handler(signum, frame):
     sys.stderr.write('Signal handler called with signal %s\n' % (signum))
 signal.signal(signal.SIGALRM, sigalrm_handler)
@@ -29,8 +27,15 @@ def main(instrument, rerun, lFrameId):
 def ProcessFrame(instrument, rerun, frameId):
     comm = boostmpi.world
 
+    if instrument == "hsc":
+        nCCD = 100
+    elif instrument == "suprimecam":
+        nCCD = 10
+    else:
+        raise RuntimeError("unknown instrument: %s" % (instrument))
+    
     # create ccdId's
-    lCcdId = range(g_nCCD)
+    lCcdId = range(nCCD)
 
     # phase 1
     phase1 = Phase1Worker(rerun=rerun, instrument=instrument)
@@ -43,10 +48,10 @@ def ProcessFrame(instrument, rerun, frameId):
 
     # phase 2
     if boostmpi.rank == 0:
-        resultWcs = flow.SafeCall(phase2, matchListAll)
+        resultWcs = flow.SafeCall(phase2, instrument, matchListAll)
         if not resultWcs:
             sys.stderr.write("no global astrometric solution!!\n")
-            resultWcs = [None] * g_nCCD
+            resultWcs = [None] * nCCD
         ccdIdToWcs = dict(zip(lCcdId, resultWcs))
 
     # phase 3
@@ -90,14 +95,20 @@ class Phase1Worker:
 # end def
 
 
-def phase2(matchListAllCcd):
-    import lsst.obs.hscSim as hscSim
+def phase2(instrument, matchListAllCcd):
     from  hsc.meas.tansip.doTansip import doTansip
     import lsst.pipette.config as pipConfig
-    
-    hscMapper = hscSim.HscSimMapper()
 
-    policyPath = os.path.join(os.getenv("PIPETTE_DIR"), "policy", "hsc.paf")
+    if instrument == "hsc":
+        import lsst.obs.hscSim as hscSim
+        mapper = hscSim.HscSimMapper()
+        policyName = "hsc.paf"
+    else:
+        import lsst.obs.suprimecam as suprimecam
+        mapper = suprimecam.SuprimecamMapper()
+        policyName = "suprimecam.paf"
+
+    policyPath = os.path.join(os.getenv("PIPETTE_DIR"), "policy", policyName)
     fullPolicy = pipConfig.configuration(policyPath)
     policy = fullPolicy['instrumentExtras']['solveTansip'].getPolicy()
     
@@ -105,7 +116,7 @@ def phase2(matchListAllCcd):
     return doTansip \
            (   matchListAllCcd
                ,   policy=policy
-               ,   camera=hscMapper.camera
+               ,   camera=mapper.camera
                )
 #end def
 
