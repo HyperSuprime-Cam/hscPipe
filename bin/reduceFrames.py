@@ -119,6 +119,20 @@ g_descript.append \
 )
 
 
+def CmdOption_QueueName(val):
+    g_globalVars["queue-name"] = val
+
+g_shortopts +=    "q:"
+g_dispacher[     '-q'          ] = CmdOption_QueueName
+g_longopts.append("queue-name=")
+g_dispacher[    '--queue-name' ] = CmdOption_QueueName
+g_globalVars[     "queue-name" ] = None
+g_descript.append \
+(   "\n-r, --queue-name"
++   "\n    Specify PBS queue name (%s)." % g_globalVars["queue-name"]
+)
+
+
 def CmdOption_RerunName(val):
     g_globalVars["rerun-name"] = val
 
@@ -279,6 +293,7 @@ sScriptName = CreatePBSScript \
 ,   nProcsPerNode = g_globalVars["procs-per-node"]
 ,   secCpuTime    = g_globalVars["cpu-time"]
 ,   sOutputDir    = g_globalVars["output-dir"]
+,   sQueueName    = g_globalVars["queue-name"]
 ,   sInstrument   = g_globalVars["instrument"]
 ,   sProc         = "DC2-phase1.py"
 )
