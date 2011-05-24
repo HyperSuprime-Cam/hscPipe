@@ -78,6 +78,8 @@ class Phase1Worker:
         frameId = t_frameId_ccdId[0]
         # process ccdId
 
+        print "Processing %d,%d on %s" % (frameId, ccdId, os.uname()[1])
+
         obj = lsst.pipette.runHsc.doRun \
               (   rerun          = self.rerun
               ,   instrument     = self.instrument
@@ -130,6 +132,7 @@ class Phase3Worker:
 
         # process it
         try:
+            print "Writing CCD %d on %s" % (ccdId, os.uname()[1])
             runHsc.doMergeWcs(self.ccdIdToCache[ccdId], wcs)
             del self.ccdIdToCache[ccdId]
         except Exception, e:
