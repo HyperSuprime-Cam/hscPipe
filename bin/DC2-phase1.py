@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import sys
 import boostmpi
 import MPIFlowCtrl as flow
@@ -72,14 +74,11 @@ class Phase1Worker:
         self.ccdIdToCache = dict()
 
     def __call__(self, t_frameId_ccdId):
-        import lsst.pipette.runHsc
-
         ccdId = t_frameId_ccdId[1]
         frameId = t_frameId_ccdId[0]
-        # process ccdId
+        print "Started processing %d,%d on %s,%d" % (frameId, ccdId, os.uname()[1], os.getpid())
 
-        print "Processing %d,%d on %s" % (frameId, ccdId, os.uname()[1])
-
+        import lsst.pipette.runHsc
         obj = lsst.pipette.runHsc.doRun \
               (   rerun          = self.rerun
               ,   instrument     = self.instrument
@@ -90,6 +89,8 @@ class Phase1Worker:
 
         # remember the obj for phase3
         self.ccdIdToCache[ccdId] = obj
+
+        print "Finished processing %d,%d on %s,%d" % (frameId, ccdId, os.uname()[1], os.getpid())
 
         # return matchList to the root
         return obj.matchlist
@@ -115,11 +116,7 @@ def phase2(instrument, matchListAllCcd):
     policy = fullPolicy['instrumentExtras']['solveTansip'].getPolicy()
     
     #sys.stderr.write("phase 2 being sent %d matches, #0 is %s\n" % (len(matchListAllCcd), matchListAllCcd[0]))
-    return doTansip \
-           (   matchListAllCcd
-               ,   policy=policy
-               ,   camera=mapper.camera
-               )
+    return doTansip(matchListAllCcd, policy=policy, camera=mapper.camera)
 #end def
 
 
@@ -128,15 +125,17 @@ class Phase3Worker:
         self.ccdIdToCache = ccdIdToCache
 
     def __call__(self, ccdId, wcs):
+        print "Start writing CCD %d on %s,%d" % (ccdId, os.uname()[1], os.getpid())
         import lsst.pipette.runHsc as runHsc
 
         # process it
         try:
-            print "Writing CCD %d on %s" % (ccdId, os.uname()[1])
             runHsc.doMergeWcs(self.ccdIdToCache[ccdId], wcs)
             del self.ccdIdToCache[ccdId]
         except Exception, e:
             sys.stderr.write('phase3 failed to merge for %s: %s\n' % (ccdId, e))
+
+        print "Finished writing CCD %d on %s,%d" % (ccdId, os.uname()[1], os.getpid())
             
 #end
 
