@@ -7,6 +7,18 @@ import os
 import signal
 import time
 
+import lsst.pipette.runHsc as runHsc
+
+# for m in ('lsst.meas.extensions.shapeHSM',
+#           'lsst.meas.extensions.photometryKron',
+#           'lsst.meas.extensions.rotAngle'):
+#     try:
+#         print "Importing %s..." % m
+#         exec("import " + m)
+#     except ImportError, err:
+#         print "Failed to import %s" % m
+
+
 def sigalrm_handler(signum, frame):
     sys.stderr.write('Signal handler called with signal %s\n' % (signum))
 signal.signal(signal.SIGALRM, sigalrm_handler)
@@ -35,18 +47,15 @@ def ProcessFrame(instrument, rerun, frameId):
         nCCD = 10
     else:
         raise RuntimeError("unknown instrument: %s" % (instrument))
-    
+
+    runHsc.doLoad(instrument=self.instrument)
+
     # create ccdId's
     lCcdId = range(nCCD)
 
     # phase 1
     phase1 = Phase1Worker(rerun=rerun, instrument=instrument)
-    matchListAll = flow.ScatterJob \
-    (   comm
-    ,   phase1                                 # worker
-    ,   [(frameId, ccdId) for ccdId in lCcdId] # input list
-    ,   root=0                                 # domina
-    )
+    matchListAll = flow.ScatterJob(comm, phase1, [(frameId, ccdId) for ccdId in lCcdId], root=0)
 
     # phase 2
     if boostmpi.rank == 0:
@@ -57,13 +66,8 @@ def ProcessFrame(instrument, rerun, frameId):
         ccdIdToWcs = dict(zip(lCcdId, resultWcs))
 
     # phase 3
-    flow.QueryToRoot \
-    (   comm
-    ,   Phase3Worker(phase1.ccdIdToCache) # worker
-    ,   lambda ccdId: ccdIdToWcs[ccdId]   # database
-    ,   phase1.ccdIdToCache.keys()        # input list
-    ,   root=0                            # who'll be database
-    )
+    flow.QueryToRoot(comm, Phase3Worker(phase1.ccdIdToCache), lambda ccdId: ccdIdToWcs[ccdId],
+                     phase1.ccdIdToCache.keys(), root=0)
     return 0
 #end
 
@@ -78,14 +82,8 @@ class Phase1Worker:
         frameId = t_frameId_ccdId[0]
         print "Started processing %d,%d on %s,%d" % (frameId, ccdId, os.uname()[1], os.getpid())
 
-        import lsst.pipette.runHsc
-        obj = lsst.pipette.runHsc.doRun \
-              (   rerun          = self.rerun
-              ,   instrument     = self.instrument
-              ,   frameId        = frameId
-              ,   ccdId          = ccdId
-              ,   doMerge        = False
-              )
+        obj = runHsc.doRun(rerun=self.rerun, instrument=self.instrument,
+                           frameId=frameId, ccdId=ccdId, doMerge=False)
 
         # remember the obj for phase3
         self.ccdIdToCache[ccdId] = obj
