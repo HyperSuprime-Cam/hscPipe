@@ -7,16 +7,8 @@ import os
 import signal
 import time
 
+import lsst.meas.algorithms # Register measurement functions
 import lsst.pipette.runHsc as runHsc
-
-# for m in ('lsst.meas.extensions.shapeHSM',
-#           'lsst.meas.extensions.photometryKron',
-#           'lsst.meas.extensions.rotAngle'):
-#     try:
-#         print "Importing %s..." % m
-#         exec("import " + m)
-#     except ImportError, err:
-#         print "Failed to import %s" % m
 
 
 def sigalrm_handler(signum, frame):
@@ -48,7 +40,7 @@ def ProcessFrame(instrument, rerun, frameId):
     else:
         raise RuntimeError("unknown instrument: %s" % (instrument))
 
-    runHsc.doLoad(instrument=self.instrument)
+    runHsc.doLoad(instrument=instrument)
 
     # create ccdId's
     lCcdId = range(nCCD)
