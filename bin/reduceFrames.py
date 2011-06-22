@@ -5,6 +5,7 @@
 import os
 import stat
 import sys
+import tempfile
 
 def CreatePBSScript \
         (   lFrameId
@@ -23,8 +24,6 @@ def CreatePBSScript \
         Return: Path of the PBS script
     """
 
-    sPBSScriptName   = "pbs-job-%s-%s.sh" % (sRerunName, "+".join(lFrameId))
-
     sPBASFScriptPath = os.path.join \
     (   os.path.dirname(os.path.abspath(sys.argv[0]))
     ,   sProc
@@ -42,7 +41,8 @@ def CreatePBSScript \
     frameCpuTime = len(lFrameId) * nCcd * secCpuTime 
     frameWallTime = frameCpuTime / (float(nNodes)*nProcsPerNode)
     
-    f = open(sPBSScriptName, "w")
+    fd, sPBSScriptName = tempfile.mkstemp()
+    f = os.fdopen(fd, "w")
 
     print >>f, "#!/bin/bash"
     print >>f, "#   Post this job with `qsub -V $0'"
