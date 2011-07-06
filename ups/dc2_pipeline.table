@@ -1,4 +1,5 @@
 setupRequired(pipette)
+setupRequired(hscMosaic)
 setupRequired(newpbasf)
 setupRequired(boostmpi)
 
