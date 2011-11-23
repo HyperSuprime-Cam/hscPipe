@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 import sys
-import boostmpi
-import MPIFlowCtrl as flow
+import mpi4py.MPI as mpi
+import pbasf2 as pbasf
 import os
 import signal
 import time
@@ -58,9 +58,9 @@ def main():
         ProcessMosaicStack(rerun=opts.rerun, instrument=opts.instrument, program=opts.program, filter=opts.filter, dateObs=opts.dateObs, workDirRoot=opts.workDirRoot, destWcs=opts.destWcs)
         return 0;
     except:
-        flow.ReportError("Total catastrophic failure")
+        pbasf.ReportError("Total catastrophic failure")
         print "THIS ERROR SHALL NOT HAVE APPEARED."
-        boostmpi.abort(1)
+        mpi.COMM_WORLD.Abort(1)
         return 1
         
 def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None, dateObs=None, workDirRoot=None, destWcs=None):
@@ -94,36 +94,37 @@ def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None, d
               "skipMosaic":False, \
               "workDirRoot":workDirRoot}
 
-    comm = boostmpi.world
+    comm = mpi.COMM_WORLD
+    rank = comm.Get_rank()
 
     # create ccdId's
     lCcdId = range(nCCD)
 
     indexes = []
-    if boostmpi.rank == 0:
+    if rank == 0:
         # phase 1
-        lFrameIdExist = flow.SafeCall(phase1, ioMgr, lFrameId, lCcdId, workDirRoot)
+        lFrameIdExist = pbasf.SafeCall(phase1, ioMgr, lFrameId, lCcdId, workDirRoot)
 
         # phase 2
-        nx, ny = flow.SafeCall(phase2, ioMgr, lFrameIdExist, lCcdId, instrument, rerun, destWcs, config)
+        nx, ny = pbasf.SafeCall(phase2, ioMgr, lFrameIdExist, lCcdId, instrument, rerun, destWcs, config)
 
         print 'nx = ', nx, ' ny = ', ny
 
         indexes = [(ix, iy) for ix in range(nx) for iy in range(ny)]
-        boostmpi.broadcast(comm, indexes, root=0)
+        comm.bcast(indexes, root=0)
     else:
-        indexes = boostmpi.broadcast(comm, indexes, root=0)
+        indexes = comm.bcast(indexes, root=0)
 
     # phase 3
-    if boostmpi.rank == 0:
+    if rank == 0:
         phase3 = None
     else:
         phase3 = Phase3Worker(rerun=rerun, instrument=instrument, config=config)
-    flow.ScatterJob(comm, phase3, [index for index in indexes], root=0)
+    pbasf.ScatterJob(comm, phase3, [index for index in indexes], root=0)
 
-    if boostmpi.rank == 0:
+    if rank == 0:
         # phase 4
-        flow.SafeCall(phase4, ioMgr, instrument, rerun, config)
+        pbasf.SafeCall(phase4, ioMgr, instrument, rerun, config)
 
 def phase1(ioMgr, lFrameId, lCcdId, workDirRoot):
     return hscMosaic.mosaic(ioMgr, lFrameId, lCcdId, outputDir=workDirRoot)
