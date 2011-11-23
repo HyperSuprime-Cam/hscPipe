@@ -1,9 +1,8 @@
 print "importing sys"
 import sys
-print "importing boostmpi"
-import boostmpi
+import mpi4py.MPI as mpi
 print "importing pbasf"
-import MPIFlowCtrl as flow
+import pbasf2 as pbasf
 print "importing various others"
 import os
 import signal
@@ -20,16 +19,16 @@ def main(instrument, rerun, lFrameId):
             ProcessFrame(instrument, rerun, frameId)
         return 0
     except:
-        flow.ReportError("Total catastrophic failure processing frame %s" % (frameId))
+        pbasf.ReportError("Total catastrophic failure processing frame %s" % (frameId))
         print "THIS ERROR SHALL NOT HAVE APPEARED."
-        boostmpi.abort(1)
+        mpi.COMM_WORLD.Abort(1)
         return 1
 
 # end
 
 
 def ProcessFrame(instrument, rerun, frameId):
-    comm = boostmpi.world
+    comm = mpi.COMM_WORLD
 
     if instrument == "hsc":
         nCCD = 100
@@ -39,7 +38,7 @@ def ProcessFrame(instrument, rerun, frameId):
         raise RuntimeError("unknown instrument: %s" % (instrument))
     
     tester = TestWorker(rerun=rerun, instrument=instrument)
-    output = flow.ScatterJob(comm, tester, [(frameId, ccdId) for ccdId in range(nCCD)], root=0)
+    output = pbasf.ScatterJob(comm, tester, [(frameId, ccdId) for ccdId in range(nCCD)], root=0)
 
     print output
     return 0

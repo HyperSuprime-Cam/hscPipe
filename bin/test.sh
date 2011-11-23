@@ -5,7 +5,7 @@
 #PBS -N TEST
 #PBS -j oe
 #PBS -W umask=02
-setup mpiexec
+#setup mpiexec
 echo "mpiexec is at: $(which mpiexec)"
 eups list -s
 echo $PATH
