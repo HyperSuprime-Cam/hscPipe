@@ -1,7 +1,6 @@
+setupRequired(pbasf2)
 setupRequired(pipette)
 setupRequired(hscMosaic)
-setupRequired(newpbasf)
-setupRequired(boostmpi)
 
 pathPrepend(PATH, ${PRODUCT_DIR}/bin)
 
