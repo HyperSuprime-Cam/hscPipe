@@ -55,7 +55,7 @@ def CreatePBSScript \
     print >>f, "#PBS -j oe"
     print >>f, "#PBS -W umask=02"
     print >>f, ""
-    print >>f, "setup mpiexec"
+#    print >>f, "setup mpiexec"
     print >>f, "echo \"mpiexec is at: $(which mpiexec)\""
     print >>f, ""
     print >>f, "ulimit -a"
