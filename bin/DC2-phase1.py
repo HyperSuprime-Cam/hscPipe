@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 import sys
-import boostmpi
-import MPIFlowCtrl as flow
+import mpi4py.MPI as mpi
+import pbasf2 as pbasf
 import os
 import signal
 import time
@@ -22,16 +22,16 @@ def main(instrument, rerun, lFrameId):
             ProcessFrame(instrument, rerun, frameId)
         return 0
     except:
-        flow.ReportError("Total catastrophic failure processing frame %s" % (frameId))
+        pbasf.ReportError("Total catastrophic failure processing frame %s" % (frameId))
         print "THIS ERROR SHALL NOT HAVE APPEARED."
-        boostmpi.abort(1)
+        mpi.COMM_WORLD.Abort(1)
         return 1
 
 # end
 
 
 def ProcessFrame(instrument, rerun, frameId):
-    comm = boostmpi.world
+    comm = mpi.COMM_WORLD
 
     if instrument == "hsc":
         nCCD = 100
@@ -47,19 +47,19 @@ def ProcessFrame(instrument, rerun, frameId):
 
     # phase 1
     phase1 = Phase1Worker(rerun=rerun, instrument=instrument)
-    matchListAll = flow.ScatterJob(comm, phase1, [(frameId, ccdId) for ccdId in lCcdId], root=0)
+    matchListAll = pbasf.ScatterJob(comm, phase1, [(frameId, ccdId) for ccdId in lCcdId], root=0)
 
     # phase 2
-    if boostmpi.rank == 0:
-        resultWcs = flow.SafeCall(phase2, instrument, matchListAll)
+    if mpi.Get_rank() == 0:
+        resultWcs = pbasf.SafeCall(phase2, instrument, matchListAll)
         if not resultWcs:
             sys.stderr.write("no global astrometric solution!!\n")
             resultWcs = [None] * nCCD
         ccdIdToWcs = dict(zip(lCcdId, resultWcs))
 
     # phase 3
-    flow.QueryToRoot(comm, Phase3Worker(phase1.ccdIdToCache), lambda ccdId: ccdIdToWcs[ccdId],
-                     phase1.ccdIdToCache.keys(), root=0)
+    pbasf.QueryToRoot(comm, Phase3Worker(phase1.ccdIdToCache), lambda ccdId: ccdIdToWcs[ccdId],
+                      phase1.ccdIdToCache.keys(), root=0)
     return 0
 #end
 
