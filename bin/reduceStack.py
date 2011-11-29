@@ -154,7 +154,7 @@ sScriptName = CreatePBSScript \
 ,   sOutputDir    = opts.output_dir
 ,   sQueueName    = opts.queue
 ,   sInstrument   = opts.instrument
-,   sProc         = "DC2-phase2.py"
+,   sProc         = "stackExposures.py"
 )
 
 #

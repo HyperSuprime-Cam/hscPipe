@@ -295,7 +295,7 @@ sScriptName = CreatePBSScript \
 ,   sOutputDir    = g_globalVars["output-dir"]
 ,   sQueueName    = g_globalVars["queue-name"]
 ,   sInstrument   = g_globalVars["instrument"]
-,   sProc         = "DC2-phase1.py"
+,   sProc         = "processExposure.py"
 )
 
 #
