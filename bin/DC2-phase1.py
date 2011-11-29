@@ -89,7 +89,7 @@ class Phase1Worker:
 
 
 def phase2(instrument, matchListAllCcd):
-    from  hsc.meas.tansip.doTansip import doTansip
+    import hsc.meas.tansip.doTansip as tansip
     import lsst.pipette.config as pipConfig
 
     if instrument == "hsc":
@@ -104,9 +104,11 @@ def phase2(instrument, matchListAllCcd):
     policyPath = os.path.join(os.getenv("PIPETTE_DIR"), "policy", policyName)
     fullPolicy = pipConfig.configuration(policyPath)
     policy = fullPolicy['instrumentExtras']['solveTansip'].getPolicy()
-    
-    #sys.stderr.write("phase 2 being sent %d matches, #0 is %s\n" % (len(matchListAllCcd), matchListAllCcd[0]))
-    return doTansip(matchListAllCcd, policy=policy, camera=mapper.camera)
+
+    wcs = tansip.doTansip(matchListAllCcd, policy=policy, camera=mapper.camera)
+    wcsList = tansip.getwcsList(wcs)
+
+    return wcsList
 #end def
 
 
