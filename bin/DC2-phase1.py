@@ -19,7 +19,7 @@ def main(instrument, rerun, lFrameId):
     print "running inst=%s rerun=%s frames=%s" % (instrument, rerun, lFrameId)
     try:
         for frameId in lFrameId:
-            ProcessFrame(instrument, rerun, frameId)
+            ProcessExposure(instrument, rerun, frameId)
         return 0
     except:
         pbasf.ReportError("Total catastrophic failure processing frame %s" % (frameId))
@@ -30,7 +30,7 @@ def main(instrument, rerun, lFrameId):
 # end
 
 
-def ProcessFrame(instrument, rerun, frameId):
+def ProcessExposure(instrument, rerun, frameId):
     comm = mpi.COMM_WORLD
 
     if instrument == "hsc":
@@ -42,28 +42,27 @@ def ProcessFrame(instrument, rerun, frameId):
 
     runHsc.doLoad(instrument=instrument)
 
-    # create ccdId's
     lCcdId = range(nCCD)
 
-    # phase 1
-    phase1 = Phase1Worker(rerun=rerun, instrument=instrument)
-    matchListAll = pbasf.ScatterJob(comm, phase1, [(frameId, ccdId) for ccdId in lCcdId], root=0)
+    # Scatter: process CCDs independently
+    processor = ProcessWorker(rerun=rerun, instrument=instrument)
+    matchListAll = pbasf.ScatterJob(comm, processor, [(frameId, ccdId) for ccdId in lCcdId], root=0)
 
-    # phase 2
+    # Together: global WCS solution
     if comm.Get_rank() == 0:
-        resultWcs = pbasf.SafeCall(phase2, instrument, matchListAll)
+        resultWcs = pbasf.SafeCall(globalWcs, instrument, matchListAll)
         if not resultWcs:
             sys.stderr.write("no global astrometric solution!!\n")
             resultWcs = [None] * nCCD
         ccdIdToWcs = dict(zip(lCcdId, resultWcs))
 
-    # phase 3
-    pbasf.QueryToRoot(comm, Phase3Worker(phase1.ccdIdToCache), lambda ccdId: ccdIdToWcs[ccdId],
-                      phase1.ccdIdToCache.keys(), root=0)
+    # Scatter with data from root: save CCDs with WCS
+    pbasf.QueryToRoot(comm, SaveWorker(processor.ccdIdToCache), lambda ccdId: ccdIdToWcs[ccdId],
+                      processor.ccdIdToCache.keys(), root=0)
     return 0
 #end
 
-class Phase1Worker:
+class ProcessWorker:
     def __init__(self, rerun=None, instrument="hsc"):
         self.rerun = rerun
         self.instrument = instrument
@@ -77,7 +76,7 @@ class Phase1Worker:
         obj = runHsc.doRun(rerun=self.rerun, instrument=self.instrument,
                            frameId=frameId, ccdId=ccdId, doMerge=False)
 
-        # remember the obj for phase3
+        # remember the obj for when we save
         self.ccdIdToCache[ccdId] = obj
 
         print "Finished processing %d,%d on %s,%d" % (frameId, ccdId, os.uname()[1], os.getpid())
@@ -88,7 +87,7 @@ class Phase1Worker:
 # end def
 
 
-def phase2(instrument, matchListAllCcd):
+def globalWcs(instrument, matchListAllCcd):
     import hsc.meas.tansip.doTansip as tansip
     import lsst.pipette.config as pipConfig
 
@@ -112,7 +111,7 @@ def phase2(instrument, matchListAllCcd):
 #end def
 
 
-class Phase3Worker:
+class SaveWorker:
     def __init__(self, ccdIdToCache):
         self.ccdIdToCache = ccdIdToCache
 
@@ -125,7 +124,7 @@ class Phase3Worker:
             runHsc.doMergeWcs(self.ccdIdToCache[ccdId], wcs)
             del self.ccdIdToCache[ccdId]
         except Exception, e:
-            sys.stderr.write('phase3 failed to merge for %s: %s\n' % (ccdId, e))
+            sys.stderr.write('SaveWorker failed to merge for %s: %s\n' % (ccdId, e))
 
         print "Finished writing CCD %d on %s,%d" % (ccdId, os.uname()[1], os.getpid())
             
