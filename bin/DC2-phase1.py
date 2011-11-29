@@ -50,7 +50,7 @@ def ProcessFrame(instrument, rerun, frameId):
     matchListAll = pbasf.ScatterJob(comm, phase1, [(frameId, ccdId) for ccdId in lCcdId], root=0)
 
     # phase 2
-    if mpi.Get_rank() == 0:
+    if comm.Get_rank() == 0:
         resultWcs = pbasf.SafeCall(phase2, instrument, matchListAll)
         if not resultWcs:
             sys.stderr.write("no global astrometric solution!!\n")
