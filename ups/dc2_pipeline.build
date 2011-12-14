@@ -1,2 +1,2 @@
-@HSC BUILD@
+@HSC BUILD@ &&
 build_hsc @PRODUCT@ @VERSION@ @REPOVERSION@
