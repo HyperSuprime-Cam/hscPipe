@@ -88,7 +88,8 @@ def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None, d
               "stackId":lPointing[0], \
               "program":program, \
               "dateObs":dateObs, \
-              "subImgSize":2048, \
+              "subImgSize":4096, \
+              "imgMargin":256, \
               "fileIO":True, \
               "writePBSScript":False, \
               "skipMosaic":False, \
@@ -127,7 +128,21 @@ def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None, d
         pbasf.SafeCall(phase4, ioMgr, instrument, rerun, config)
 
 def phase1(ioMgr, lFrameId, lCcdId, workDirRoot):
-    return hscMosaic.mosaic(ioMgr, lFrameId, lCcdId, outputDir=workDirRoot)
+    if True:
+        return hscMosaic.mosaic(ioMgr, lFrameId, lCcdId, outputDir=workDirRoot)
+    else:
+        lFrameIdExist = []
+        for frameId in lFrameId:
+            good = True
+            for ccdId in lCcdId:
+                good |= ioMgr.inButler.datasetExists('calexp', dict(visit=frameId, ccd=ccdId))
+                good |= ioMgr.inButler.datasetExists('wcs', dict(visit=frameId, ccd=ccdId))
+                good |= ioMgr.inButler.datasetExists('fcr', dict(visit=frameId, ccd=ccdId))
+                if not good:
+                    break
+            if good:
+                lFrameIdExist.append(frameId)
+        return lFrameIdExist
 
 def phase2(ioMgr, lFrameId, lCcdId, instrument, rerun, destWcs, config):
     fileList = []
@@ -144,6 +159,7 @@ def phase2(ioMgr, lFrameId, lCcdId, instrument, rerun, destWcs, config):
                 print "file %s does not exist " % (fname)
 
     subImgSize = config['subImgSize']
+    imgMargin = config['imgMargin']
     fileIO = config['fileIO']
     writePBSScript = config['writePBSScript']
     skipMosaic = config['skipMosaic']
@@ -162,7 +178,8 @@ def phase2(ioMgr, lFrameId, lCcdId, instrument, rerun, destWcs, config):
         destWcs = os.path.abspath(destWcs)
 
     return hscStack.stackInit(ioMgr,
-                              fileList, subImgSize, fileIO, writePBSScript,
+                              fileList, subImgSize, imgMargin,
+                              fileIO, writePBSScript,
                               workDir=workDir, skipMosaic=skipMosaic,
                               rerun=rerun, instrument=instrument,
                               program=program, filter=filter, dateObs=dateObs,
@@ -191,23 +208,25 @@ class Phase3Worker:
         filter = self.config['filter']
         dateObs = self.config['dateObs']
         subImgSize = self.config['subImgSize']
+        imgMargin = self.config['imgMargin']
         fileIO = self.config['fileIO']
         skipMosaic = self.config['skipMosaic']
         workDirRoot = self.config['workDirRoot']
         workDir = os.path.join(workDirRoot, program, filter)
 
-        hscStack.stackExec(ioMgr, ix, iy, subImgSize, stackId, fileIO=fileIO, workDir=workDir, skipMosaic=skipMosaic, filter=filter)
+        hscStack.stackExec(ioMgr, ix, iy, stackId, subImgSize, imgMargin, fileIO=fileIO, workDir=workDir, skipMosaic=skipMosaic, filter=filter)
 
 def phase4(ioMgr, instrument, rerun, config):
     stackId = config['stackId']
     program = config['program']
     filter = config['filter']
     subImgSize = config['subImgSize']
+    imgMargin = config['imgMargin']
     fileIO = config['fileIO']
     workDirRoot = config['workDirRoot']
     workDir = os.path.join(workDirRoot, program, filter)
 
-    hscStack.stackEnd(ioMgr, subImgSize, stackId, fileIO=fileIO,
+    hscStack.stackEnd(ioMgr, stackId, subImgSize, imgMargin, fileIO=fileIO,
                       workDir=workDir, filter=filter)
 
 if __name__ == "__main__":
