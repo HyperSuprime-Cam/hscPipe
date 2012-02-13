@@ -1,8 +1,10 @@
-setupRequired(pbasf2)
 setupRequired(pipe_tasks)
 setupRequired(obs_subaru)
-setupRequired(hscMosaic)
-setupRequired(solvetansip)
+setupRequired(hscAstrom)
+
+setupOptional(pbasf2)
+setupOptional(hscMosaic)
+setupOptional(solvetansip)
 
 pathPrepend(PATH, ${PRODUCT_DIR}/bin)
 
