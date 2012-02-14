@@ -60,7 +60,7 @@ class Pbs(object):
         print >>f, "#   Post this job with `qsub -V $0'"
         print >>f, "#PBS -l nodes=%d:ppn=%d" % (numNodes, numProcsPerNode)
         if time is not None:
-            wallTime = time numNodes * numProcsPerNode
+            wallTime = time * numNodes * numProcsPerNode
             print >>f, "#PBS -l walltime=%d" % wallTime
         if self.outputDir is not None:
             print >>f, "#PBS -o %s" % self.outputDir
