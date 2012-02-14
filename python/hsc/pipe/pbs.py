@@ -37,7 +37,7 @@ class Pbs(object):
         self.jobName = jobName
         self.time = wallTime
 
-    def create(command, time=None, numNodes=None, numProcsPerNode=None, jobName=None):
+    def create(command, repeats=1, time=None, numNodes=None, numProcsPerNode=None, jobName=None):
         if time is None:
             time = self.time
         if numNodes is None:
@@ -60,7 +60,7 @@ class Pbs(object):
         print >>f, "#   Post this job with `qsub -V $0'"
         print >>f, "#PBS -l nodes=%d:ppn=%d" % (numNodes, numProcsPerNode)
         if time is not None:
-            wallTime = time * numNodes * numProcsPerNode
+            wallTime = repeats * time * numNodes * numProcsPerNode
             print >>f, "#PBS -l walltime=%d" % wallTime
         if self.outputDir is not None:
             print >>f, "#PBS -o %s" % self.outputDir
