@@ -19,14 +19,17 @@ class PbsArgumentParser(argparse.ArgumentParser):
         self.add_argument("-p", "--procs", dest="procs", help="Number of processors per node")
         self.add_argument("-t", "--time", dest="time", help="Expected execution time per processor (sec)")
         self.add_argument("-o", "--output", dest="output", help="Output directory")
+        self.add_argument("-N", "--dry-run", dest="dryrun", default=False, action="store_true",
+                          help="Dry run?")
 
     def getPbs(self):
         return Pbs(outputDir=self.output, numNodes=self.nodes, numProcsPerNode=self.procs,
-                   queue=self.queue, jobName=self.job, wallTime=self.time)
+                   queue=self.queue, jobName=self.job, wallTime=self.time, dryrun=self.dryrun)
 
 
 class Pbs(object):
-    def __init__(self, outputDir=None, numNodes=1, numProcsPerNode=1, queue=None, jobName=None, time=None):
+    def __init__(self, outputDir=None, numNodes=1, numProcsPerNode=1, queue=None, jobName=None, time=None,
+                 dryrun=False):
         self.outputDir = outputDir
         self.numNodes = numNodes
         self.numProcsPerNode = numProcsPerNode
@@ -80,7 +83,11 @@ class Pbs(object):
 
     def run(command, *args, **kwargs):
         script = self.create(command, *args, **kwargs)
-        os.system("qsub -V %s" % script)
+        command = "qsub -V %s" % script
+        if self.dryrun:
+            print "Would run: %s" % command
+        else:
+            os.system(command)
         return script
 
 
