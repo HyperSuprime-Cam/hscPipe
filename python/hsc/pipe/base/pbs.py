@@ -15,9 +15,11 @@ class PbsArgumentParser(argparse.ArgumentParser):
         self.add_argument("-q", "--queue", dest="queue", help="PBS queue name")
         self.add_argument("-r", "--rerun", dest="rerun", help="Rerun name")
         self.add_argument("-j", "--job", dest="job", help="Job name")
-        self.add_argument("-n", "--nodes", dest="nodes", help="Number of nodes", required=True)
-        self.add_argument("-p", "--procs", dest="procs", help="Number of processors per node", required=True)
-        self.add_argument("-t", "--time", dest="time", help="Expected execution time per processor (sec)")
+        self.add_argument("-n", "--nodes", dest="nodes", type=int, help="Number of nodes", required=True)
+        self.add_argument("-p", "--procs", dest="procs", type=int, help="Number of processors per node",
+                          required=True)
+        self.add_argument("-t", "--time", dest="time", type=float,
+                          help="Expected execution time per processor (sec)")
         self.add_argument("-o", "--output", dest="output", help="Output directory")
         self.add_argument("-N", "--dry-run", dest="dryrun", default=False, action="store_true",
                           help="Dry run?")
@@ -37,6 +39,7 @@ class Pbs(object):
         self.queue = queue
         self.jobName = jobName
         self.time = time
+        self.dryrun = dryrun
 
     def create(self, command, repeats=1, time=None, numNodes=None, numProcsPerNode=None, jobName=None):
         if time is None:
