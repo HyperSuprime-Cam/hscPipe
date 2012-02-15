@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import os
 import hsc.pipe.base.pbs as hscPbs
 
 

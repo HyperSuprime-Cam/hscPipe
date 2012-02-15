@@ -15,8 +15,8 @@ class PbsArgumentParser(argparse.ArgumentParser):
         self.add_argument("-q", "--queue", dest="queue", help="PBS queue name")
         self.add_argument("-r", "--rerun", dest="rerun", help="Rerun name")
         self.add_argument("-j", "--job", dest="job", help="Job name")
-        self.add_argument("-n", "--nodes", dest="nodes", help="Number of nodes")
-        self.add_argument("-p", "--procs", dest="procs", help="Number of processors per node")
+        self.add_argument("-n", "--nodes", dest="nodes", help="Number of nodes", required=True)
+        self.add_argument("-p", "--procs", dest="procs", help="Number of processors per node", required=True)
         self.add_argument("-t", "--time", dest="time", help="Expected execution time per processor (sec)")
         self.add_argument("-o", "--output", dest="output", help="Output directory")
         self.add_argument("-N", "--dry-run", dest="dryrun", default=False, action="store_true",
@@ -25,7 +25,7 @@ class PbsArgumentParser(argparse.ArgumentParser):
     def parse_args(self, *args, **kwargs):
         args = super(PbsArgumentParser, self).parse_args(*args, **kwargs)
         pbs = Pbs(outputDir=args.output, numNodes=args.nodes, numProcsPerNode=args.procs,
-                  queue=args.queue, jobName=args.job, wallTime=args.time, dryrun=args.dryrun)
+                  queue=args.queue, jobName=args.job, time=args.time, dryrun=args.dryrun)
         return pbs, args
 
 class Pbs(object):
@@ -36,9 +36,9 @@ class Pbs(object):
         self.numProcsPerNode = numProcsPerNode
         self.queue = queue
         self.jobName = jobName
-        self.time = wallTime
+        self.time = time
 
-    def create(command, repeats=1, time=None, numNodes=None, numProcsPerNode=None, jobName=None):
+    def create(self, command, repeats=1, time=None, numNodes=None, numProcsPerNode=None, jobName=None):
         if time is None:
             time = self.time
         if numNodes is None:
@@ -50,6 +50,10 @@ class Pbs(object):
 
         fd, script = tempfile.mkstemp()
         f = os.fdopen(fd, "w")
+
+        if numNodes is None or numProcsPerNode is None:
+            raise RuntimeError("numNodes (%s) or numProcsPerNode (%s) is not specified" %
+                               (numNodes, numProcsPerNode))
 
         assert numNodes is not None and numProcsPerNode is not None
         if jobName is None:
@@ -82,7 +86,7 @@ class Pbs(object):
         os.chmod(script, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
         return script
 
-    def run(command, *args, **kwargs):
+    def run(self, command, *args, **kwargs):
         script = self.create(command, *args, **kwargs)
         command = "qsub -V %s" % script
         if self.dryrun:
