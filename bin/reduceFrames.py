@@ -14,9 +14,7 @@ if __name__ == "__main__":
     """)
     parser.add_argument("-i", "--instrument", dest="instrument", help="Instrument name", default="hsc")
     parser.add_argument("frame", nargs='*', type=int, help="Frame numbers to reduce")
-    args = parser.parse_args()
-    pbs = parser.getPbs()
-
+    pbs, args = parser.parse_args()
 
     command = "python %s/bin/processExposure.py %s %s" % (os.environ['HSCPIPE_DIR'], args.instrument,
                                                           " ".join(args.frame))

@@ -22,10 +22,11 @@ class PbsArgumentParser(argparse.ArgumentParser):
         self.add_argument("-N", "--dry-run", dest="dryrun", default=False, action="store_true",
                           help="Dry run?")
 
-    def getPbs(self):
-        return Pbs(outputDir=self.output, numNodes=self.nodes, numProcsPerNode=self.procs,
-                   queue=self.queue, jobName=self.job, wallTime=self.time, dryrun=self.dryrun)
-
+    def parse_args(self, *args, **kwargs):
+        args = super(PbsArgumentParser, self).parse_args(*args, **kwargs)
+        pbs = Pbs(outputDir=args.output, numNodes=args.nodes, numProcsPerNode=args.procs,
+                  queue=args.queue, jobName=args.job, wallTime=args.time, dryrun=args.dryrun)
+        return pbs, args
 
 class Pbs(object):
     def __init__(self, outputDir=None, numNodes=1, numProcsPerNode=1, queue=None, jobName=None, time=None,
