@@ -65,7 +65,7 @@ class Worker(object):
             overrides = "hsc.py"
             # XXX override defaults
         elif self.instrument == "suprimecam":
-            import lsst.obs.suprimcecam as suprimecam
+            import lsst.obs.suprimecam as suprimecam
             self.mapper = suprimecam.SuprimeCamMapper(rerun=rerun)
             ProcessCcdTask = hscProcessCcd.SuprimeCamProcessCcdTask
             overrides = "suprimecam.py"
