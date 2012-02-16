@@ -57,6 +57,7 @@ def ProcessExposure(instrument, rerun, frame):
 class Worker(object):
     """Worker to process a CCD"""
     def __init__(self, instrument, rerun):
+        self.instrument = instrument
         if self.instrument == "hsc":
             import lsst.obs.hscSim as hscSim
             self.mapper = hscSim.HscSimMapper(rerun=rerun)
