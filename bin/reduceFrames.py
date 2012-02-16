@@ -14,6 +14,7 @@ if __name__ == "__main__":
     where FRAME_ID are integers identifying frames.
     """)
     parser.add_argument("-i", "--instrument", dest="instrument", help="Instrument name", default="hsc")
+    parser.add_argument("-r", "--rerun", dest="rerun", help="Rerun name", default=os.getlogin())
     parser.add_argument("frame", nargs='*', help="Frame numbers to reduce")
     pbs, args = parser.parse_args()
 
@@ -21,6 +22,6 @@ if __name__ == "__main__":
         print "No frames provided to process"
         exit(1)
 
-    command = "python %s/bin/processExposure.py %s %s" % (os.environ['HSCPIPE_DIR'], args.instrument,
-                                                          " ".join(args.frame))
+    command = "python %s/bin/processExposure.py %s %s %s" % (os.environ['HSCPIPE_DIR'], args.instrument,
+                                                             args.rerun, " ".join(args.frame))
     pbs.run(command, repeats=len(args.frame))
