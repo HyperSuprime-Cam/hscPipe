@@ -57,15 +57,15 @@ def ProcessExposure(instrument, rerun, frame):
     processor = ProcessCcdTask(config=config)
 
     # Scatter: process CCDs independently
-    worker = Worker(processor)
-    dataRefs = [ref for ref in butler.subset(datasetType='raw', visit=frame)]
-    dataRefs.sort(key=lambda ref: ref.dataId['ccd']) # Ensure data references are in CCD order
+    worker = Worker(butler, processor)
+    dataIdList = [ref.dataId for ref in butler.subset(datasetType='raw', visit=frame)]
+    dataIdList.sort(key=lambda dataId: dataId['ccd']) # Ensure data references are in CCD order
 
     # XXX Exclude rotated CCDs for now
     if instrument == "hsc":
-        dataRefs = [ref for ref in dataRefs if ref.dataId['ccd'] < 100]
+        dataIdList = [dataId for dataId in dataIdList if dataId['ccd'] < 100]
     
-    matchLists = pbasf.ScatterJob(comm, worker.process, dataRefs, root=0)
+    matchLists = pbasf.ScatterJob(comm, worker.process, dataIdList, root=0)
 
     # Together: global WCS solution
     if comm.Get_rank() == 0:
@@ -75,20 +75,25 @@ def ProcessExposure(instrument, rerun, frame):
             wcsList = [None] * len(dataRefs)
 
     # Scatter with data from root: save CCDs with WCS
-    pbasf.QueryToRoot(comm, worker.write, lambda dataRef: wcsList[dataRef.dataId['ccd']],
+    pbasf.QueryToRoot(comm, worker.write, lambda dataId: wcsList[dataId['ccd']],
                       worker.resultCache.keys(), root=0)
     return 0
 #end
 
 class Worker(object):
     """Worker to process a CCD"""
-    def __init__(self, processor):
+    def __init__(self, butler, processor):
+        self.butler = butler
         self.processor = processor
         self.resultCache = dict() # Cache to remember results for saving
     
-    def process(self, dataRef):
-        dataId = dataRef.dataid
+    def process(self, dataId):
         print "Started processing %s on %s,%d" % (dataId, os.uname()[1], os.getpid())
+
+        # ProcessCcdTask wants a dataRef, but they don't pickle so we need to reconstruct it from the dataId
+        dataRefList = [ref for ref in self.butler.subset(datasetType='raw', **dataId)]
+        assert len(dataRefList) == 1
+        dataRef = dataRefList[0]
 
         # We will do persistence ourselves
         self.processor.config.doWriteIsr = False
@@ -104,8 +109,7 @@ class Worker(object):
         print "Finished processing %s on %s,%d" % (dataId, os.uname()[1], os.getpid())
         return self.resultCache[dataId].matches
 
-    def write(self, dataRef, wcs):
-        dataId = dataRef.dataId
+    def write(self, dataId, wcs):
         print "Start writing %d on %s,%d" % (dataId, os.uname()[1], os.getpid())
 
         try:
