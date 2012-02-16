@@ -13,7 +13,6 @@ class PbsArgumentParser(argparse.ArgumentParser):
     def __init__(self, *args, **kwargs):
         super(PbsArgumentParser, self).__init__(*args, **kwargs)
         self.add_argument("-q", "--queue", dest="queue", help="PBS queue name")
-        self.add_argument("-r", "--rerun", dest="rerun", help="Rerun name")
         self.add_argument("-j", "--job", dest="job", help="Job name")
         self.add_argument("-n", "--nodes", dest="nodes", type=int, help="Number of nodes", required=True)
         self.add_argument("-p", "--procs", dest="procs", type=int, help="Number of processors per node",
