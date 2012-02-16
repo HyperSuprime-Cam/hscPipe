@@ -20,7 +20,7 @@ def main(instrument, rerun, frameList):
             ProcessExposure(instrument, rerun, frame)
         return 0
     except:
-        pbasf.ReportError("Total catastrophic failure processing frame %s" % (frameId))
+        pbasf.ReportError("Total catastrophic failure processing frame %s" % frame)
         print "Aborting due to errors."
         mpi.COMM_WORLD.Abort(1)
         return 1
