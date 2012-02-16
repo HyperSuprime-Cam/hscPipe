@@ -6,6 +6,8 @@ import pbasf2 as pbasf
 import os
 import signal
 
+import hsc.pipe.tasks.processCcd as hscProcessCcd
+import lsst.daf.persistence as dafPersist
 
 def sigalrm_handler(signum, frame):
     sys.stderr.write('Signal handler called with signal %s\n' % (signum))
@@ -36,58 +38,65 @@ def ProcessExposure(instrument, rerun, frame):
     else:
         raise RuntimeError("Unknown instrument: %s" % (instrument))
 
+    if instrument == "hsc":
+        import lsst.obs.hscSim as hscSim
+        mapper = hscSim.HscSimMapper(rerun=rerun)
+        ProcessCcdTask = hscProcessCcd.HscDc2ProcessCcdTask
+        overrides = "hsc.py"
+    elif instrument == "suprimecam":
+        import lsst.obs.suprimecam as suprimecam
+        mapper = suprimecam.SuprimecamMapper(rerun=rerun)
+        ProcessCcdTask = hscProcessCcd.SuprimeCamProcessCcdTask
+        overrides = "suprimecam.py"
+    else:
+        raise RuntimeError("Unknown instrument: %s" % (instrument))
+
+    butler = dafPersist.ButlerFactory(mapper=mapper).create()
+    config = ProcessCcdTask.ConfigClass()
+    config.load(os.path.join(os.environ['HSCPIPE_DIR'], 'config', overrides))
+    processor = ProcessCcdTask(config=config)
+
     # Scatter: process CCDs independently
-    worker = Worker(instrument, rerun)
-    matchLists = pbasf.ScatterJob(comm, worker.process, [dict(visit=frame, ccd=ccd) for ccd in range(numCcd)],
-                                  root=0)
+    worker = Worker(processor)
+    dataRefs = [ref for ref in butler.subset(datasetType='raw', visit=frame)]
+    dataRefs.sort(key=lambda ref: ref.dataId['ccd']) # Ensure data references are in CCD order
+
+    # XXX Exclude rotated CCDs for now
+    if instrument == "hsc":
+        dataRefs = [ref for ref in dataRefs if ref.dataId['ccd'] < 100]
+    
+    matchLists = pbasf.ScatterJob(comm, worker.process, dataRefs, root=0)
 
     # Together: global WCS solution
     if comm.Get_rank() == 0:
         wcsList = pbasf.SafeCall(globalWcs, instrument, matchLists)
         if not wcsList:
             sys.stderr.write("Global astrometric solution failed!\n")
-            wcsList = [None] * nCCD
+            wcsList = [None] * len(dataRefs)
 
     # Scatter with data from root: save CCDs with WCS
-    pbasf.QueryToRoot(comm, worker.write, lambda dataId: wcsList[dataId['ccd']],
-                      processor.resultCache.keys(), root=0)
+    pbasf.QueryToRoot(comm, worker.write, lambda dataRef: wcsList[dataRef.dataId['ccd']],
+                      worker.resultCache.keys(), root=0)
     return 0
 #end
 
 class Worker(object):
     """Worker to process a CCD"""
-    def __init__(self, instrument, rerun):
-        self.instrument = instrument
-        if self.instrument == "hsc":
-            import lsst.obs.hscSim as hscSim
-            self.mapper = hscSim.HscSimMapper(rerun=rerun)
-            ProcessCcdTask = hscProcessCcd.HscDc2ProcessCcdTask
-            overrides = "hsc.py"
-            # XXX override defaults
-        elif self.instrument == "suprimecam":
-            import lsst.obs.suprimecam as suprimecam
-            self.mapper = suprimecam.SuprimeCamMapper(rerun=rerun)
-            ProcessCcdTask = hscProcessCcd.SuprimeCamProcessCcdTask
-            overrides = "suprimecam.py"
-        else:
-            raise RuntimeError("Unrecognised instrument: %s" % self.instrument)
-        self.butler = dafPersist.ButlerFactory(mapper=mapper).create()
-        self.config = ProcessCcdTask.ConfigClass()
-        self.config.load(os.path.join(os.environ['HSCPIPE_DIR'], 'config', overrides))
-        self.processor = ProcessCcdTask(config=self.config)
-
+    def __init__(self, processor):
+        self.processor = processor
         self.resultCache = dict() # Cache to remember results for saving
     
-    def process(self, dataId):
+    def process(self, dataRef):
+        dataId = dataRef.dataid
         print "Started processing %s on %s,%d" % (dataId, os.uname()[1], os.getpid())
 
         # We will do persistence ourselves
-        self.config.doWriteIsr = False
-        self.config.doWriteCalibrate = False
-        self.config.doWritePhotometry = False
+        self.processor.config.doWriteIsr = False
+        self.processor.config.doWriteCalibrate = False
+        self.processor.config.doWritePhotometry = False
 
         try:
-            self.resultCache[dataId] = self.processor.runButler(self.butler, dataId)
+            self.resultCache[dataId] = self.processor.run(dataRef)
         except Exception, e:
             sys.stderr.write("Failed to process %s: %s\n" % (dataId, e))
             raise
@@ -95,7 +104,8 @@ class Worker(object):
         print "Finished processing %s on %s,%d" % (dataId, os.uname()[1], os.getpid())
         return self.resultCache[dataId].matches
 
-    def write(self, dataId, wcs):
+    def write(self, dataRef, wcs):
+        dataId = dataRef.dataId
         print "Start writing %d on %s,%d" % (dataId, os.uname()[1], os.getpid())
 
         try:
