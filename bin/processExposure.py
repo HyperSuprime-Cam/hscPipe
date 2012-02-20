@@ -93,7 +93,6 @@ class Worker(object):
             raise
 
         print "Finished processing %s on %s,%d" % (dataId, os.uname()[1], os.getpid())
-        print type(self.resultCache[dataId['ccd']].matches)
         return [m for m in self.resultCache[dataId['ccd']].matches]
 
     def write(self, dataId, wcs):
