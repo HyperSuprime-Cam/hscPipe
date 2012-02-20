@@ -19,35 +19,30 @@ def main(instrument, rerun, frameList):
     print "Processing inst=%s rerun=%s frames=%s" % (instrument, rerun, frameList)
     try:
         for frame in frameList:
+            print "Processing frame %d" % frame
             ProcessExposure(instrument, rerun, frame)
-        return 0
+            print "Done processing frame %d" % frame
     except:
         pbasf.ReportError("Total catastrophic failure processing frame %s" % frame)
         print "Aborting due to errors."
         mpi.COMM_WORLD.Abort(1)
         return 1
 
-
 def ProcessExposure(instrument, rerun, frame):
     comm = mpi.COMM_WORLD
-
-    if instrument == "hsc":
-        numCcd = 100
-    elif instrument == "suprimecam":
-        numCcd = 10
-    else:
-        raise RuntimeError("Unknown instrument: %s" % (instrument))
 
     if instrument == "hsc":
         import lsst.obs.hscSim as hscSim
         mapper = hscSim.HscSimMapper(rerun=rerun)
         ProcessCcdTask = hscProcessCcd.HscDc2ProcessCcdTask
         overrides = "hsc.py"
+        dataIdList = [{'visit': frame, 'ccd': ccd} for ccd in range(100)] # XXX change when handing rotated CCDs
     elif instrument == "suprimecam":
         import lsst.obs.suprimecam as suprimecam
         mapper = suprimecam.SuprimecamMapper(rerun=rerun)
         ProcessCcdTask = hscProcessCcd.SuprimeCamProcessCcdTask
         overrides = "suprimecam.py"
+        dataIdList = [{'visit': frame, 'ccd': ccd} for ccd in range(10)]
     else:
         raise RuntimeError("Unknown instrument: %s" % (instrument))
 
@@ -58,27 +53,17 @@ def ProcessExposure(instrument, rerun, frame):
 
     # Scatter: process CCDs independently
     worker = Worker(butler, processor)
-    dataIdList = [ref.dataId for ref in butler.subset(datasetType='raw', visit=frame)]
-    dataIdList.sort(key=lambda dataId: dataId['ccd']) # Ensure data references are in CCD order
-
-    # XXX Exclude rotated CCDs for now
-    if instrument == "hsc":
-        dataIdList = [dataId for dataId in dataIdList if dataId['ccd'] < 100]
-    
     matchLists = pbasf.ScatterJob(comm, worker.process, dataIdList, root=0)
 
     # Together: global WCS solution
     if comm.Get_rank() == 0:
-        wcsList = pbasf.SafeCall(globalWcs, instrument, matchLists)
+        wcsList = pbasf.SafeCall(globalWcs, instrument, matchLists) if False else None
         if not wcsList:
-            sys.stderr.write("Global astrometric solution failed!\n")
-            wcsList = [None] * len(dataRefs)
+            sys.stderr.write("WARNING: Global astrometric solution failed!\n")
+            wcsList = [None] * len(dataIdList)
 
     # Scatter with data from root: save CCDs with WCS
-    pbasf.QueryToRoot(comm, worker.write, lambda dataId: wcsList[dataId['ccd']],
-                      worker.resultCache.keys(), root=0)
-    return 0
-#end
+    pbasf.QueryToRoot(comm, worker.write, lambda dataId: wcsList[dataId['ccd']], dataIdList, root=0)
 
 class Worker(object):
     """Worker to process a CCD"""
@@ -99,27 +84,29 @@ class Worker(object):
         self.processor.config.doWriteIsr = False
         self.processor.config.doWriteCalibrate = False
         self.processor.config.doWritePhotometry = False
+            
 
         try:
-            self.resultCache[dataId] = self.processor.run(dataRef)
+            self.resultCache[dataId['ccd']] = self.processor.run(dataRef)
         except Exception, e:
             sys.stderr.write("Failed to process %s: %s\n" % (dataId, e))
             raise
 
         print "Finished processing %s on %s,%d" % (dataId, os.uname()[1], os.getpid())
-        return self.resultCache[dataId].matches
+        print type(self.resultCache[dataId['ccd']].matches)
+        return [m for m in self.resultCache[dataId['ccd']].matches]
 
     def write(self, dataId, wcs):
-        print "Start writing %d on %s,%d" % (dataId, os.uname()[1], os.getpid())
+        print "Start writing %s on %s,%d" % (dataId, os.uname()[1], os.getpid())
 
         try:
-            result = self.resultCache[dataId]
+            result = self.resultCache[dataId['ccd']]
             self.processor.write(self.butler, dataId, result, wcs)
-            del self.resultCache[dataId]
+            del self.resultCache[dataId['ccd']]
         except Exception, e:
-            sys.stderr.write('Failed to write %s: %s\n' % (dataId, e))
+            sys.stderr.write('ERROR: Failed to write %s: %s\n' % (dataId, e))
 
-        print "Finished writing CCD %d on %s,%d" % (dataId, os.uname()[1], os.getpid())
+        print "Finished writing CCD %s on %s,%d" % (dataId, os.uname()[1], os.getpid())
 
 
 def globalWcs(instrument, matchLists):
@@ -136,6 +123,7 @@ def globalWcs(instrument, matchLists):
         policyName = "suprimecam.paf"
 
     policy = pexPolicy.Policy(os.path.join(os.getenv("SOLVETANSIP_DIR"), "policy", policyName))
+    policy.set('NCCD', len(matchLists))
     wcs = tansip.doTansip(matchLists, policy=policy, camera=mapper.camera)
     return tansip.getwcsList(wcs)
 
