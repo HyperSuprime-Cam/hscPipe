@@ -96,6 +96,8 @@ class Worker(object):
         return [m for m in self.resultCache[dataId['ccd']].matches]
 
     def write(self, dataId, wcs):
+        if not dataId['ccd'] in self.resultCache:
+            return
         print "Start writing %s on %s,%d" % (dataId, os.uname()[1], os.getpid())
 
         try:
