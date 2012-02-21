@@ -40,7 +40,8 @@ class Pbs(object):
         self.time = time
         self.dryrun = dryrun
 
-    def create(self, command, repeats=1, time=None, numNodes=None, numProcsPerNode=None, jobName=None):
+    def create(self, command, repeats=1, time=None, numNodes=None, numProcsPerNode=None, jobName=None,
+               threads=None):
         if time is None:
             time = self.time
         if numNodes is None:
@@ -49,6 +50,9 @@ class Pbs(object):
             numProcsPerNode = self.numProcsPerNode
         if jobName is None:
             jobName = self.jobName
+        if threads is None:
+            threads = numNodes * numProcsPerNode
+        threads = min(threads, numNodes * numProcsPerNode)
 
         fd, script = tempfile.mkstemp()
         f = os.fdopen(fd, "w")
@@ -67,7 +71,7 @@ class Pbs(object):
         print >>f, "#   Post this job with `qsub -V $0'"
         print >>f, "#PBS -l nodes=%d:ppn=%d" % (numNodes, numProcsPerNode)
         if time is not None:
-            wallTime = repeats * time * numNodes * numProcsPerNode
+            wallTime = repeats * time / threads
             print >>f, "#PBS -l walltime=%d" % wallTime
         if self.outputDir is not None:
             print >>f, "#PBS -o %s" % self.outputDir

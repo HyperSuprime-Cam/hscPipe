@@ -24,4 +24,4 @@ if __name__ == "__main__":
 
     command = "python %s/bin/processExposure.py %s %s %s" % (os.environ['HSCPIPE_DIR'], args.instrument,
                                                              args.rerun, " ".join(args.frame))
-    pbs.run(command, repeats=len(args.frame))
+    pbs.run(command, repeats=len(args.frame), threads=10 if args.instrument == "suprimecam" else None)
