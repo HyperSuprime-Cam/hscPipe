@@ -12,6 +12,7 @@ import lsst.pex.config as pexConfig
 import lsst.obs.hscSim as obsHsc
 import lsst.obs.suprimecam as obsSc
 
+import hsc.pipe.base.camera as hscCamera
 import hsc.meas.mosaic.mosaic as hscMosaic
 import hsc.meas.mosaic.config as hscMC
 import hsc.meas.mosaic.stack as hscStack
@@ -99,9 +100,10 @@ def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None,
     if rank == 0:
         # phase 1
         lFrameIdExist = pbasf.SafeCall(phase1, butler, lFrameId, lCcdId, workDirRoot, mosaicConfig)
+        print lFrameIdExist
 
         # phase 2
-        nx, ny = pbasf.SafeCall(phase2, butler, lFrameIdExist, lCcdId, instrument, rerun, destWcs, config)
+        nx, ny = pbasf.SafeCall(phase2, butler, lFrameIdExist, lCcdId, instrument, rerun, destWcs, stackConfig)
 
         print 'nx = ', nx, ' ny = ', ny
 
@@ -111,15 +113,14 @@ def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None,
         indexes = comm.bcast(indexes, root=0)
 
     # phase 3
-    if rank == 0:
-        phase3 = None
-    else:
-        phase3 = Phase3Worker(rerun=rerun, instrument=instrument, config=config)
+    phase3 = Phase3Worker(butler, stackConfig)
     pbasf.ScatterJob(comm, phase3, [index for index in indexes], root=0)
 
     if rank == 0:
         # phase 4
-        pbasf.SafeCall(phase4, butler, instrument, rerun, config)
+        pbasf.SafeCall(phase4, butler, instrument, rerun, stackConfig)
+
+
 
 def phase1(butler, lFrameId, lCcdId, workDirRoot, mosaicConfig):
     if True:
@@ -143,7 +144,7 @@ def phase2(butler, lFrameId, lCcdId, instrument, rerun, destWcs, config):
     for frameId in lFrameId:
         for ccdId in lCcdId:
             try:
-                fname = butler.get('calexp_filename', dict(visit=frameId, ccd=ccdId))
+                fname = butler.get('calexp_filename', dict(visit=frameId, ccd=ccdId))[0]
             except Exception, e:
                 print "failed to get file for %s:%s" % (frameId, ccdId)
                 continue
@@ -152,16 +153,7 @@ def phase2(butler, lFrameId, lCcdId, instrument, rerun, destWcs, config):
             else:
                 print "file %s does not exist " % (fname)
 
-    subImgSize = config['subImgSize']
-    imgMargin = config['imgMargin']
-    fileIO = config['fileIO']
-    writePBSScript = config['writePBSScript']
-    skipMosaic = config['skipMosaic']
-    program = config['program']
-    filter = config['filter']
-    dateObs = config['dateObs']
-
-    workDir = os.path.join(config.workDirRoot, program, filter)
+    workDir = os.path.join(config.workDirRoot, config.program, config.filterName)
     try:
         os.makedirs(workDir)
     except OSError:
@@ -175,8 +167,8 @@ def phase2(butler, lFrameId, lCcdId, instrument, rerun, destWcs, config):
                               config.fileIO, config.writePbsScript,
                               workDir=workDir, skipMosaic=config.skipMosaic,
                               rerun=rerun, instrument=instrument,
-                              program=program, filter=filter, dateObs=dateObs,
-                              destWcs=destWcs)
+                              program=config.program, filter=config.filterName,
+                              dateObs=config.dateObs, destWcs=destWcs)
 
 class Phase3Worker:
     def __init__(self, butler, config):
@@ -188,28 +180,28 @@ class Phase3Worker:
         iy = t_ix_iy[1]
         print "Started processing %d,%d in %s, %d" % (ix, iy, os.uname()[1], os.getpid())
 
-        stackId = self.config['stackId']
-        program = self.config['program']
-        filter = self.config['filter']
-        dateObs = self.config['dateObs']
-        subImgSize = self.config['subImgSize']
-        imgMargin = self.config['imgMargin']
-        fileIO = self.config['fileIO']
-        skipMosaic = self.config['skipMosaic']
-        workDirRoot = self.config['workDirRoot']
+        stackId = self.config.stackId
+        program = self.config.program
+        filter = self.config.filterName
+        dateObs = self.config.dateObs
+        subImgSize = self.config.subImageSize
+        imgMargin = self.config.imageMargin
+        fileIO = self.config.fileIO
+        skipMosaic = self.config.skipMosaic
+        workDirRoot = self.config.workDirRoot
         workDir = os.path.join(workDirRoot, program, filter)
 
-        hscStack.stackExec(butler, ix, iy, stackId, subImgSize, imgMargin, fileIO=fileIO,
+        hscStack.stackExec(self.butler, ix, iy, stackId, subImgSize, imgMargin, fileIO=fileIO,
                            workDir=workDir, skipMosaic=skipMosaic, filter=filter)
 
 def phase4(butler, instrument, rerun, config):
-    stackId = config['stackId']
-    program = config['program']
-    filter = config['filter']
-    subImgSize = config['subImgSize']
-    imgMargin = config['imgMargin']
-    fileIO = config['fileIO']
-    workDirRoot = config['workDirRoot']
+    stackId = config.stackId
+    program = config.program
+    filter = config.filterName
+    subImgSize = config.subImageSize
+    imgMargin = config.imageMargin
+    fileIO = config.fileIO
+    workDirRoot = config.workDirRoot
     workDir = os.path.join(workDirRoot, program, filter)
 
     hscStack.stackEnd(butler, stackId, subImgSize, imgMargin, fileIO=fileIO,
