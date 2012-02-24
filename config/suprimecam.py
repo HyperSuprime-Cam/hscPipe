@@ -4,7 +4,7 @@ root.isr.methodList=["doConversionForIsr", "doSaturationDetection",
 root.isr.doWrite = False
 
 root.calibrate.repair.doCosmicRay = True
-root.calibrate.repair.cosmicray.nCrPixelMax = 100000
+root.calibrate.repair.cosmicray.nCrPixelMax = 1000000
 root.calibrate.background.binSize = 1024
 
 # PSF determination
