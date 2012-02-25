@@ -88,8 +88,8 @@ def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None, d
               "stackId":lPointing[0], \
               "program":program, \
               "dateObs":dateObs, \
-              "subImgSize":4096, \
               "imgMargin":256, \
+              "subImgSize":4096, \
               "fileIO":True, \
               "writePBSScript":False, \
               "skipMosaic":False, \
@@ -101,28 +101,63 @@ def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None, d
     # create ccdId's
     lCcdId = range(nCCD)
 
-    indexes = []
+    dataPack = {
+        'indexes' : [],
+        'fileList' : [],
+        'wcs' : None
+        }
+    #indexes = []
     if rank == 0:
         # phase 1
         lFrameIdExist = pbasf.SafeCall(phase1, ioMgr, lFrameId, lCcdId, workDirRoot)
 
         # phase 2
-        nx, ny = pbasf.SafeCall(phase2, ioMgr, lFrameIdExist, lCcdId, instrument, rerun, destWcs, config)
+        nx, ny, fileList, wcs = pbasf.SafeCall(phase2, ioMgr, lFrameIdExist, lCcdId, instrument, rerun, destWcs, config)
 
         print 'nx = ', nx, ' ny = ', ny
 
         indexes = [(ix, iy) for ix in range(nx) for iy in range(ny)]
-        comm.bcast(indexes, root=0)
+        dataPack['indexes'] = indexes
+        dataPack['fileList'] = fileList
+        dataPack['wcs'] = wcs
+        
+        comm.bcast(dataPack, root=0)
     else:
-        indexes = comm.bcast(indexes, root=0)
+        #indexes = comm.bcast(indexes, root=0)
+        dataPack = comm.bcast(dataPack, root=0)
+        indexes = dataPack['indexes']
+        fileList = dataPack['fileList']
+        wcs = dataPack['wcs']
 
     # phase 3
     if rank == 0:
-        phase3 = None
+        phase3a = None
     else:
-        phase3 = Phase3Worker(rerun=rerun, instrument=instrument, config=config)
-    pbasf.ScatterJob(comm, phase3, [index for index in indexes], root=0)
+        phase3a = Phase3aWorker(rerun=rerun, instrument=instrument, config=config, wcs=wcs)
+    sigmas = pbasf.ScatterJob(comm, phase3a, [f for f in fileList], root=0)
 
+    # phase 3b
+    dummy = None
+    if rank == 0: # or sigmas is None:
+        phase3b = None
+        comm.bcast(sigmas, root=0)
+    else:
+        sigmas = comm.bcast(sigmas, root=0)
+        matchPsf = None
+        print "rank/sigmas:", rank, type(sigmas), sigmas
+        if sigmas:
+            maxSigma = max(sigmas)
+            sigma1 = maxSigma
+            sigma2 = 2.0*maxSigma
+            kwid = int(4.0*sigma2) + 1
+            peakRatio = 0.1
+            matchPsf = ['DoubleGaussian', kwid, kwid, sigma1, sigma2, peakRatio]
+        #matchPsf = None
+        phase3b = Phase3bWorker(rerun=rerun, instrument=instrument, config=config,
+                                matchPsf=matchPsf)
+    pbasf.ScatterJob(comm, phase3b, [index for index in indexes], root=0)
+
+    
     if rank == 0:
         # phase 4
         pbasf.SafeCall(phase4, ioMgr, instrument, rerun, config)
@@ -185,11 +220,45 @@ def phase2(ioMgr, lFrameId, lCcdId, instrument, rerun, destWcs, config):
                               program=program, filter=filter, dateObs=dateObs,
                               destWcs=destWcs)
 
-class Phase3Worker:
-    def __init__(self, rerun=None, instrument="hsc", config=None):
+
+class Phase3aWorker:
+    def __init__(self, rerun=None, instrument="hsc", config=None, wcs=None):
         self.rerun = rerun
         self.instrument = instrument
         self.config = config
+        self.wcs = wcs
+        
+    def __call__(self, fname):
+        if self.instrument.lower() in ["hsc"]:
+            mapper = obsHsc.HscSimMapper(rerun=self.rerun)
+        elif self.instrument.lower() in ["suprimecam", "suprime-cam", "sc"]:
+            mapper = obsSc.SuprimecamMapper(rerun=self.rerun)
+
+        ioMgr = pipReadWrite.ReadWrite(mapper, ['visit', 'ccd'], config={})
+
+        print "Started measuring warped PSF for %s in %s, %d" % (fname, os.uname()[1], os.getpid())
+
+        stackId = self.config['stackId']
+        program = self.config['program']
+        filter = self.config['filter']
+        dateObs = self.config['dateObs']
+        subImgSize = self.config['subImgSize']
+        fileIO = self.config['fileIO']
+        skipMosaic = self.config['skipMosaic']
+        workDirRoot = self.config['workDirRoot']
+        workDir = os.path.join(workDirRoot, program, filter)
+
+        return hscStack.stackMeasureWarpedPsf(fname, self.wcs, ioMgr=ioMgr, fileIO=True,
+                                              skipMosaic=skipMosaic)
+
+
+
+class Phase3bWorker:
+    def __init__(self, rerun=None, instrument="hsc", config=None, matchPsf=None):
+        self.rerun = rerun
+        self.instrument = instrument
+        self.config = config
+        self.matchPsf = matchPsf
     
     def __call__(self, t_ix_iy):
         if self.instrument.lower() in ["hsc"]:
@@ -214,8 +283,9 @@ class Phase3Worker:
         workDirRoot = self.config['workDirRoot']
         workDir = os.path.join(workDirRoot, program, filter)
 
-        hscStack.stackExec(ioMgr, ix, iy, stackId, subImgSize, imgMargin, fileIO=fileIO, workDir=workDir, skipMosaic=skipMosaic, filter=filter)
+        hscStack.stackExec(ioMgr, ix, iy, stackId, subImgSize, imgMargin, fileIO=fileIO, workDir=workDir, skipMosaic=skipMosaic, filter=filter, matchPsf=self.matchPsf)
 
+        
 def phase4(ioMgr, instrument, rerun, config):
     stackId = config['stackId']
     program = config['program']
