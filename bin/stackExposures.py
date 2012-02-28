@@ -43,6 +43,10 @@ def main():
     parser.add_option("-s", "--destWcs",
                       type=str, default=None,
                       help="destination wcs")
+    parser.add_option("-m", "--doMatchPsf",
+		      default=False, action='store_true',
+		      help="match PSFs before stacking (default=%default)")
+    
     (opts, args) = parser.parse_args()
 
     if not opts.rerun or not opts.program or not opts.filter:
@@ -51,11 +55,11 @@ def main():
 
     sys.argv = [sys.argv[0]] + args
 
-    print "rerun=%s, instrument=%s, program=%s, filter=%s, dateObs=%s, workDirRoot=%s, destWcs=%s, args=%s " % \
-        (opts.rerun, opts.instrument, opts.program, opts.filter, opts.dateObs, opts.workDirRoot, opts.destWcs, sys.argv)
+    print "rerun=%s, instrument=%s, program=%s, filter=%s, dateObs=%s, workDirRoot=%s, destWcs=%s, doMatchPsf=%s  args=%s " % \
+        (opts.rerun, opts.instrument, opts.program, opts.filter, opts.dateObs, opts.workDirRoot, opts.destWcs, str(opts.doMatchPsf), sys.argv)
 
     try:
-        ProcessMosaicStack(rerun=opts.rerun, instrument=opts.instrument, program=opts.program, filter=opts.filter, dateObs=opts.dateObs, workDirRoot=opts.workDirRoot, destWcs=opts.destWcs)
+        ProcessMosaicStack(rerun=opts.rerun, instrument=opts.instrument, program=opts.program, filter=opts.filter, dateObs=opts.dateObs, workDirRoot=opts.workDirRoot, destWcs=opts.destWcs, doMatchPsf=opts.doMatchPsf)
         return 0;
     except:
         pbasf.ReportError("Total catastrophic failure")
@@ -63,7 +67,8 @@ def main():
         mpi.COMM_WORLD.Abort(1)
         return 1
         
-def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None, dateObs=None, workDirRoot=None, destWcs=None):
+def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None, dateObs=None, workDirRoot=None, destWcs=None, doMatchPsf=False):
+    
     if instrument.lower() in ["hsc"]:
         mapper = obsHsc.HscSimMapper(rerun=rerun)
         nCCD = 100
@@ -84,16 +89,18 @@ def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None, d
     print lFrameId
     print lPointing
 
-    config = {"filter":filter, \
-              "stackId":lPointing[0], \
-              "program":program, \
-              "dateObs":dateObs, \
-              "imgMargin":256, \
-              "subImgSize":4096, \
-              "fileIO":True, \
-              "writePBSScript":False, \
-              "skipMosaic":False, \
-              "workDirRoot":workDirRoot}
+    config = {
+	"filter":filter, 
+	"stackId":lPointing[0], 
+	"program":program, 
+	"dateObs":dateObs, 
+	"imgMargin": 256,
+	"subImgSize": 4096,
+	"fileIO":True, 
+	"writePBSScript":False, 
+	"skipMosaic":False, 
+	"workDirRoot":workDirRoot
+	}
 
     comm = mpi.COMM_WORLD
     rank = comm.Get_rank()
@@ -129,12 +136,14 @@ def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None, d
         fileList = dataPack['fileList']
         wcs = dataPack['wcs']
 
-    # phase 3
-    if rank == 0:
-        phase3a = None
-    else:
-        phase3a = Phase3aWorker(rerun=rerun, instrument=instrument, config=config, wcs=wcs)
-    sigmas = pbasf.ScatterJob(comm, phase3a, [f for f in fileList], root=0)
+    # phase 3 (measure PSFs in warped images)
+    sigmas = []
+    if doMatchPsf:
+	if rank == 0:
+	    phase3a = None
+	else:
+	    phase3a = Phase3aWorker(rerun=rerun, instrument=instrument, config=config, wcs=wcs)
+	sigmas = pbasf.ScatterJob(comm, phase3a, [f for f in fileList], root=0)
 
     # phase 3b
     dummy = None
@@ -152,7 +161,7 @@ def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None, d
             kwid = int(4.0*sigma2) + 1
             peakRatio = 0.1
             matchPsf = ['DoubleGaussian', kwid, kwid, sigma1, sigma2, peakRatio]
-        #matchPsf = None
+
         phase3b = Phase3bWorker(rerun=rerun, instrument=instrument, config=config,
                                 matchPsf=matchPsf)
     pbasf.ScatterJob(comm, phase3b, [index for index in indexes], root=0)
@@ -161,6 +170,7 @@ def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None, d
     if rank == 0:
         # phase 4
         pbasf.SafeCall(phase4, ioMgr, instrument, rerun, config)
+
 
 def phase1(ioMgr, lFrameId, lCcdId, workDirRoot):
     if True:

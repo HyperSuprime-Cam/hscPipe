@@ -19,6 +19,7 @@ def CreatePBSScript \
             ,   sOutputDir
             ,   sQueueName = None
             ,   sInstrument = "hsc"
+	    ,   doMatchPsf = False
             ,   sProc="blammo"
             ):
     """
@@ -69,14 +70,16 @@ def CreatePBSScript \
     print >>f, ""
     print >>f, "cd %s" % (sCwd,)
     print >>f, ""
+
+    matchPsf = "--doMatchPsf" if doMatchPsf else ""
     if destWcs:
-        print >>f, "mpiexec --verbose python %s --instrument=%s --rerun=%s --program=%s --filter=%s --workDirRoot=%s --destWcs=%s" % (sPBASFScriptPath,
+        print >>f, "mpiexec --verbose python %s --instrument=%s --rerun=%s --program=%s --filter=%s --workDirRoot=%s %s --destWcs=%s" % (sPBASFScriptPath,
                                                 sInstrument, sRerunName,
-                                                sField, sFilter, sOutputDir, sDestWcs)
+                                                sField, sFilter, sOutputDir, matchPsf, sDestWcs)
     else:
-        print >>f, "mpiexec --verbose python %s --instrument=%s --rerun=%s --program=%s --filter=%s --workDirRoot=%s" % (sPBASFScriptPath,
+        print >>f, "mpiexec --verbose python %s --instrument=%s --rerun=%s --program=%s --filter=%s --workDirRoot=%s %s" % (sPBASFScriptPath,
                                    sInstrument, sRerunName,
-                                   sField, sFilter, sOutputDir)
+                                   sField, sFilter, sOutputDir, matchPsf)
     print >>f, ""
 
     del f
@@ -125,6 +128,9 @@ parser.add_option("-r", "--rerun",
 parser.add_option("-i", "--instrument",
                   type=str, default="hsc",
                   help="Specify which instrument to reduce for (%default).")
+parser.add_option("-m", "--doMatchPsf",
+		  default=False, action='store_true',
+		  help="match PSFs before stacking (default=%default)")
 
 (opts, args) = parser.parse_args()
 
@@ -154,6 +160,7 @@ sScriptName = CreatePBSScript \
 ,   sOutputDir    = opts.output_dir
 ,   sQueueName    = opts.queue
 ,   sInstrument   = opts.instrument
+,   doMatchPsf    = opts.doMatchPsf
 ,   sProc         = "stackExposures.py"
 )
 
