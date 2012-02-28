@@ -6,8 +6,8 @@ import pbasf2 as pbasf
 import os
 import signal
 
+import hsc.pipe.base.camera as hscCamera
 import hsc.pipe.tasks.processCcd as hscProcessCcd
-import lsst.daf.persistence as dafPersist
 
 def sigalrm_handler(signum, frame):
     sys.stderr.write('Signal handler called with signal %s\n' % (signum))
@@ -31,22 +31,18 @@ def main(instrument, rerun, frameList):
 def ProcessExposure(instrument, rerun, frame):
     comm = mpi.COMM_WORLD
 
-    if instrument == "hsc":
-        import lsst.obs.hscSim as hscSim
-        mapper = hscSim.HscSimMapper(rerun=rerun)
+    if instrument.lower() in ("hsc"):
         ProcessCcdTask = hscProcessCcd.HscDc2ProcessCcdTask
         overrides = "hsc.py"
-        dataIdList = [{'visit': frame, 'ccd': ccd} for ccd in range(100)] # XXX change when handing rotated CCDs
     elif instrument == "suprimecam":
-        import lsst.obs.suprimecam as suprimecam
-        mapper = suprimecam.SuprimecamMapper(rerun=rerun)
         ProcessCcdTask = hscProcessCcd.SuprimeCamProcessCcdTask
         overrides = "suprimecam.py"
-        dataIdList = [{'visit': frame, 'ccd': ccd} for ccd in range(10)]
     else:
         raise RuntimeError("Unknown instrument: %s" % (instrument))
 
-    butler = dafPersist.ButlerFactory(mapper=mapper).create()
+    butler = hscCamera.getButler(instrument, rerun)
+    dataIdList = [{'visit': frame, 'ccd': ccd} for ccd in range(hscCamera.getNumCcds(instrument))]
+
     config = ProcessCcdTask.ConfigClass()
     config.load(os.path.join(os.environ['HSCPIPE_DIR'], 'config', overrides))
     processor = ProcessCcdTask(config=config)
