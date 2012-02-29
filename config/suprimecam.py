@@ -12,7 +12,7 @@ root.calibrate.measurePsf.starSelector.name = "secondMoment"
 root.calibrate.measurePsf.psfDeterminer.name = "pca"
 root.calibrate.measurePsf.starSelector["secondMoment"].clumpNSigma = 2.0
 root.calibrate.measurePsf.psfDeterminer["pca"].nEigenComponents = 4
-root.calibrate.measurePsf.psfDeterminer["pca"].kernelSize = 7.0
+root.calibrate.measurePsf.psfDeterminer["pca"].kernelSize = 10.0
 root.calibrate.measurePsf.psfDeterminer["pca"].spatialOrder = 2
 root.calibrate.measurePsf.psfDeterminer["pca"].kernelSizeMin = 25
 
@@ -43,9 +43,6 @@ root.calibrate.apCorr.alg1[root.calibrate.apCorr.alg1.name] = root.photometry.me
 root.calibrate.apCorr.alg2[root.calibrate.apCorr.alg2.name] = root.photometry.measure.photometry[root.calibrate.apCorr.alg2.name]
 
 # Astrometry
-root.calibrate.astrometry.distortion.name = "radial"
-root.calibrate.astrometry.distortion["radial"].coefficients = [0.0, 1.0, 7.16417e-08, 3.03146e-10, 5.69338e-14, -6.61572e-18]
-root.calibrate.astrometry.distortion["radial"].observedToCorrected = False
 root.calibrate.astrometry.solver.filterMap = { 'B': 'g',
                                                'V': 'r',
                                                'R': 'r',
