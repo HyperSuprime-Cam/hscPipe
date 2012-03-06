@@ -1,8 +1,0 @@
-setupRequired(pbasf2)
-setupRequired(pipette)
-setupRequired(hscMosaic)
-setupRequired(solvetansip)
-setupRequired(obs_subaru)
-
-pathPrepend(PATH, ${PRODUCT_DIR}/bin)
-
