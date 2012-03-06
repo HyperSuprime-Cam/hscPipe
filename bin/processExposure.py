@@ -79,7 +79,7 @@ class Worker(object):
         # We will do persistence ourselves
         self.processor.config.doWriteIsr = False
         self.processor.config.doWriteCalibrate = False
-        self.processor.config.doWritePhotometry = False
+        self.processor.config.doWriteSources = False
             
 
         try:
@@ -89,7 +89,7 @@ class Worker(object):
             raise
 
         print "Finished processing %s on %s,%d" % (dataId, os.uname()[1], os.getpid())
-        return [m for m in self.resultCache[dataId['ccd']].matches]
+        return [m for m in self.resultCache[dataId['ccd']].calib.matches]
 
     def write(self, dataId, wcs):
         if not dataId['ccd'] in self.resultCache:
