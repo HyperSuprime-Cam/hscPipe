@@ -44,7 +44,7 @@ def ProcessExposure(instrument, rerun, frame):
         raise RuntimeError("Unknown instrument: %s" % (instrument))
 
     butler = hscCamera.getButler(instrument, rerun)
-    dataIdList = [{'visit': frame, 'ccd': ccd} for ccd in range(2)]#hscCamera.getNumCcds(instrument))]
+    dataIdList = [{'visit': frame, 'ccd': ccd} for ccd in range(hscCamera.getNumCcds(instrument))]
 
     config = ProcessCcdTask.ConfigClass()
     config.load(os.path.join(os.environ['HSCPIPE_DIR'], 'config', overrides))
@@ -56,7 +56,7 @@ def ProcessExposure(instrument, rerun, frame):
 
     # Together: global WCS solution
     if comm.Get_rank() == 0:
-        wcsList = pbasf.SafeCall(globalWcs, instrument, matchLists) if True else None
+        wcsList = pbasf.SafeCall(globalWcs, instrument, matchLists) if False else None # XXX solvetansip disabled due to memory problems
         if not wcsList:
             sys.stderr.write("WARNING: Global astrometric solution failed!\n")
             wcsList = [None] * len(dataIdList)
@@ -65,7 +65,7 @@ def ProcessExposure(instrument, rerun, frame):
     pbasf.QueryToRoot(comm, worker.write, lambda dataId: wcsList[dataId['ccd']], dataIdList, root=0)
 
 
-Match = collections.namedtuple("SourceMatch", ["id", "ra", "dec", "x", "y", "xErr", "yErr", "flux"])
+Match = collections.namedtuple("Match", ["id", "ra", "dec", "x", "y", "xErr", "yErr", "flux"])
 
 class Worker(object):
     """Worker to process a CCD"""
