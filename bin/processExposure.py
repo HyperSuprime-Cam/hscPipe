@@ -5,7 +5,10 @@ import mpi4py.MPI as mpi
 import pbasf2 as pbasf
 import os
 import signal
+import collections
 
+import lsst.afw.geom as afwGeom
+import lsst.afw.coord as afwCoord
 import hsc.pipe.base.camera as hscCamera
 import hsc.pipe.tasks.processCcd as hscProcessCcd
 
@@ -41,7 +44,7 @@ def ProcessExposure(instrument, rerun, frame):
         raise RuntimeError("Unknown instrument: %s" % (instrument))
 
     butler = hscCamera.getButler(instrument, rerun)
-    dataIdList = [{'visit': frame, 'ccd': ccd} for ccd in range(hscCamera.getNumCcds(instrument))]
+    dataIdList = [{'visit': frame, 'ccd': ccd} for ccd in range(2)]#hscCamera.getNumCcds(instrument))]
 
     config = ProcessCcdTask.ConfigClass()
     config.load(os.path.join(os.environ['HSCPIPE_DIR'], 'config', overrides))
@@ -53,13 +56,16 @@ def ProcessExposure(instrument, rerun, frame):
 
     # Together: global WCS solution
     if comm.Get_rank() == 0:
-        wcsList = pbasf.SafeCall(globalWcs, instrument, matchLists) if False else None
+        wcsList = pbasf.SafeCall(globalWcs, instrument, matchLists) if True else None
         if not wcsList:
             sys.stderr.write("WARNING: Global astrometric solution failed!\n")
             wcsList = [None] * len(dataIdList)
 
     # Scatter with data from root: save CCDs with WCS
     pbasf.QueryToRoot(comm, worker.write, lambda dataId: wcsList[dataId['ccd']], dataIdList, root=0)
+
+
+Match = collections.namedtuple("SourceMatch", ["id", "ra", "dec", "x", "y", "xErr", "yErr", "flux"])
 
 class Worker(object):
     """Worker to process a CCD"""
@@ -89,7 +95,11 @@ class Worker(object):
             raise
 
         print "Finished processing %s on %s,%d" % (dataId, os.uname()[1], os.getpid())
-        return [m for m in self.resultCache[dataId['ccd']].calib.matches]
+        return [Match(m.second.getId(), m.first.getRa().asDegrees(), m.first.getDec().asDegrees(),
+                      m.second.getX(), m.second.getY(),
+                      m.second.get(m.second.getTable().getCentroidErrKey()[0,0]),
+                      m.second.get(m.second.getTable().getCentroidErrKey()[1,1]),
+                      m.second.getPsfFlux()) for m in self.resultCache[dataId['ccd']].calib.matches]
 
     def write(self, dataId, wcs):
         if not dataId['ccd'] in self.resultCache:
@@ -107,7 +117,8 @@ class Worker(object):
 
 
 def globalWcs(instrument, matchLists):
-    import hsc.meas.tansip.doTansip as tansip
+    import hsc.meas.tansip as tansip
+    import hsc.meas.tansip.doTansip as doTansip
     import lsst.pex.policy as pexPolicy
 
     if instrument == "hsc":
@@ -121,7 +132,13 @@ def globalWcs(instrument, matchLists):
 
     policy = pexPolicy.Policy(os.path.join(os.getenv("SOLVETANSIP_DIR"), "policy", policyName))
     policy.set('NCCD', len(matchLists))
-    wcs = tansip.doTansip(matchLists, policy=policy, camera=mapper.camera)
+
+    matchLists = [[tansip.SourceMatch(m.id, afwCoord.IcrsCoord(afwGeom.Angle(m.ra, afwGeom.degrees),
+                                                               afwGeom.Angle(m.dec, afwGeom.degrees)),
+                                      afwGeom.Point2D(m.x, m.y), afwGeom.Point2D(m.xErr, m.yErr), m.flux)
+                   for m in ml ] for ml in matchLists]
+    
+    wcs = doTansip.doTansip(matchLists, policy=policy, camera=mapper.camera)
     return tansip.getwcsList(wcs)
 
 
