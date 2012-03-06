@@ -3,7 +3,6 @@
 import os
 import hsc.pipe.base.pbs as hscPbs
 
-
 if __name__ == "__main__":
     parser = hscPbs.PbsArgumentParser(usage="""
     Stack frames using PBS.
@@ -14,6 +13,8 @@ if __name__ == "__main__":
     parser.add_argument("-i", "--instrument", dest="instrument", help="Instrument name", default="hsc")
     parser.add_argument("-r", "--rerun", dest="rerun", help="Rerun name", default=os.getlogin())
     parser.add_argument("--wcs", dest="wcs", help="WCS for stack")
+    parser.add_argument("-m", "--doMatchPsf", default=False, action='store_true',
+                        help="match PSFs before stacking (default=%default)")
     parser.add_argument("field", help="Field name in butler for stack")
     parser.add_argument("filter", help="Filter name for stack")
     pbs, args = parser.parse_args()
@@ -21,6 +22,8 @@ if __name__ == "__main__":
 
     command = "python %s/bin/stackExposures.py --instrument=%s --rerun=%s" % (args.instrument, args.rerun)
     command += " --program=%s --filter=%s --workDirRoot=%s" % (args.field, args.filter, args.output)
+    if args.doMatchPsf:
+        command += " --doMatchPsf"
     if args.wcs is not None:
         command += " --destWcs=%s" % args.wcs
 
