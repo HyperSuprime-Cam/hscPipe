@@ -20,12 +20,43 @@
 # the GNU General Public License along with this program.  If not,
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
+import argparse, os, sys
 from lsst.pipe.base import ArgumentParser
 from hsc.pipe.tasks.processCcd import SuprimeCamProcessCcdTask as TaskClass
 
+class OutputAction(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        if namespace.rerun:
+            raise argparse.ArgumentTypeError("Please specify --output or --rerun, but not both")
+
+        namespace.outPath = values
+
+class RerunAction(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        if namespace.outPath:
+            raise argparse.ArgumentTypeError("Please specify --output or --rerun, but not both")
+
+        if "/" in values:
+            raise argparse.ArgumentTypeError("Rerun names may not contain /: %s" % values)
+
+        envar = "SUPRIME_DATA_DIR"
+        if os.environ.has_key(envar):
+            namespace.rerun = values
+            namespace.outPath = os.path.join(os.environ[envar], "SUPA", "rerun", namespace.rerun)
+        else:
+            raise argparse.ArgumentTypeError("You must define $%s to use --rerun XXX" % envar)
+
 if __name__ == "__main__":
     parser = ArgumentParser()
-    namespace = parser.parse_args(config=TaskClass.ConfigClass())
+    del parser._option_string_actions['--output']
+    parser.add_argument('--output', type=str, default=None, help='Desired rerun', action=OutputAction)
+    parser.add_argument('--rerun', type=str, default=None, help='Desired rerun', action=RerunAction)
+    try:
+        namespace = parser.parse_args(config=TaskClass.ConfigClass())
+    except Exception, e:
+        print >> sys.stderr, e
+        sys.exit(1)
+            
     task = TaskClass(namespace.config)
     for sensorRef in namespace.dataRefList:
         if namespace.doRaise:
