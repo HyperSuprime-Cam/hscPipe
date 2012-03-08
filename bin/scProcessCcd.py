@@ -33,6 +33,9 @@ class OutputAction(argparse.Action):
 
 class RerunAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
+        """We can't just parse the arguments and reset namespace.outPath as the Mapper's been
+        instantiated before we get a chance"""
+
         if namespace.outPath:
             raise argparse.ArgumentTypeError("Please specify --output or --rerun, but not both")
 
@@ -43,14 +46,18 @@ class RerunAction(argparse.Action):
         if os.environ.has_key(envar):
             namespace.rerun = values
             namespace.outPath = os.path.join(os.environ[envar], "SUPA", "rerun", namespace.rerun)
+            if not os.path.exists(namespace.outPath):
+                os.makedirs(namespace.outPath) # should be in butler
         else:
             raise argparse.ArgumentTypeError("You must define $%s to use --rerun XXX" % envar)
 
 if __name__ == "__main__":
-    parser = ArgumentParser()
-    del parser._option_string_actions['--output']
-    parser.add_argument('--output', type=str, default=None, help='Desired rerun', action=OutputAction)
-    parser.add_argument('--rerun', type=str, default=None, help='Desired rerun', action=RerunAction)
+    parser = ArgumentParser(conflict_handler='resolve')
+    parser.add_argument('--output', type=str, dest="outPath", default=None, help="output root directory",
+                        action=OutputAction)
+    parser.add_argument('--rerun', type=str, default=None, help='Desired rerun (overrides --output)',
+                        action=RerunAction)
+
     try:
         namespace = parser.parse_args(config=TaskClass.ConfigClass())
     except Exception, e:
