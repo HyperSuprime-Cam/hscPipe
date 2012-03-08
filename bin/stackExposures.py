@@ -153,7 +153,6 @@ def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None,
             kwid = int(4.0*sigma2) + 1
             peakRatio = 0.1
             matchPsf = ['DoubleGaussian', kwid, kwid, sigma1, sigma2, peakRatio]
-
         phase3b = Phase3bWorker(butler, config=stackConfig, matchPsf=matchPsf)
     pbasf.ScatterJob(comm, phase3b, [index for index in indexes], root=0)
     
