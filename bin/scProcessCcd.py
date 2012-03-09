@@ -39,9 +39,6 @@ class RerunAction(argparse.Action):
         if namespace.outPath:
             raise argparse.ArgumentTypeError("Please specify --output or --rerun, but not both")
 
-        if "/" in values:
-            raise argparse.ArgumentTypeError("Rerun names may not contain /: %s" % values)
-
         envar = "SUPRIME_DATA_DIR"
         if os.environ.has_key(envar):
             namespace.rerun = values
