@@ -49,7 +49,11 @@ class RerunAction(argparse.Action):
             raise argparse.ArgumentTypeError("You must define $%s to use --rerun XXX" % envar)
 
 if __name__ == "__main__":
-    parser = ArgumentParser(conflict_handler='resolve')
+    try:
+        parser = ArgumentParser(name="suprimecam", conflict_handler='resolve') # new style
+    except TypeError:
+        parser = ArgumentParser(conflict_handler='resolve') # old style
+
     parser.add_argument('--output', type=str, dest="outPath", default=None, help="output root directory",
                         action=OutputAction)
     parser.add_argument('--rerun', type=str, default=None, help='Desired rerun (overrides --output)',
