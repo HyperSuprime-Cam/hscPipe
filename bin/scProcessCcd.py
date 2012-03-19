@@ -24,6 +24,11 @@ import argparse, os, sys
 from lsst.pipe.base import ArgumentParser
 from hsc.pipe.tasks.processCcd import SuprimeCamProcessCcdTask as TaskClass
 
+# FH added for QA output
+# import hsc.onsite.qa.fitsthumb as QaFitsthumb
+# import hsc.onsite.qa.measSeeingQa as QaSeeing
+
+
 class OutputAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
         if namespace.rerun:

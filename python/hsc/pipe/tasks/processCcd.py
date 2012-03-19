@@ -10,6 +10,7 @@ import lsst.pipe.base as pipeBase
 import lsst.pipe.tasks.processCcd as ptProcessCcd
 import hsc.pipe.tasks.astrometry as hscAstrom
 import hsc.pipe.tasks.suprimecam as hscSuprimeCam
+import hsc.pipe.tasks.qaHscSuprimeCamTask as qaHscSuprimeCamIsrTask
 import hsc.pipe.tasks.calibrate as hscCalibrate
 import hsc.pipe.tasks.hscDc2 as hscDc2
 
@@ -51,7 +52,9 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
     
     def __init__(self, **kwargs):
         pipeBase.Task.__init__(self, **kwargs)
-        self.makeSubtask("isr", hscSuprimeCam.SuprimeCamIsrTask)
+## FH changed for QA outputs
+##        self.makeSubtask("isr", hscSuprimeCam.SuprimeCamIsrTask)
+        self.makeSubtask("isr", qaHscSuprimeCamIsrTask.qaSuprimeCamIsrTask)
         self.makeSubtask("calibrate", hscCalibrate.HscCalibrateTask)
         self.schema = afwTable.SourceTable.makeMinimalSchema()
         self.algMetadata = dafBase.PropertyList()

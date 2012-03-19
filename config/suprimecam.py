@@ -1,7 +1,10 @@
-root.doWriteIsr = False
+root.doWriteIsr = True
+##root.doWriteIsr = False
 root.isr.methodList=["doConversionForIsr", "doSaturationDetection",
-                     "doOverscanCorrection", "doVariance", "doFlatCorrection"]
-root.isr.doWrite = False
+#                     "doOverscanCorrection", "doVariance", "doFlatCorrection"]
+                     "doOverscanCorrectionQa", "doVariance", "doFlatCorrection"]
+##root.isr.doWrite = False
+##root.isr.doWrite = True
 
 root.calibrate.repair.doCosmicRay = True
 root.calibrate.repair.cosmicray.nCrPixelMax = 1000000
