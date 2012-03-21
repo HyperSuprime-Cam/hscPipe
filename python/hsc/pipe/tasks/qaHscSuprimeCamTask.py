@@ -8,94 +8,118 @@ import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 #from .isr import Linearization
 #from .isr import Isr                 # commented  for QA inherit
-#####from lsst.ip.isr.isr import Isr  # equivelent to the above
+#from lsst.ip.isr.isr import Isr  # equivelent to the above
 #from .ccdAssembler import CcdAssembler  
 from lsst.ip.isr.ccdAssembler import CcdAssembler # equivelent to the above
 #from . import isrLib
 from lsst.ip.isr import isrLib # equivelent to the above
 
 ## FH added for QA
+import os
 import lsst.afw.math as afwMath
 import lsst.ip.isr as ipIsr
 import hsc.pipe.tasks.suprimecam as hscSuprimeCam
 from hsc.pipe.tasks.qaHscSuprimeCamIsr import qaSuprimeCamIsr
 
 
-class IsrTaskConfig(pexConfig.Config):
-    doWrite = pexConfig.Field(dtype=bool, doc="Write output?", default=True)
-    fwhm = pexConfig.Field(
-        dtype = float,
-        doc = "FWHM of PSF (arcsec)",
-        default = 1.0,
-    )
-    #This is needed for both the detection and correction aspects
-    saturatedMaskName = pexConfig.Field(
-        dtype = str,
-        doc = "Name of mask plane to use in saturation detection",
-        default = "SAT",
-    )
-    flatScalingType = pexConfig.ChoiceField(
-        dtype = str,
-        doc = "The method for scaling the flat on the fly.",
-        default = 'USER',
-        allowed = {"USER": "User defined scaling",
-            "MEAN": "Scale by the inverse of the mean",
-            "MEDIAN": "Scale by the inverse of the median",
-        },
-    )
-    flatScalingValue = pexConfig.Field(
-        dtype = float,
-        doc = "If scaling type is USER, a value for the scaling must be provided",
-        default = 1.0,
-    )
-    overscanFitType = pexConfig.ChoiceField(
-        dtype = str,
-        doc = "The method for fitting the overscan bias level.",
-        default = 'MEDIAN',
-        allowed = {"POLY": "Fit polynomial to the longest axis of the overscan region",
-            "MEAN": "Correct using the mean of the overscan region",
-            "MEDIAN": "Correct using the median of the overscan region",
-        },
-    )
-    overscanPolyOrder = pexConfig.Field(
-        dtype = int,
-        doc = "Order of polynomial to fit if overscan fit type is POLY",
-        default = 1,
-    )
-    growSaturationFootprintSize = pexConfig.Field(
-        dtype = int,
-        doc = "Number of pixels by which to grow the saturation footprints",
-        default = 1,
-    )
-    growDefectFootprintSize = pexConfig.Field(
-        dtype = int,
-        doc = "Number of pixels by which to grow the defect (bad and nan) footprints",
-        default = 1,
-    )
-    setGainAssembledCcd = pexConfig.Field(
-        dtype = bool,
-        doc = "update exposure metadata in the assembled ccd to reflect the effective gain of the assembled chip",
-        default = True,
-    )
-    keysToRemoveFromAssembledCcd = pexConfig.ListField(
-        dtype = str,
-        doc = "fields to remove from the metadata of the assembled ccd.",
-        default = [],
-    )
-    reNormAssembledCcd = pexConfig.Field(
-        dtype = bool,
-        doc = "renormalize the assembled chips to have unity gain.  False if setGain is False",
-        default = True,
-    )
-    methodList = pexConfig.ListField(
-        dtype = str,   
-        doc = "The list of ISR corrections to apply in the order they should be applied",
-        default = ["doConversionForIsr", "doSaturationDetection", "doOverscanCorrection", "doBiasSubtraction", "doVariance", "doDarkCorrection", "doFlatCorrection"],
-    )
-    
+
+class qaIsrTaskConfig(ipIsr.IsrTaskConfig):
+    pass
+#    doWriteOssImage = pexConfig.Field(
+#        dtype = bool,
+#        doc = "Do we write out overscan-subtracted image?",
+#        default = True,
+#    )
+#    doWriteFltImage = pexConfig.Field(
+#        dtype = bool,
+#        doc = "Do we write out flatfielded image?",
+#        default = True,
+#    )
+#    doWriteSsbImage = pexConfig.Field(
+#        dtype = bool,
+#        doc = "Do we write out flatfielded & sky-subtracted image?",
+#        default = True,
+#    )
+#    doDumpSnapshot = pexConfig.Field(
+#        dtype = bool,
+#        doc = "Do we dump snapshot figures of images?",
+#        default = True,
+#    )
+
+#    doWrite = pexConfig.Field(dtype=bool, doc="Write output?", default=True)
+#    fwhm = pexConfig.Field(
+#        dtype = float,
+#        doc = "FWHM of PSF (arcsec)",
+#        default = 1.0,
+#    )
+#    #This is needed for both the detection and correction aspects
+#    saturatedMaskName = pexConfig.Field(
+#        dtype = str,
+#        doc = "Name of mask plane to use in saturation detection",
+#        default = "SAT",
+#    )
+#    flatScalingType = pexConfig.ChoiceField(
+#        dtype = str,
+#        doc = "The method for scaling the flat on the fly.",
+#        default = 'USER',
+#        allowed = {"USER": "User defined scaling",
+#            "MEAN": "Scale by the inverse of the mean",
+#            "MEDIAN": "Scale by the inverse of the median",
+#        },
+#    )
+#    flatScalingValue = pexConfig.Field(
+#        dtype = float,
+#        doc = "If scaling type is USER, a value for the scaling must be provided",
+#        default = 1.0,
+#    )
+#    overscanFitType = pexConfig.ChoiceField(
+#        dtype = str,
+#        doc = "The method for fitting the overscan bias level.",
+#        default = 'MEDIAN',
+#        allowed = {"POLY": "Fit polynomial to the longest axis of the overscan region",
+#            "MEAN": "Correct using the mean of the overscan region",
+#            "MEDIAN": "Correct using the median of the overscan region",
+#        },
+#    )
+#    overscanPolyOrder = pexConfig.Field(
+#        dtype = int,
+#        doc = "Order of polynomial to fit if overscan fit type is POLY",
+#        default = 1,
+#    )
+#    growSaturationFootprintSize = pexConfig.Field(
+#        dtype = int,
+#        doc = "Number of pixels by which to grow the saturation footprints",
+#        default = 1,
+#    )
+#    growDefectFootprintSize = pexConfig.Field(
+#        dtype = int,
+#        doc = "Number of pixels by which to grow the defect (bad and nan) footprints",
+#        default = 1,
+#    )
+#    setGainAssembledCcd = pexConfig.Field(
+#        dtype = bool,
+#        doc = "update exposure metadata in the assembled ccd to reflect the effective gain of the assembled chip",
+#        default = True,
+#    )
+#    keysToRemoveFromAssembledCcd = pexConfig.ListField(
+#        dtype = str,
+#        doc = "fields to remove from the metadata of the assembled ccd.",
+#        default = [],
+#    )
+#    reNormAssembledCcd = pexConfig.Field(
+#        dtype = bool,
+#        doc = "renormalize the assembled chips to have unity gain.  False if setGain is False",
+#        default = True,
+#    )
+#    methodList = pexConfig.ListField(
+#        dtype = str,   
+#        doc = "The list of ISR corrections to apply in the order they should be applied",
+#        default = ["doConversionForIsr", "doSaturationDetection", "doOverscanCorrection", "doBiasSubtraction", "doVariance", "doDarkCorrection", "doFlatCorrection"],
+#    )
+
 #class IsrTask(pipeBase.Task):
 class qaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
-    ConfigClass = IsrTaskConfig
+    ConfigClass = qaIsrTaskConfig
     def __init__(self, *args, **kwargs):
         pipeBase.Task.__init__(self, *args, **kwargs)
         ## FH changed for QA output
@@ -105,11 +129,13 @@ class qaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
         for methodname in self.config.methodList:
             self.methodList.append(getattr(self, methodname))
 
-    def run(self, exposure, calibSet):
+    def run(self, exposure, calibSet, butler, dataId):
         """Do instrument signature removal on an exposure: saturation, bias, overscan, dark, flat, fringe correction
 
         @param exposure Apply ISR to this Exposure
         @param calibSet Dictionary of calibration products (bias/zero, dark, flat, fringe, linearization information)
+        @param butler Butler for input/output
+        @param dataId dataId for identifying data frames
         @return a pipeBase.Struct with fields:
         - postIsrExposure: the exposure after application of ISR
         """
@@ -118,10 +144,13 @@ class qaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
         #will be made and the reduced exposure will be returned.
         workingExposure = exposure.Factory(exposure, True)
         for m in self.methodList:
-            workingExposure = m(workingExposure, calibSet)
+            if m.__name__ in (self.doWriteOssImageQa.__name__, self.doWriteFltImageQa.__name__):
+                workingExposure = m(workingExposure, calibSet, butler, dataId)
+            else:
+                workingExposure = m(workingExposure, calibSet)
         return pipeBase.Struct(postIsrExposure=workingExposure)
 
-    def runButler(self, butler, dataid):
+    def runButler(self, butler, dataId):
         """Run the ISR given a butler
         @param butler Butler describing the data repository
         @param dataid A data identifier of the amp to process
@@ -137,7 +166,9 @@ class qaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
         ret = {}
         required = {"doBiasSubtraction": "bias",
                     "doDarkCorrection": "dark",
-                    "doFlatCorrection": "flat",
+##== FH changed for QA output
+##                    "doFlatCorrectionQa": "flat",
+                    "doFlatCorrectionQa": "flat",                    
                     }
         for method in required.keys():
             if method in self.config.methodList:
@@ -163,7 +194,7 @@ class qaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
             exp = exposure.Factory(exposure, amp.getDiskDataSec())
             self.isr.updateVariance(exp.getMaskedImage(), amp.getElectronicParams().getGain())
         return exposure
-
+    
     def doCrosstalkCorrection(self, exposure, calibSet):
         pass
 
@@ -283,6 +314,63 @@ class qaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
                                                                
         return exposure
 
+##== FH for QA output
+    def doWriteOssImageQa(self, exposure, calibSet, butler, dataId):
+        if True:
+        # if self.config.qa.doWrite == True:
+            pathToSrcFile = butler.get('src_filename', dataId)[0]
+            qaOutputDirName = os.path.dirname(pathToSrcFile)
+            if os.path.exists(qaOutputDirName) is not True:
+                dirName = ''
+                for d in qaOutputDirName.split('/'):
+                    dirName += d + '/'
+                    if os.path.exists(dirName) is not True:
+                        os.mkdir(dirName)
+            else:
+                pass
+            frameId = exposure.getMetadata().get('FRAMEID')
+            outfile = qaOutputDirName + '/' + 'oss_'+frameId+'.fits'
+            trimmedExposure = self.doCcdAssembly([exposure])
+            self.isr.writeFitsImageQa(trimmedExposure, outfile)
+            self.log.log(self.log.INFO, "QA writing overscan-subtracted FITS image: %s" % outfile)
+                                                               
+        if True:
+        # if self.config.qa.doDumpSnapshot == True:
+            snapName = qaOutputDirName + '/' + 'oss_%s.png' % str(frameId)
+            self.isr.writeSnapshotImageQa(trimmedExposure, snapName, format='png', width=500)
+            self.log.log(self.log.INFO, "QA writing snapshot png of overscan-subtracted image: %s" % snapName)
+
+        return exposure
+
+##== FH for QA output
+    def doWriteFltImageQa(self, exposure, calibSet, butler, dataId):
+        if True:
+        # if self.config.qa.doWriteOssImage == True:
+            pathToSrcFile = butler.get('src_filename', dataId)[0]
+            qaOutputDirName = os.path.dirname(pathToSrcFile)
+            if os.path.exists(qaOutputDirName) is not True:
+                dirName = ''
+                for d in qaOutputDirName.split('/'):
+                    dirName += d + '/'
+                    if os.path.exists(dirName) is not True:
+                        os.mkdir(dirName)
+            else:
+                pass
+            frameId = exposure.getMetadata().get('FRAMEID')
+            outfile = qaOutputDirName + '/' + 'flt_'+frameId+'.fits'
+            trimmedExposure = self.doCcdAssembly([exposure])
+            self.isr.writeFitsImageQa(trimmedExposure, outfile)
+            self.log.log(self.log.INFO, "QA writing flatfielded FITS image: %s" % outfile)
+                                                               
+        if True:
+        # if self.config.qa.doDumpSnapshot == True:
+            snapName = qaOutputDirName + '/' + 'flt_%s.png' % str(frameId)
+            self.isr.writeSnapshotImageQa(trimmedExposure, snapName, format='png', width=500)
+            self.log.log(self.log.INFO, "QA writing snapshot png of flatfielded image: %s" % snapName)
+
+        return exposure
+
+
     def doBiasSubtraction(self, exposure, calibSet):
         biasExposure = calibSet['bias']
         for amp in self._getAmplifiers(exposure):
@@ -334,14 +422,42 @@ class qaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
                                (exposure.getDimensions(), calibration.getDimensions()))
         return exp, calib
 
-    def doFlatCorrection(self, exposure, calibSet):
+#    def doFlatCorrection(self, exposure, calibSet):
+#        flatfield = calibSet['flat']
+#        scalingtype = self.config.flatScalingType
+#        scalingvalue = self.config.flatScalingValue
+#
+#        for amp in self._getAmplifiers(exposure):
+#            exp, flat = self._getCalibration(exposure, flatfield, amp)
+#            self.isr.flatCorrection(exp.getMaskedImage(), flat.getMaskedImage(), scalingtype, scaling = scalingvalue)   
+#        return exposure
+
+##== FH for QA output
+    def doFlatCorrectionQa(self, exposure, calibSet):
         flatfield = calibSet['flat']
         scalingtype = self.config.flatScalingType
         scalingvalue = self.config.flatScalingValue
 
         for amp in self._getAmplifiers(exposure):
             exp, flat = self._getCalibration(exposure, flatfield, amp)
-            self.isr.flatCorrection(exp.getMaskedImage(), flat.getMaskedImage(), scalingtype, scaling = scalingvalue)   
+            self.isr.flatCorrectionQa(exp.getMaskedImage(), flat.getMaskedImage(), scalingtype, scaling = scalingvalue)
+            
+        # Qa mesurement of flatness of flatfielded image
+        meshX = 256
+        meshY = 256
+        trimmedExposure = self.doCcdAssembly([exposure])
+        (flatness, flatness_pp, flatness_min, flatness_max, flatness_rms, skyMedian, nX, nY) = self.isr.measureFlatnessImageQa(trimmedExposure.getMaskedImage(), meshX=meshX, meshY=meshY, doClip=True, clipSigma=3, nIter=3)
+
+        self.log.log(self.log.INFO, "QA flatfield: measuring skylevels in %dx%d grids: %f" % (nX, nY, skyMedian))
+        self.log.log(self.log.INFO, "QA flatfield: flatness in %dx%d grids - pp: %f rms: %f" % (nX, nY, flatness_pp, flatness_rms))
+
+        metadata = exposure.getMetadata()
+        metadata.set('FLATNESS_PP', flatness_pp)
+        metadata.set('FLATNESS_RMS', flatness_rms)        
+        metadata.set('FLATNESS_NGRIDS', '%dx%d' % (nX, nY))
+        metadata.set('FLATNESS_MESHX', meshX)
+        metadata.set('FLATNESS_MESHY', meshY)                
+            
         return exposure
 
     def doIlluminationCorrection(self, exposure, calibSet):

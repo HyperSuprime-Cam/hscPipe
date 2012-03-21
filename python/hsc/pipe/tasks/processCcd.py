@@ -64,6 +64,80 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
             self.makeSubtask("measurement", measAlg.SourceMeasurementTask,
                              schema=self.schema, algMetadata=self.algMetadata)
 
+## FH added run() function  for QA output
+## derived from & overriding hsc.pipe.tasks.processCcd.ProcessCcdTask(pipeBase.Task).run()
+    @pipeBase.timeMethod
+    def run(self, sensorRef):
+        self.log.log(self.log.INFO, "Processing %s" % (sensorRef.dataId))
+        if self.config.doIsr:
+            butler = sensorRef.butlerSubset.butler
+            calibSet = self.isr.makeCalibDict(butler, sensorRef.dataId)
+            rawExposure = sensorRef.get("raw")
+
+            dataId = sensorRef.dataId
+##            isrRes = self.isr.run(rawExposure, calibSet)
+            isrRes = self.isr.run(rawExposure, calibSet, butler, dataId)            
+            self.display("isr", exposure=isrRes.postIsrExposure, pause=True)
+            exposure = self.isr.doCcdAssembly([isrRes.postIsrExposure])
+            self.display("ccdAssembly", exposure=exposure)
+            if self.config.doWriteIsr:
+                sensorRef.put(exposure, 'postISRCCD')
+        else:
+            exposure = None
+
+        if self.config.doCalibrate:
+            if exposure is None:
+                exposure = sensorRef.get('postISRCCD')
+            calib = self.calibrate.run(exposure)
+            exposure = calib.exposure
+            if self.config.doWriteCalibrate:
+                sensorRef.put(exposure, 'calexp')
+                sensorRef.put(calib.sources, 'icSrc')
+                if calib.psf is not None:
+                    sensorRef.put(calib.psf, 'psf')
+                if calib.apCorr is not None:
+                    sensorRef.put(calib.apCorr, 'apCorr')
+                if calib.matches is not None:
+                    normalizedMatches = afwTable.packMatches(calib.matches)
+                    normalizedMatches.table.setMetadata(calib.matchMeta)
+                    sensorRef.put(normalizedMatches, 'icMatch')
+        else:
+            calib = None
+
+        if self.config.doDetection:
+            if exposure is None:
+                exposure = sensorRef.get('calexp')
+            if calib is None:
+                psf = sensorRef.get('psf')
+                exposure.setPsf(sensorRef.get('psf'))
+            table = afwTable.SourceTable.make(self.schema)
+            table.setMetadata(self.algMetadata)
+            sources = self.detection.makeSourceCatalog(table, exposure)
+        else:
+            sources = None
+
+        if self.config.doMeasurement:
+            assert(sources)
+            assert(exposure)
+            if calib is None:
+                apCorr = sensorRef.get("apCorr")
+            else:
+                apCorr = calib.apCorr
+            self.measurement.run(exposure, sources, apCorr)
+ 
+        if self.config.doWriteSources:
+            sensorRef.put(sources, 'src')
+
+        if self.config.doWriteCalibrate:
+            sensorRef.put(exposure, 'calexp')
+            
+        return pipeBase.Struct(
+            exposure = exposure,
+            calib = calib,
+            sources = sources,
+        )
+
+
 class HscProcessCcdTask(SubaruProcessCcdTask):
 
     def __init__(self, **kwargs):

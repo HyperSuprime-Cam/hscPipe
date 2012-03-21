@@ -29,8 +29,9 @@ import lsst.meas.algorithms as measAlg
 
 ## FH added for QA output
 from lsst.ip.isr.isr import Isr
-import hsc.onsite.measSeeingQa as QaSeeing
-import hsc.onsite.fitsthumb as QaFitsthumb
+import lsst.afw.geom as afwGeom
+#import hsc.onsite.measSeeingQa as QaSeeing
+import hsc.onsite.qa.fitsthumb as QaFitsthumb
 
 #import hsc.pipe.tasks.qaHscSuprimeCamIsr as qaHscSuprimeCamIsr
 
@@ -213,7 +214,26 @@ class qaSuprimeCamIsr(Isr):
         var <<= maskedImage.getImage()
         var /= gain
 
-    def flatCorrection(self, maskedImage, flatMaskedImage, scalingtype, scaling = 1.0):
+#    def flatCorrection(self, maskedImage, flatMaskedImage, scalingtype, scaling = 1.0):
+#        flatscaling = 1.0
+#        # Figure out scaling from the data
+#        # I'm not sure we should be doing this here, but maybe
+#        if scalingtype == 'MEAN':
+#            flatscaling = afwMath.makeStatistics(flatMaskedImage.getImage(), afwMath.MEAN).getValue(afwMath.MEAN)
+#        elif scalingtype == 'MEDIAN':
+#            flatscaling = afwMath.makeStatistics(flatMaskedImage.getImage(), afwMath.MEDIAN).getValue(afwMath.MEDIAN)
+#        elif scalingtype == 'USER':
+#            flatscaling = scaling
+#        else:
+#            raise pexExcept.LsstException, '%s : %s not implemented' % ("flatCorrection", scalingtype)
+#        
+#        maskedImage.scaledDivides(1./flatscaling, flatMaskedImage)
+#
+#        if self.display:
+#            ds9.mtv(maskedImage, title="Flattened")
+
+##== FH for QA output
+    def flatCorrectionQa(self, maskedImage, flatMaskedImage, scalingtype, scaling = 1.0):
         flatscaling = 1.0
         # Figure out scaling from the data
         # I'm not sure we should be doing this here, but maybe
@@ -230,6 +250,59 @@ class qaSuprimeCamIsr(Isr):
 
         if self.display:
             ds9.mtv(maskedImage, title="Flattened")
+
+        return
+    
+##== FH added for QA output
+    def measureFlatnessImageQa(self, maskedImage, meshX=256, meshY=256, doClip=True, clipSigma=3, nIter=3):
+        miSize = maskedImage.getDimensions()
+        xmax = miSize[0] + int(meshX/2.) 
+        ymax = miSize[1] + int(meshY/2.)
+        nX = int(xmax / meshX)
+        nY = int(ymax / meshY)
+        skyLevel = numpy.zeros((nX,nY))
+
+        # calcluating flatlevel over the subgrids 
+        meshXHalf = int(meshX/2.)
+        meshYHalf = int(meshY/2.)
+
+        if doClip is True:
+            sctrl = afwMath.StatisticsControl(clipSigma, nIter)
+
+        for j in range(nY):
+            yc = meshYHalf + j * meshY
+            for i in range(nX):
+                xc = meshXHalf + i * meshX
+                xLLC = xc - meshXHalf
+                yLLC = yc - meshYHalf
+                xURC = xc + meshXHalf - 1
+                yURC = yc + meshYHalf - 1
+                
+                bbox = afwGeom.Box2I(afwGeom.Point2I(xLLC, yLLC), afwGeom.Point2I(xURC, yURC))
+                miMesh = maskedImage.Factory(maskedImage, bbox, afwImage.LOCAL)
+
+                #clipSigma = 3.0
+                #nIter = 3
+                #stats = afwMath.makeStatistics(miMesh, afwMath.MEDIAN|afwMath.STDEVCLIP, sctrl)
+                #stats = afwMath.makeStatistics(miMesh, afwMath.MEDIAN|afwMath.MEAN|afwMath.MEANCLIP, sctrl)
+                stats = afwMath.makeStatistics(miMesh, afwMath.MEDIAN|afwMath.MEAN|afwMath.MEANCLIP, sctrl)                
+
+                if doClip is True:
+                    skyLevel[i, j] = stats.getValue(afwMath.MEANCLIP)
+                else:
+                    skyLevel[i, j] = stats.getValue(afwMath.MEAN)
+                #skyLevel[i, j] = stats.getValue(afwMath.MEDIAN)
+                #skySigma[i, j] = stats.getValue(afwMath.STDEVCLIP)                
+
+        skyMedian = numpy.median(skyLevel)
+        flatness =  (skyLevel - skyMedian) / skyMedian        
+        flatness_rms = numpy.std(flatness)
+        flatness_min = flatness.min()
+        flatness_max = flatness.max() 
+        flatness_pp = flatness_max - flatness_min
+
+        return (flatness, flatness_pp, flatness_min, flatness_max, flatness_rms, skyMedian, nX, nY)
+
 
     def illuminationCorrection(self, maskedImage, illumMaskedImage, illumscaling):
 
@@ -353,8 +426,17 @@ class qaSuprimeCamIsr(Isr):
     ##== FH added for QA output
     def writeFitsImageQa(self, exposure, outfile):
         """
-        writing out exposure to an FITS image into the outfile. 
+        writing out exposure to an FITS image named outfile. 
         """
+        exposure.getMaskedImage().writeFits(outfile)
+
+    ##== FH added for QA output
+    def writeSnapshotImageQa(self, exposure, outfile, format='png', width=500, height=0):
+        """
+        writing out exposure to a snapshot file named outfile in the given image format and size.  
+        """
+        QaFitsthumb.createFitsThumb(exposure.getMaskedImage().getImage(), outfile, format, width, height, True)
+        
 
     def fringeCorrection(self, maskedImage, fringe):
 

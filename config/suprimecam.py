@@ -2,7 +2,7 @@ root.doWriteIsr = True
 ##root.doWriteIsr = False
 root.isr.methodList=["doConversionForIsr", "doSaturationDetection",
 #                     "doOverscanCorrection", "doVariance", "doFlatCorrection"]
-                     "doOverscanCorrectionQa", "doVariance", "doFlatCorrection"]
+                     "doOverscanCorrectionQa", "doVariance", "doWriteOssImageQa", "doFlatCorrectionQa", "doWriteFltImageQa"]
 ##root.isr.doWrite = False
 ##root.isr.doWrite = True
 
@@ -29,3 +29,10 @@ root.calibrate.astrometry.solver.filterMap = { 'B': 'g',
                                                'I': 'i',
                                                'y': 'z',
                                                }
+
+# FH below for QA stuff
+#root.doWriteOssImage = True # "Do we write out overscan-subtracted image?"
+#root.doWriteFltImage = True # "Do we write out flatfielded image?"
+#root.doWriteSsbImage = True # "Do we write out flatfielded & sky-subtracted image?"
+#root.doDumpSnapshot = True  # "Do we dump snapshot figures of images?"
+    
