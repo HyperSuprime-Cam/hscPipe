@@ -31,8 +31,21 @@ root.calibrate.astrometry.solver.filterMap = { 'B': 'g',
                                                }
 
 # FH below for QA stuff
-#root.doWriteOssImage = True # "Do we write out overscan-subtracted image?"
-#root.doWriteFltImage = True # "Do we write out flatfielded image?"
-#root.doWriteSsbImage = True # "Do we write out flatfielded & sky-subtracted image?"
-#root.doDumpSnapshot = True  # "Do we dump snapshot figures of images?"
+root.qa.seeing.fwhmIni = 3.465
+root.qa.seeing.fwhmMin = 1.5
+root.qa.seeing.fwhmMax = 12.0
+root.qa.seeing.nbinMagHist = 80
+root.qa.seeing.magMinHist = -20
+root.qa.seeing.magMaxHist = 0.0
+root.qa.seeing.nSampleRoughFwhm = 30
+root.qa.seeing.fwhmMarginFinal = 1.5
+root.qa.flatness.meshX = 256
+root.qa.flatness.meshY = 256
+root.qa.flatness.doClip = True
+root.qa.flatness.clipSigma = 3.0
+root.qa.flatness.nIter = 3
+root.qa.doWriteOssImage = True # "Do we write out overscan-subtracted image?"
+root.qa.doWriteFltImage = True # "Do we write out flatfielded image?"
+#root.qa.doWriteSsbImage = True # "Do we write out flatfielded & sky-subtracted image?"
+root.qa.doDumpSnapshot = True  # "Do we dump snapshot figures of images?"
     

@@ -14,8 +14,60 @@ import hsc.pipe.tasks.qaHscSuprimeCamTask as qaHscSuprimeCamIsrTask
 import hsc.pipe.tasks.calibrate as hscCalibrate
 import hsc.pipe.tasks.hscDc2 as hscDc2
 
+##== FH added for QA output
+import hsc.onsite.qa.measSeeingQa as QaSeeing
+
+#== FH changed for QA output
+class QaFlatness(pexConfig.Config):
+    meshX = pexConfig.Field(
+        dtype = int,
+        doc = 'Mesh size in X (pix) to calculate count statistics',
+        default = 256,
+        )
+    meshY = pexConfig.Field(
+        dtype = int,
+        doc = 'Mesh size in Y (pix) to calculate count statistics',
+        default = 256,
+        )
+    doClip = pexConfig.Field(
+        dtype = bool,
+        doc = 'Do we clip outliers in calculate count statistics?',
+        default = True,
+        )
+    clipSigma = pexConfig.Field(
+        dtype = float,
+        doc = 'How many sigma is used to clip outliers in calculate count statistics?',
+        default = 3.0,
+        )
+    nIter = pexConfig.Field(
+        dtype = int, 
+        doc = 'How many times do we iterate clipping outliers in calculate count statistics?',
+        default = 3,
+        )
+
+#class QaWriteFits(pexConfig):
+class QaConfig(pexConfig.Config):
+    seeing = pexConfig.ConfigField(dtype=QaSeeing.QaSeeingConfig, doc="Qa.measSeeing")  
+    flatness = pexConfig.ConfigField(dtype=QaFlatness, doc="Qa.flatness")
+    doWriteOssImage = pexConfig.Field(
+        dtype = bool,
+        doc = 'Do we write overscan-subtracted image FITS?',
+        default = True,
+        )
+    doWriteFltImage = pexConfig.Field(
+        dtype = bool,
+        doc = 'Do we write flatfielded image FITS?',
+        default = True,
+        )
+    doDumpSnapshot = pexConfig.Field(
+        dtype=bool,
+        doc="Do we dump snapshot files?",
+        default=True
+        )
+
 class SubaruProcessCcdConfig(ptProcessCcd.ProcessCcdConfig):
     calibrate = pexConfig.ConfigField(dtype=hscCalibrate.HscCalibrateConfig, doc="Calibration")
+    qa = pexConfig.ConfigField(dtype=QaConfig, doc="Qa configuration")
 
 class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
     """Subaru version of ProcessCcdTask, with method to write outputs
@@ -130,7 +182,24 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
 
         if self.config.doWriteCalibrate:
             sensorRef.put(exposure, 'calexp')
+
             
+        ##== FH added this part for QA output
+        #def measureSeeingQa(exposure, sourceSet, config, debugFlag=False, plotFlag=True, plotbasename=None, io=None, log=None):
+        if True:
+            QaSeeing.measureSeeingQaTest(exposure, self.config)
+        else:
+            fwhmRobust, ellRobust, ellPaRobust, sourceSetPsfLike, sourceSetPsfLikeRobust = QaSeeing.measureSeeingQa(exposure, sources, self.config)
+            print 'fwhmRobust:', fwhmRobust
+            print 'ellRobust:', ellRobust
+            print 'ellPaRobust:', ellPaRobust
+            print 'sourceSetPsfLike:', sourceSetPsfLike
+            print 'sourceSetPsfLikeRobust:', sourceSetPsfLikeRobust
+        
+        import sys
+        sys.exit(0)
+        ##==
+
         return pipeBase.Struct(
             exposure = exposure,
             calib = calib,
