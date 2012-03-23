@@ -120,6 +120,7 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
 ## derived from & overriding hsc.pipe.tasks.processCcd.ProcessCcdTask(pipeBase.Task).run()
     @pipeBase.timeMethod
     def run(self, sensorRef):
+
         self.log.log(self.log.INFO, "Processing %s" % (sensorRef.dataId))
         if self.config.doIsr:
             butler = sensorRef.butlerSubset.butler
@@ -186,19 +187,13 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
             
         ##== FH added this part for QA output
         #def measureSeeingQa(exposure, sourceSet, config, debugFlag=False, plotFlag=True, plotbasename=None, io=None, log=None):
-        if True:
-            QaSeeing.measureSeeingQaTest(exposure, self.config)
-        else:
-            fwhmRobust, ellRobust, ellPaRobust, sourceSetPsfLike, sourceSetPsfLikeRobust = QaSeeing.measureSeeingQa(exposure, sources, self.config)
-            print 'fwhmRobust:', fwhmRobust
-            print 'ellRobust:', ellRobust
-            print 'ellPaRobust:', ellPaRobust
-            print 'sourceSetPsfLike:', sourceSetPsfLike
-            print 'sourceSetPsfLikeRobust:', sourceSetPsfLikeRobust
-        
-        import sys
-        sys.exit(0)
-        ##==
+        ## debug: QaSeeing.measureSeeingQaTest(exposure, self.config)
+        fwhmRobust, ellRobust, ellPaRobust, catalogPsfLike, catalogPsfLikeRobust = QaSeeing.measureSeeingQa(exposure, sources, self.config, debugFlag=False, plotFlag=False)
+
+        self.log.log(self.log.INFO, "QA seeing: fwhm: %f (pix)" % fwhmRobust)
+        self.log.log(self.log.INFO, "QA seeing: ell (based on 2nd moments): %f" % ellRobust)
+        self.log.log(self.log.INFO, "QA seeing: ellPa (in CCDCoords based on 2nd moments): %f (deg)" % ellRobust)
+        self.log.log(self.log.INFO, "QA seeing: final Nsources for seeing: %d" % len(catalogPsfLikeRobust))        
 
         return pipeBase.Struct(
             exposure = exposure,
