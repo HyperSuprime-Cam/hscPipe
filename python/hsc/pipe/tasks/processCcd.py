@@ -186,9 +186,8 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
 
             
         ##== FH added this part for QA output
-        #def measureSeeingQa(exposure, sourceSet, config, debugFlag=False, plotFlag=True, plotbasename=None, io=None, log=None):
         ## debug: QaSeeing.measureSeeingQaTest(exposure, self.config)
-        fwhmRobust, ellRobust, ellPaRobust, catalogPsfLike, catalogPsfLikeRobust = QaSeeing.measureSeeingQa(exposure, sources, self.config, debugFlag=False, plotFlag=False)
+        fwhmRobust, ellRobust, ellPaRobust, catalogPsfLike, catalogPsfLikeRobust = QaSeeing.measureSeeingQa(exposure, sources, self.config, debugFlag=False, plotFlag=True, plotbasedir=None, butler=butler, log=self.log)
 
         self.log.log(self.log.INFO, "QA seeing: fwhm: %f (pix)" % fwhmRobust)
         self.log.log(self.log.INFO, "QA seeing: ell (based on 2nd moments): %f" % ellRobust)
