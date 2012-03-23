@@ -11,43 +11,17 @@ TODO:
 import sys
 import os, re
 import math
-#import optparse
 import lsst.pex.config as pexConfig
-#import lsst.pex.policy as pexPolicy
 import lsst.pex.logging as pexLog
-#import lsst.afw.image as afwImage
-#import lsst.afw.math as afwMath
-#import lsst.daf.base as dafBase
-#import lsst.afw.display.ds9 as ds9
-import lsst.afw.detection as afwDetection
-import lsst.afw.table as afwTable
-#import lsst.afw.coord as afwCoord
+#import lsst.afw.detection as afwDetection
 #import lsst.afw.cameraGeom as cameraGeom
-#import lsst.afw.cameraGeom.utils as cameraGeomUtils
-#import lsst.daf.persistence as dafPersist
-#import lsst.pipette.config as pipConfig
-#import lsst.pipette.util as pipUtil
-#from lsst.obs.hscSim.hscSimMapper import HscSimMapper as Mapper
+import lsst.afw.table as afwTable
 
 import numpy
 import matplotlib
 matplotlib.use('Agg') # this is necessary to avoid X connection from this script
 import matplotlib.pyplot as plt
 
-#try:
-#    import lsst.afw.extensions.rgb as afwRgb
-#except:
-#    afwRgb = None
-
-#import lsst.meas.astrom                  as measAstrom
-#import lsst.meas.algorithms              as measAlg
-#import lsst.meas.algorithms.defects      as maDefects
-
-import lsst.meas.algorithms.utils        as maUtils
-#import lsst.meas.utils.sourceMeasurement as srcMeas
-#import lsst.meas.utils.sourceDetection   as srcDet
-#import lsst.sdqa                         as sdqa
-#import lsst.ip.isr as ipIsr
 
 class QaSeeingConfig(pexConfig.Config):
     fwhmIni = pexConfig.Field(
@@ -99,7 +73,7 @@ def measureSeeingQaTest(exposure, config):
     print '**** config all:'
     print config
     
-def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, plotbasename=None, io=None, log=None):
+def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, plotbasedir=None, butler=None, log=None):
     """
     This function measures seeing (mode) and ellipticity (median) representative of the input frame
     by using the input source set.
@@ -171,7 +145,6 @@ def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, p
 #        objFlag = source.getFlagForDetection()
         isSaturated = (saturationFlag | saturationCenterFlag)        
         print 'objFlag SatAny %x  SatCenter %x  isSaturated %x' % (saturationFlag, saturationCenterFlag, isSaturated)
-
 
         fluxAper = source.getApFlux()
         fluxErrAper =  source.getApFluxErr() 
@@ -268,42 +241,54 @@ def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, p
         #print magCumHist
 
     # making debug plots
-
-    # FH for onstie QA output
-
-    if False:
+    if plotFlag is True: 
+        log.log(log.INFO, "QaSeeing: Enetered ploting")
         # getting visitId and ccdId. here, we reconstruct those two values from FrameId.
         # maybe we should consider a better way.
         frameId = exposure.getMetadata().get('FRAMEID')
         #print 'XXXXXXX QaSeeing instrument = ', instrument
         visitId, ccdId = getVisitIdAndCcdIdFromFrameId(frameId, config)
-        ccdId = (pipUtil.getCcd(exposure)).getId().getSerial()
+
+        if False:
+            det = exposure.getDetector()
+            ccd = cameraGeom.cast_Ccd(det)
+            ccdId = int(ccd.getId().getSerial())
+
+        log.log(log.INFO, "QaSeeing: After getting ccdId")
+
         dataId = { 'visit': visitId, 'ccd': ccdId }
-        qaOutputDirName = os.path.dirname(io.outButler.get('source_filename', dataId)[0])
+        qaOutputDirName = os.path.dirname(butler.get('src_filename', dataId)[0])
+        #if os.path.exists(plotbasedir):
+        #    qaOutputDirName = plotbasedir
+        #elif butler is not None:
+        #    qaOutputDirName = os.path.dirname(butler.get('src_filename', dataId)[0])
+        #else:
+        #    qaOutputDirName = os.path.abspath('.')
+        #log.log(log.INFO, "QaSeeing: Qa plots are stored in: %s", qaOutputDirName)            
+            
+        # making a figure
+        fig = plt.figure()
+        pltMagHist = fig.add_subplot(2,1,1)
+        pltMagHist.hist(magListFwhmRange, bins=magHist[1], orientation='vertical')
+        pltMagHist.set_title('histogram of magnitudes')
+        #        pltMagHist.set_xlabel('magnitude instrumental')
+        pltMagHist.set_ylabel('number of samples')
+        pltMagHist.legend()
 
-        if plotFlag is True: 
-            # making a figure
-            fig = plt.figure()
-            pltMagHist = fig.add_subplot(2,1,1)
-            pltMagHist.hist(magListFwhmRange, bins=magHist[1], orientation='vertical')
-            pltMagHist.set_title('histogram of magnitudes')
-            #        pltMagHist.set_xlabel('magnitude instrumental')
-            pltMagHist.set_ylabel('number of samples')
-            pltMagHist.legend()
+        pltCumHist = fig.add_subplot(2,1,2)
+        # histtype=bar,barstacked,step,stepfilled
+        pltCumHist.hist(magListFwhmRange, bins=magCumHist[1], normed=True, cumulative=True, orientation='vertical', histtype='step')
+        xx = [magLim, magLim]; yy = [0, 1]
+        pltCumHist.plot(xx, yy, linestyle='dashed', label='mag limit') # solid,dashed,dashdot,dotted        
+        pltCumHist.set_title('cumulative histogram of magnitudes')
+        pltCumHist.set_xlabel('magnitude instrumental')
+        pltCumHist.set_ylabel('Nsample scaled to unity')
+        pltCumHist.legend()
+        #        plt.draw()
+        #        plt.show()
 
-            pltCumHist = fig.add_subplot(2,1,2)
-            pltCumHist.hist(magListFwhmRange, bins=magCumHist[1], normed=True, cumulative=True, orientation='vertical', histtype='step') # histtype=bar,barstacked,step,stepfilled
-            xx = [magLim, magLim]; yy = [0, 1]
-            pltCumHist.plot(xx, yy, linestyle='dashed', label='mag limit') # solid,dashed,dashdot,dotted        
-            pltCumHist.set_title('cumulative histogram of magnitudes')
-            pltCumHist.set_xlabel('magnitude instrumental')
-            pltCumHist.set_ylabel('Nsample scaled to unity')
-            pltCumHist.legend()
-            #        plt.draw()
-            #        plt.show()
-
-            fname = qaOutputDirName + '/' + 'qa1_'+plotbasename+'.png'
-            plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None, format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
+        fname = qaOutputDirName + '/' + 'seeing1_'+frameId+'.png'
+        plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None, format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
 
     # -- Estimating roughly-estimated FWHM for sources with mag < magLim
 
@@ -321,10 +306,10 @@ def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, p
     magListPsfLike = magListAll[indicesSourcesPsfLike]
     fwhmListPsfLike = fwhmListAll[indicesSourcesPsfLike]
     
-#    print '*** indicesSourcesFwhmRange:', indicesSourcesFwhmRange
-#    print '*** indicesSoucresPsfLike:',  indicesSourcesPsfLike
-#    print '*** magListPsfLike:',  magListPsfLike
-#    print '*** fwhmListPsfLike:',  fwhmListPsfLike
+    #print '*** indicesSourcesFwhmRange:', indicesSourcesFwhmRange
+    #print '*** indicesSoucresPsfLike:',  indicesSourcesPsfLike
+    #print '*** magListPsfLike:',  magListPsfLike
+    #print '*** fwhmListPsfLike:',  fwhmListPsfLike
 
     log.log(log.INFO, "QaSeeing: nSampleRoughFwhm: %d" % nSampleRoughFwhm)
 
@@ -351,11 +336,11 @@ def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, p
         pltMagFwhm.legend()
 #        plt.show()
 #        plt.draw()
-        fname = qaOutputDirName + '/' + 'qa2_'+plotbasename+'.png'
+        fname = qaOutputDirName + '/' + 'seeing2_'+frameId+'.png'
         plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None, format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
 
-
     # ---- From Here, Good Estimation of Final PSF
+
     fwhmMin = fwhmRough - fwhmMarginFinal
     fwhmMax = fwhmRough + fwhmMarginFinal
 ##    fwhmMin = fwhmRough - 1.0 # pix
@@ -438,7 +423,7 @@ def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, p
         pltHistFwhm.legend()
 
 #        plt.show()
-        fname = qaOutputDirName + '/' + 'qa3_'+plotbasename+'.png'
+        fname = qaOutputDirName + '/' + 'seeing3_'+frameId+'.png'
         plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None, format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
 
     #print '*** fwhmRobust: %f (pix) SC: %f (arcsec) HSC: %f (arcsec)  ellRobust: %f' % (fwhmRobust, fwhmRobust*0.202, fwhmRobust*0.168, ellRobust)
@@ -454,8 +439,8 @@ def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, p
     #    print i, record
     #sys.exit(0)
 
-    ## FH: SourceCatalog object seems to not accept STL vector-like operation.
-    ## e.g., push_back, reserve etc, which are listed in doxygen. My fault?
+    ## note by FH: SourceCatalog object seems to not accept STL vector-like functions
+    ## e.g., push_back, reserve etc, though those are listed in doxygen member functions. my misunderstanding?
     ## Instead, I use here addNew() and copy record reference to the new one.
     if False:
         catalogPsfLike.reserve(len(indicesSourcePsfLike))
