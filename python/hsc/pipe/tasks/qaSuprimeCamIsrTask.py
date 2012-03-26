@@ -347,8 +347,7 @@ class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
 
 ##== FH for QA output
     def doWriteOssImageQa(self, exposure, calibSet, butler, dataId):
-        if True:
-        # if self.config.qa.doWrite == True:
+        if self.config.qa.doWrite == True:
             pathToSrcFile = butler.get('src_filename', dataId)[0]
             qaOutputDirName = os.path.dirname(pathToSrcFile)
             if os.path.exists(qaOutputDirName) is not True:
@@ -365,8 +364,8 @@ class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
             self.isr.writeFitsImageQa(trimmedExposure, outfile)
             self.log.log(self.log.INFO, "QA writing overscan-subtracted FITS image: %s" % outfile)
                                                                
-        if True:
-        # if self.config.qa.doDumpSnapshot == True:
+        #if True:
+        if self.config.qa.doWriteImage.doDumpSnapshot is True:
             snapName = qaOutputDirName + '/' + 'oss_%s.png' % str(frameId)
             self.isr.writeSnapshotImageQa(trimmedExposure, snapName, format='png', width=500)
             self.log.log(self.log.INFO, "QA writing snapshot png of overscan-subtracted image: %s" % snapName)
@@ -375,8 +374,8 @@ class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
 
 ##== FH for QA output
     def doWriteFltImageQa(self, exposure, calibSet, butler, dataId):
-        if True:
-        # if self.config.qa.doWriteOssImage == True:
+        #if True:
+        if self.config.qa.doWriteImage.doWriteOssImage is True:
             pathToSrcFile = butler.get('src_filename', dataId)[0]
             qaOutputDirName = os.path.dirname(pathToSrcFile)
             if os.path.exists(qaOutputDirName) is not True:
@@ -393,8 +392,8 @@ class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
             self.isr.writeFitsImageQa(trimmedExposure, outfile)
             self.log.log(self.log.INFO, "QA writing flatfielded FITS image: %s" % outfile)
                                                                
-        if True:
-        # if self.config.qa.doDumpSnapshot == True:
+        #if True:
+        if self.config.qa.doWriteImage.doDumpSnapshot is True:
             snapName = qaOutputDirName + '/' + 'flt_%s.png' % str(frameId)
             self.isr.writeSnapshotImageQa(trimmedExposure, snapName, format='png', width=500)
             self.log.log(self.log.INFO, "QA writing snapshot png of flatfielded image: %s" % snapName)
