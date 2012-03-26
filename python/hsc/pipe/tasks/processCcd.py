@@ -137,14 +137,8 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
             else:
                 apCorr = calib.apCorr
             self.measurement.run(exposure, sources, apCorr)
- 
-        if self.config.doWriteSources:
-            sensorRef.put(sources, 'src')
 
-        if self.config.doWriteCalibrate:
-            sensorRef.put(exposure, 'calexp')
-
-        ##== FH added this part for QA output
+        ##== FH added this part for QA output by using the reduced exposure and final sources
         ## debug: QaSeeing.measureSeeingQaTest(exposure, self.config)
         fwhmRobust, ellRobust, ellPaRobust, catalogPsfLike, catalogPsfLikeRobust = qaSeeing.measureSeeingQa(exposure, sources, self.config, debugFlag=False, plotFlag=True, plotbasedir=None, butler=butler, log=self.log)
 
@@ -158,6 +152,13 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
         metadata.set('FLAG_AUTO', 0)
         metadata.set('FLAG_USR', 0)
         metadata.set('FLAG_TAG', 1)
+
+ 
+        if self.config.doWriteSources:
+            sensorRef.put(sources, 'src')
+
+        if self.config.doWriteCalibrate:
+            sensorRef.put(exposure, 'calexp')
 
         return pipeBase.Struct(
             exposure = exposure,
