@@ -347,7 +347,7 @@ class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
 
 ##== FH for QA output
     def doWriteOssImageQa(self, exposure, calibSet, butler, dataId):
-        if self.config.qa.doWrite == True:
+        if self.config.qa.doWriteImage.doWriteOssImage is True:
             pathToSrcFile = butler.get('src_filename', dataId)[0]
             qaOutputDirName = os.path.dirname(pathToSrcFile)
             if os.path.exists(qaOutputDirName) is not True:
@@ -375,7 +375,7 @@ class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
 ##== FH for QA output
     def doWriteFltImageQa(self, exposure, calibSet, butler, dataId):
         #if True:
-        if self.config.qa.doWriteImage.doWriteOssImage is True:
+        if self.config.qa.doWriteImage.doWriteFltImage is True:
             pathToSrcFile = butler.get('src_filename', dataId)[0]
             qaOutputDirName = os.path.dirname(pathToSrcFile)
             if os.path.exists(qaOutputDirName) is not True:

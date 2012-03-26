@@ -16,6 +16,7 @@ import hsc.pipe.tasks.hscDc2 as hscDc2
 
 ##== FH added for QA output
 import hsc.onsite.qa.measSeeingQa as qaSeeing
+import hsc.pipe.tasks.qaCalibrate as qaHscCalibrate
 
 #== FH changed for QA output
 
@@ -24,7 +25,8 @@ class QaConfig(pexConfig.Config):
     seeing = pexConfig.ConfigField(dtype=qaSeeing.QaSeeingConfig, doc="Qa.measSeeing")  
 
 class SubaruProcessCcdConfig(ptProcessCcd.ProcessCcdConfig):
-    calibrate = pexConfig.ConfigField(dtype=hscCalibrate.HscCalibrateConfig, doc="Calibration")
+    calibrate = pexConfig.ConfigField(dtype=qaHscCalibrate.HscCalibrateConfig, doc="Calibration")
+##    calibrate = pexConfig.ConfigField(dtype=hscCalibrate.HscCalibrateConfig, doc="Calibration")    
     isr = pexConfig.ConfigField(dtype=qaSuprimeCamIsrTask.QaIsrTaskConfig, doc="Config for Isr with Qa tasks")
     qa = pexConfig.ConfigField(dtype=QaConfig, doc="Config for Qa (outside isr) tasks")
 
@@ -67,7 +69,7 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
 ##        self.makeSubtask("isr", hscSuprimeCam.SuprimeCamIsrTask)
 ##        self.makeSubtask("calibrate", hscCalibrate.HscCalibrateTask)
         self.makeSubtask("isr", qaSuprimeCamIsrTask.QaSuprimeCamIsrTask)#, config=SubaruProcessCcdConfig())
-        self.makeSubtask("calibrate", hscCalibrate.HscCalibrateTask) #, config=self.config)
+        self.makeSubtask("calibrate", qaHscCalibrate.HscCalibrateTask) #, config=self.config)        
         self.schema = afwTable.SourceTable.makeMinimalSchema()
         self.algMetadata = dafBase.PropertyList()
         if self.config.doDetection:
