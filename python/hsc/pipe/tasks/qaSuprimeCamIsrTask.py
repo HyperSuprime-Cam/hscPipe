@@ -15,43 +15,69 @@ from lsst.ip.isr.ccdAssembler import CcdAssembler # equivelent to the above
 from lsst.ip.isr import isrLib # equivelent to the above
 
 ## FH added for QA
-import os
+import os, sys
 import lsst.afw.math as afwMath
 import lsst.ip.isr as ipIsr
+#import lsst.pipe.tasks.processCcd as ptProcessCcd
 import hsc.pipe.tasks.suprimecam as hscSuprimeCam
-from hsc.pipe.tasks.qaHscSuprimeCamIsr import qaSuprimeCamIsr
+from hsc.pipe.tasks.qaSuprimeCamIsr import QaSuprimeCamIsr
 
 
+#== FH changed for QA output
+class QaFlatnessConfig(pexConfig.Config):
+        meshX = pexConfig.Field(
+            dtype = int,
+            doc = 'Mesh size in X (pix) to calculate count statistics',
+            default = 256,
+            )
+        meshY = pexConfig.Field(
+            dtype = int,
+            doc = 'Mesh size in Y (pix) to calculate count statistics',
+            default = 256,
+            )
+        doClip = pexConfig.Field(
+            dtype = bool,
+            doc = 'Do we clip outliers in calculate count statistics?',
+            default = True,
+            )
+        clipSigma = pexConfig.Field(
+            dtype = float,
+            doc = 'How many sigma is used to clip outliers in calculate count statistics?',
+            default = 3.0,
+            )
+        nIter = pexConfig.Field(
+            dtype = int,
+            doc = 'How many times do we iterate clipping outliers in calculate count statistics?',
+            default = 3,
+            )
+        
+class QaDoWriteImageConfig(pexConfig.Config):
+    doWriteOssImage = pexConfig.Field(
+        dtype = bool,
+        doc = 'Do we write overscan-subtracted image FITS?',
+        default = True,
+        )
+    doWriteFltImage = pexConfig.Field(
+        dtype = bool,
+        doc = 'Do we write flatfielded image FITS?',
+        default = True,
+        )
+    doDumpSnapshot = pexConfig.Field(
+        dtype=bool,
+        doc="Do we dump snapshot files?",
+        default=True
+        )
 
-class qaIsrTaskConfig(ipIsr.IsrTaskConfig):
-    pass
-#    doWriteOssImage = pexConfig.Field(
-#        dtype = bool,
-#        doc = "Do we write out overscan-subtracted image?",
-#        default = True,
-#    )
-#    doWriteFltImage = pexConfig.Field(
-#        dtype = bool,
-#        doc = "Do we write out flatfielded image?",
-#        default = True,
-#    )
-#    doWriteSsbImage = pexConfig.Field(
-#        dtype = bool,
-#        doc = "Do we write out flatfielded & sky-subtracted image?",
-#        default = True,
-#    )
-#    doDumpSnapshot = pexConfig.Field(
-#        dtype = bool,
-#        doc = "Do we dump snapshot figures of images?",
-#        default = True,
-#    )
+class QaConfig(pexConfig.Config):
+    flatness = pexConfig.ConfigField(dtype=QaFlatnessConfig, doc="Qa.flatness")
+    doWriteImage = pexConfig.ConfigField(dtype=QaDoWriteImageConfig, doc="Qa.DoWriteImage")
 
-#    doWrite = pexConfig.Field(dtype=bool, doc="Write output?", default=True)
-#    fwhm = pexConfig.Field(
-#        dtype = float,
-#        doc = "FWHM of PSF (arcsec)",
-#        default = 1.0,
-#    )
+#class QaIsrTaskConfig(ptProcessCcd.ProcessCcdConfig):
+class QaIsrTaskConfig(ipIsr.IsrTaskConfig):
+    qa = pexConfig.ConfigField(dtype=QaConfig, doc="Qa configuration")
+        
+#class QaIsrTaskConfig():
+#    pass
 #    #This is needed for both the detection and correction aspects
 #    saturatedMaskName = pexConfig.Field(
 #        dtype = str,
@@ -118,13 +144,18 @@ class qaIsrTaskConfig(ipIsr.IsrTaskConfig):
 #    )
 
 #class IsrTask(pipeBase.Task):
-class qaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
-    ConfigClass = qaIsrTaskConfig
-    def __init__(self, *args, **kwargs):
-        pipeBase.Task.__init__(self, *args, **kwargs)
+class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
+    ## note: lsst.pipe.base.task.Task class requires all subclasses should have ConfigClass attribute and run() function.
+    ConfigClass = QaIsrTaskConfig
+
+##    def __init__(self, *args, **kwargs):
+    def __init__(self, **kwargs):    
+        pipeBase.Task.__init__(self, **kwargs)
+#        pipeBase.Task.__init__(self, *args, **kwargs)
+        #hscSuprimeCam.SuprimeCamIsrTask.__init__(self, *args, **kwargs)
         ## FH changed for QA output
         ##self.isr = Isr()
-        self.isr = qaSuprimeCamIsr()
+        self.isr = QaSuprimeCamIsr()
         self.methodList = []
         for methodname in self.config.methodList:
             self.methodList.append(getattr(self, methodname))
@@ -441,17 +472,53 @@ class qaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
         for amp in self._getAmplifiers(exposure):
             exp, flat = self._getCalibration(exposure, flatfield, amp)
             self.isr.flatCorrectionQa(exp.getMaskedImage(), flat.getMaskedImage(), scalingtype, scaling = scalingvalue)
-            
-        # Qa mesurement of flatness of flatfielded image
-        meshX = 256
-        meshY = 256
-        trimmedExposure = self.doCcdAssembly([exposure])
-        (flatness, flatness_pp, flatness_min, flatness_max, flatness_rms, skyMedian, nX, nY) = self.isr.measureFlatnessImageQa(trimmedExposure.getMaskedImage(), meshX=meshX, meshY=meshY, doClip=True, clipSigma=3, nIter=3)
+        # Qa mesurement of skylevel of flatfielded image
+        # - As background is not done here, I measure skyLevel and skySigma here.  
 
+        metadata = exposure.getMetadata()
+        trimmedExposure = self.doCcdAssembly([exposure])
+        trimmedImage = trimmedExposure.getMaskedImage().getImage()
+
+        clipSigma = 3.0; nIter = 3
+        sctrl = afwMath.StatisticsControl(clipSigma, nIter)
+        stats = afwMath.makeStatistics(trimmedImage, afwMath.MEDIAN|afwMath.STDEVCLIP, sctrl)
+        skyLevel = stats.getValue(afwMath.MEDIAN)
+        skySigma = stats.getValue(afwMath.STDEVCLIP)
+        self.log.log(self.log.INFO, "QA skylevel and sigma: %f  %f" % (skyLevel, skySigma))
+        metadata.set('SKYLEVEL', skyLevel)
+        metadata.set('SKYSIGMA', skySigma)
+
+        # Qa mesurement of flatness of flatfielded image
+        print '***** self.config:'
+        print self.config
+
+        if True:
+            configFlatness = self.config.qa.flatness
+            meshX = configFlatness.meshX
+            meshY = configFlatness.meshY
+            doClip = configFlatness.doClip
+            clipSigma = configFlatness.clipSigma
+            nIter = configFlatness.nIter
+        else:
+            meshX = 256
+            meshY = 256
+            doClip = True
+            clipSigma = 3.0
+            nIter = 3
+
+        (flatness, flatness_pp, flatness_min, flatness_max, flatness_rms, skyMedian, nX, nY) = \
+                   self.isr.measureFlatnessImageQa(
+            trimmedExposure.getMaskedImage(),
+            meshX=meshX,
+            meshY=meshY,
+            doClip=doClip,
+            clipSigma=clipSigma,
+            nIter=nIter
+            )
+        
         self.log.log(self.log.INFO, "QA flatfield: measuring skylevels in %dx%d grids: %f" % (nX, nY, skyMedian))
         self.log.log(self.log.INFO, "QA flatfield: flatness in %dx%d grids - pp: %f rms: %f" % (nX, nY, flatness_pp, flatness_rms))
 
-        metadata = exposure.getMetadata()
         metadata.set('FLATNESS_PP', flatness_pp)
         metadata.set('FLATNESS_RMS', flatness_rms)        
         metadata.set('FLATNESS_NGRIDS', '%dx%d' % (nX, nY))
@@ -463,9 +530,9 @@ class qaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
     def doIlluminationCorrection(self, exposure, calibSet):
         pass
 
-    def doCcdAssembly(self, exposureList):
-        renorm = self.config.reNormAssembledCcd
-        setgain = self.config.setGainAssembledCcd
-        k2rm = self.config.keysToRemoveFromAssembledCcd
-        assembler = CcdAssembler(exposureList, reNorm=renorm, setGain=setgain, keysToRemove=k2rm)
-        return assembler.assembleCcd()
+#    def doCcdAssembly(self, exposureList):
+#        renorm = self.config.reNormAssembledCcd
+#        setgain = self.config.setGainAssembledCcd
+#        k2rm = self.config.keysToRemoveFromAssembledCcd
+#        assembler = CcdAssembler(exposureList, reNorm=renorm, setGain=setgain, keysToRemove=k2rm)
+#        return assembler.assembleCcd()

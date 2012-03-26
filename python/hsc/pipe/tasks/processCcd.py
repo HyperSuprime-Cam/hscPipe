@@ -10,71 +10,30 @@ import lsst.pipe.base as pipeBase
 import lsst.pipe.tasks.processCcd as ptProcessCcd
 import hsc.pipe.tasks.astrometry as hscAstrom
 import hsc.pipe.tasks.suprimecam as hscSuprimeCam
-import hsc.pipe.tasks.qaHscSuprimeCamTask as qaHscSuprimeCamIsrTask
+import hsc.pipe.tasks.qaSuprimeCamIsrTask as qaSuprimeCamIsrTask
 import hsc.pipe.tasks.calibrate as hscCalibrate
 import hsc.pipe.tasks.hscDc2 as hscDc2
 
 ##== FH added for QA output
-import hsc.onsite.qa.measSeeingQa as QaSeeing
+import hsc.onsite.qa.measSeeingQa as qaSeeing
 
 #== FH changed for QA output
-class QaFlatness(pexConfig.Config):
-    meshX = pexConfig.Field(
-        dtype = int,
-        doc = 'Mesh size in X (pix) to calculate count statistics',
-        default = 256,
-        )
-    meshY = pexConfig.Field(
-        dtype = int,
-        doc = 'Mesh size in Y (pix) to calculate count statistics',
-        default = 256,
-        )
-    doClip = pexConfig.Field(
-        dtype = bool,
-        doc = 'Do we clip outliers in calculate count statistics?',
-        default = True,
-        )
-    clipSigma = pexConfig.Field(
-        dtype = float,
-        doc = 'How many sigma is used to clip outliers in calculate count statistics?',
-        default = 3.0,
-        )
-    nIter = pexConfig.Field(
-        dtype = int, 
-        doc = 'How many times do we iterate clipping outliers in calculate count statistics?',
-        default = 3,
-        )
 
 #class QaWriteFits(pexConfig):
 class QaConfig(pexConfig.Config):
-    seeing = pexConfig.ConfigField(dtype=QaSeeing.QaSeeingConfig, doc="Qa.measSeeing")  
-    flatness = pexConfig.ConfigField(dtype=QaFlatness, doc="Qa.flatness")
-    doWriteOssImage = pexConfig.Field(
-        dtype = bool,
-        doc = 'Do we write overscan-subtracted image FITS?',
-        default = True,
-        )
-    doWriteFltImage = pexConfig.Field(
-        dtype = bool,
-        doc = 'Do we write flatfielded image FITS?',
-        default = True,
-        )
-    doDumpSnapshot = pexConfig.Field(
-        dtype=bool,
-        doc="Do we dump snapshot files?",
-        default=True
-        )
+    seeing = pexConfig.ConfigField(dtype=qaSeeing.QaSeeingConfig, doc="Qa.measSeeing")  
 
 class SubaruProcessCcdConfig(ptProcessCcd.ProcessCcdConfig):
     calibrate = pexConfig.ConfigField(dtype=hscCalibrate.HscCalibrateConfig, doc="Calibration")
-    qa = pexConfig.ConfigField(dtype=QaConfig, doc="Qa configuration")
+    isr = pexConfig.ConfigField(dtype=qaSuprimeCamIsrTask.QaIsrTaskConfig, doc="Config for Isr with Qa tasks")
+    qa = pexConfig.ConfigField(dtype=QaConfig, doc="Config for Qa (outside isr) tasks")
 
 class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
     """Subaru version of ProcessCcdTask, with method to write outputs
     after producing a new multi-frame WCS.
     """
     ConfigClass = SubaruProcessCcdConfig
-    
+
     def write(self, butler, dataId, struct, wcs=None):
         if wcs is None:
             wcs = struct.exposure.getWcs()
@@ -106,8 +65,9 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
         pipeBase.Task.__init__(self, **kwargs)
 ## FH changed for QA outputs
 ##        self.makeSubtask("isr", hscSuprimeCam.SuprimeCamIsrTask)
-        self.makeSubtask("isr", qaHscSuprimeCamIsrTask.qaSuprimeCamIsrTask)
-        self.makeSubtask("calibrate", hscCalibrate.HscCalibrateTask)
+##        self.makeSubtask("calibrate", hscCalibrate.HscCalibrateTask)
+        self.makeSubtask("isr", qaSuprimeCamIsrTask.QaSuprimeCamIsrTask)#, config=SubaruProcessCcdConfig())
+        self.makeSubtask("calibrate", hscCalibrate.HscCalibrateTask) #, config=self.config)
         self.schema = afwTable.SourceTable.makeMinimalSchema()
         self.algMetadata = dafBase.PropertyList()
         if self.config.doDetection:
@@ -184,15 +144,20 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
         if self.config.doWriteCalibrate:
             sensorRef.put(exposure, 'calexp')
 
-            
         ##== FH added this part for QA output
         ## debug: QaSeeing.measureSeeingQaTest(exposure, self.config)
-        fwhmRobust, ellRobust, ellPaRobust, catalogPsfLike, catalogPsfLikeRobust = QaSeeing.measureSeeingQa(exposure, sources, self.config, debugFlag=False, plotFlag=True, plotbasedir=None, butler=butler, log=self.log)
+        fwhmRobust, ellRobust, ellPaRobust, catalogPsfLike, catalogPsfLikeRobust = qaSeeing.measureSeeingQa(exposure, sources, self.config, debugFlag=False, plotFlag=True, plotbasedir=None, butler=butler, log=self.log)
 
         self.log.log(self.log.INFO, "QA seeing: fwhm: %f (pix)" % fwhmRobust)
         self.log.log(self.log.INFO, "QA seeing: ell (based on 2nd moments): %f" % ellRobust)
         self.log.log(self.log.INFO, "QA seeing: ellPa (in CCDCoords based on 2nd moments): %f (deg)" % ellRobust)
         self.log.log(self.log.INFO, "QA seeing: final Nsources for seeing: %d" % len(catalogPsfLikeRobust))        
+
+        # this part should be done by calculating merit functions somewhere else in a polite manner.
+        metadata = exposure.getMetadata()
+        metadata.set('FLAG_AUTO', 0)
+        metadata.set('FLAG_USR', 0)
+        metadata.set('FLAG_TAG', 1)
 
         return pipeBase.Struct(
             exposure = exposure,

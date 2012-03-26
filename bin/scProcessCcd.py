@@ -71,6 +71,10 @@ if __name__ == "__main__":
         sys.exit(1)
             
     task = TaskClass(config=namespace.config)
+    print '************ Here, config start **************'
+    print namespace.config
+    print '************ Here, config end **************'
+    
     for sensorRef in namespace.dataRefList:
         if namespace.doRaise:
             task.run(sensorRef)

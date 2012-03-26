@@ -30,12 +30,11 @@ import lsst.meas.algorithms as measAlg
 ## FH added for QA output
 from lsst.ip.isr.isr import Isr
 import lsst.afw.geom as afwGeom
-#import hsc.onsite.measSeeingQa as QaSeeing
-import hsc.onsite.qa.fitsthumb as QaFitsthumb
+#import hsc.onsite.measSeeingQa as qaSeeing
+import hsc.onsite.qa.fitsthumb as qaFitsthumb
 
-#import hsc.pipe.tasks.qaHscSuprimeCamIsr as qaHscSuprimeCamIsr
 
-class qaSuprimeCamIsr(Isr):
+class QaSuprimeCamIsr(Isr):
     def __init__(self, display=False):
         self.display = display
     def createPsf(self, fwhm):
@@ -255,12 +254,13 @@ class qaSuprimeCamIsr(Isr):
     
 ##== FH added for QA output
     def measureFlatnessImageQa(self, maskedImage, meshX=256, meshY=256, doClip=True, clipSigma=3, nIter=3):
+
         miSize = maskedImage.getDimensions()
         xmax = miSize[0] + int(meshX/2.) 
         ymax = miSize[1] + int(meshY/2.)
         nX = int(xmax / meshX)
         nY = int(ymax / meshY)
-        skyLevel = numpy.zeros((nX,nY))
+        skyLevels = numpy.zeros((nX,nY))
 
         # calcluating flatlevel over the subgrids 
         meshXHalf = int(meshX/2.)
@@ -288,14 +288,14 @@ class qaSuprimeCamIsr(Isr):
                 stats = afwMath.makeStatistics(miMesh, afwMath.MEDIAN|afwMath.MEAN|afwMath.MEANCLIP, sctrl)                
 
                 if doClip is True:
-                    skyLevel[i, j] = stats.getValue(afwMath.MEANCLIP)
+                    skyLevels[i, j] = stats.getValue(afwMath.MEANCLIP)
                 else:
-                    skyLevel[i, j] = stats.getValue(afwMath.MEAN)
-                #skyLevel[i, j] = stats.getValue(afwMath.MEDIAN)
+                    skyLevels[i, j] = stats.getValue(afwMath.MEAN)
+                #skyLevels[i, j] = stats.getValue(afwMath.MEDIAN)
                 #skySigma[i, j] = stats.getValue(afwMath.STDEVCLIP)                
 
-        skyMedian = numpy.median(skyLevel)
-        flatness =  (skyLevel - skyMedian) / skyMedian        
+        skyMedian = numpy.median(skyLevels)
+        flatness =  (skyLevels - skyMedian) / skyMedian        
         flatness_rms = numpy.std(flatness)
         flatness_min = flatness.min()
         flatness_max = flatness.max() 
@@ -435,7 +435,7 @@ class qaSuprimeCamIsr(Isr):
         """
         writing out exposure to a snapshot file named outfile in the given image format and size.  
         """
-        QaFitsthumb.createFitsThumb(exposure.getMaskedImage().getImage(), outfile, format, width, height, True)
+        qaFitsthumb.createFitsThumb(exposure.getMaskedImage().getImage(), outfile, format, width, height, True)
         
 
     def fringeCorrection(self, maskedImage, fringe):
