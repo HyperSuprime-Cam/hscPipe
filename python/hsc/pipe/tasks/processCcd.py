@@ -112,6 +112,7 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
                     sensorRef.put(calib.apCorr, 'apCorr')
                 if calib.matches is not None:
                     normalizedMatches = afwTable.packMatches(calib.matches)
+                    print '*** len(normalizedMatches):',len(normalizedMatches)
                     normalizedMatches.table.setMetadata(calib.matchMeta)
                     sensorRef.put(normalizedMatches, 'icMatch')
         else:
