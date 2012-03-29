@@ -18,9 +18,12 @@ import lsst.pex.logging as pexLog
 import lsst.afw.table as afwTable
 
 import numpy
+# this order is necessary to avoid X connection from this script
 import matplotlib
-matplotlib.use('Agg') # this is necessary to avoid X connection from this script
+matplotlib.use('Agg') 
 import matplotlib.pyplot as plt
+### plt.switch_backend('Agg') # experimental option to work around unknown conflict in the Agg backend 
+### Be sure that other python modules do not call matplotlib.pyplot with TkAgg or non-Agg backend before this module.
 
 
 class QaSeeingConfig(pexConfig.Config):
