@@ -56,7 +56,7 @@ def ProcessExposure(instrument, rerun, frame):
 
     # Together: global WCS solution
     if comm.Get_rank() == 0:
-        wcsList = pbasf.SafeCall(globalWcs, instrument, matchLists) if False else None # XXX solvetansip disabled due to memory problems
+        wcsList = pbasf.SafeCall(globalWcs, instrument, matchLists)
         if not wcsList:
             sys.stderr.write("WARNING: Global astrometric solution failed!\n")
             wcsList = [None] * len(dataIdList)
@@ -139,7 +139,7 @@ def globalWcs(instrument, matchLists):
                    for m in ml ] for ml in matchLists]
     
     wcs = doTansip.doTansip(matchLists, policy=policy, camera=mapper.camera)
-    return tansip.getwcsList(wcs)
+    return doTansip.getwcsList(wcs)
 
 
 if __name__ == "__main__":

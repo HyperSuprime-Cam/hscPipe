@@ -1,5 +1,5 @@
+setupRequired(hscPipeBase)
 setupRequired(pipe_tasks)
-setupRequired(obs_subaru)
 setupRequired(hscAstrom)
 
 setupOptional(pbasf2)

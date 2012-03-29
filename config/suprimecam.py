@@ -44,8 +44,8 @@ root.isr.qa.flatness.meshY = 256
 root.isr.qa.flatness.doClip = True
 root.isr.qa.flatness.clipSigma = 3.0
 root.isr.qa.flatness.nIter = 3
-root.isr.qa.doWriteImage.doWriteOssImage = False # "Do we write out overscan-subtracted image?"
-root.isr.qa.doWriteImage.doWriteFltImage = False # "Do we write out flatfielded image?"
+root.isr.qa.doWriteImage.doWriteOssImage = True # "Do we write out overscan-subtracted image?"
+root.isr.qa.doWriteImage.doWriteFltImage = True # "Do we write out flatfielded image?"
 #root.isr.qa.doWriteImage.doWriteSsbImage = True # "Do we write out flatfielded & sky-subtracted image?"
-root.isr.qa.doWriteImage.doDumpSnapshot = False  # "Do we dump snapshot figures of images?"
+root.isr.qa.doWriteImage.doDumpSnapshot = True  # "Do we dump snapshot figures of images?"
     

@@ -128,7 +128,11 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
                 exposure.setPsf(sensorRef.get('psf'))
             table = afwTable.SourceTable.make(self.schema)
             table.setMetadata(self.algMetadata)
-            sources = self.detection.makeSourceCatalog(table, exposure)
+            ##== FH changed below in hscPipe 1.3.0 update
+            #sources = self.detection.makeSourceCatalog(table, exposure)
+            detRet = self.detection.makeSourceCatalog(table, exposure)
+            sources = detRet.sources
+
         else:
             sources = None
 

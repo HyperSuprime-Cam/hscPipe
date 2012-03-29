@@ -33,6 +33,8 @@ import lsst.afw.table as afwTable
 from lsst.meas.photocal.PhotometricMagnitude import PhotometricMagnitude
 
 try:
+#    import matplotlib 
+#    matplotlib.use('Agg')
     import matplotlib.pyplot as pyplot
 except ImportError:
     pyplot = None

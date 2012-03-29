@@ -6,7 +6,7 @@ import lsst.pipe.tasks.calibrate as ptCalibrate
 import lsst.meas.algorithms as measAlg
 import lsst.afw.table as afwTable
 import lsst.daf.base as dafBase
-import lsst.meas.photocal as photocal
+###import lsst.meas.photocal as photocal
 from lsst.pipe.tasks.repair import RepairTask
 from lsst.pipe.tasks.measurePsf import MeasurePsfTask
 import hsc.pipe.tasks.astrometry as hscAstrom
@@ -67,7 +67,8 @@ class HscCalibrateTask(ptCalibrate.CalibrateTask):
         
         table = afwTable.SourceTable.make(self.schema) # TODO: custom IdFactory for globally unique IDs
         table.setMetadata(self.algMetadata)
-        sources = self.detection.makeSourceCatalog(table, exposure)
+        detRet = self.detection.makeSourceCatalog(table, exposure)
+        sources = detRet.sources
 
         if self.config.doPsf:
             self.initialMeasurement.measure(exposure, sources)
@@ -116,7 +117,7 @@ class HscCalibrateTask(ptCalibrate.CalibrateTask):
             assert(matches is not None)
             photocalRet = self.photocal.run(matches)
             zp = photocalRet.photocal
-            self.log.log(self.log.INFO, "QA photocal: Photometric zero-point: %f" % zp.getMag(1.0))
+            self.log.log(self.log.INFO, "Photometric zero-point: %f" % zp.getMag(1.0))
             exposure.getCalib().setFluxMag0(zp.getFlux(0))
 
             ##== FH: added for QA output
@@ -127,7 +128,10 @@ class HscCalibrateTask(ptCalibrate.CalibrateTask):
             calib.setFluxMag0(zp.getFlux(0))
             exptime = calib.getExptime()
             self.log.log(self.log.INFO, "QA photocal: exptime: %f (sec)" % exptime)
-
+            self.log.log(self.log.INFO, "QA photocal: magzero: %f" % magZero)
+            self.log.log(self.log.INFO, "QA photocal: magzeroRms: %f" % magSigma)
+            self.log.log(self.log.INFO, "QA photocal: magzeroNref: %d" % nRef)                        
+            
             magZero = magZero - 2.5 * math.log10(exptime) # convert to (mag/sec/adu)
             metadata = exposure.getMetadata()
             metadata.set('MAGZERO', magZero)
@@ -147,3 +151,4 @@ class HscCalibrateTask(ptCalibrate.CalibrateTask):
             matches = matches,
             matchMeta = matchMeta,
         )
+
