@@ -11,8 +11,11 @@ import hsc.pipe.tasks.detrends as hscDetrends
 
 
 
-def ProcessDetrends(instrument, rerun, detrend, frameList, outName):
+def processDetrends(instrument, rerun, detrend, frameList, outName=None):
     comm = mpi.COMM_WORLD
+
+    if outName is None:
+        outName = "detrend-%s-\%d.fits" % rerun
 
     butler = hscCamera.getButler(instrument, rerun)
     numCcds = hscCamera.getNumCcds(instrument)
@@ -86,4 +89,14 @@ class Worker(object):
 
 
 if __name__ == "__main__":
-    XXXX parse arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-i", "--instrument", type=str, required=True, help="Instrument name")
+    parser.add_argument("-r", "--rerun", type=str, required=True, help="Rerun name")
+    parser.add_argument("-d", "--detrend", type=str, choices=["bias", "dark", "flat", "fringe", "mask"],
+                        help="Detrend type")
+    parser.add_argument("-o", "--out", type=str, help="Pattern for output name, with \%d for ccd number")
+    parser.add_argument("frames", type=int, nargs="+", help="Frames to combine")
+
+    args = parser.parse_args()
+
+    processDetrends(args.instrument, args.rerun, args.detrend, args.frames, args.out)
