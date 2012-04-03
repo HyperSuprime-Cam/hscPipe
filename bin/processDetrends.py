@@ -65,14 +65,9 @@ class Worker(object):
         results = []
         for frame in self.frameList:
             result = self.processSingle(frame, ccd)
-            if self.detrend != "mask":
-                # Save exposure for combination
-                dataRef.put(result.exposure, "calexp")
-                del result.exposure
-            else:
+            if self.detrend == "mask":
                 results.append(result)
-
-            if self.detrend == "flat":
+            elif self.detrend == "flat":
                 results.append(result.background)
 
         if self.detrend == "flat":
@@ -93,6 +88,11 @@ class Worker(object):
         except Exception, e:
             sys.stderr.write("Failed to process frame %d ccd %d: %s\n" % (frame, ccd, e))
             raise
+
+        if self.detrend != "mask":
+            # Save exposure for combination
+            dataRef.put(result.exposure, "calexp")
+            del result.exposure
 
         return result
 
