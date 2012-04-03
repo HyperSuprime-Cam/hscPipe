@@ -34,12 +34,16 @@ def processDetrends(instrument, rerun, detrend, frameList, outName=None):
     worker = Worker(butler, config, detrend, frameList, outName)
     backgrounds = pbasf.ScatterJob(comm, worker.process, ccdList, root=0)
 
-    # Together: 
+    if detrend.lower() != "flat":
+        # All done!
+        return
+
+    # Together: calculate scalings
     if comm.Get_rank() == 0:
-        scales = pbasf.SafeCall(worker.scales, backgrounds)
+        workList = pbasf.SafeCall(worker.scales, backgrounds)
 
     # Scatter result: combine
-    pbasf.QueryToRoot(comm, worker.combine, lambda ccd: scales[ccd], ccdList, root=0)
+    pbasf.ScatterJob(comm, worker.combineFlat, workList, root=0)
 
 
 class Worker(object):
@@ -58,49 +62,62 @@ class Worker(object):
         return dataRefList[0]
 
     def process(self, ccd):
-        backgrounds = []
+        results = []
         for frame in self.frameList:
-            dataRef = self._getDataRef(frame, ccd)
-            
-            try:
-                result = self.task.process.run(self.detrend, dataRef)
-            except Exception, e:
-                sys.stderr.write("Failed to process frame %d ccd %d: %s\n" % (frame, ccd, e))
-                raise
-
-            if self.detrend == "mask":
-                self.maskData.append(result)
-            else:
+            result = self.processSingle(frame, ccd)
+            if self.detrend != "mask":
+                # Save exposure for combination
                 dataRef.put(result.exposure, "calexp")
+                del result.exposure
+            else:
+                results.append(result)
 
-            backgrounds.append(result.background)
+            if self.detrend == "flat":
+                results.append(result.background)
 
-        return backgrounds
+        if self.detrend == "flat":
+            # CCDs are inter-dependent: need to ensure consistent scaling
+            return results
+
+        # All CCDs are independent, so we can combine now
+        if self.detrend == "mask":
+            self.mask(ccd, results)
+        else:
+            self.combine(ccd)
+
+    def processSingle(self, frame, ccd):
+        dataRef = self._getDataRef(frame, ccd)
+
+        try:
+            result = self.task.process.run(self.detrend, dataRef)
+        except Exception, e:
+            sys.stderr.write("Failed to process frame %d ccd %d: %s\n" % (frame, ccd, e))
+            raise
+
+        return result
 
     def scales(self, backgrounds):
-        if self.detrend == "flat":
-            import numpy
-            result = self.task.scale.run(numpy.array(backgrounds))
-            ccdScales = result.components
-            expScales = result.exposures
-        else:
-            ccdScales = [None] * len(backgrounds)
-            expScales = None
-        return [Struct(ccdScale=scale, expScales=expScales) for scale in ccdScales]
+        assert self.detrend == "flat"
+        import numpy
+        result = self.task.scale.run(numpy.array(backgrounds))
+        ccdScales = result.components
+        expScales = result.exposures
+        return [Struct(ccd=ccd, ccdScale=scale, expScales=expScales) for ccd, scale in enumerate(ccdScales)]
 
-    def combine(self, ccd, scales):
-        expScales = scales.expScales
-        ccdScale = scales.ccdScale
+    def combineFlat(self, work):
+        self.combine(work.ccd, expScales=work.expScales, ccdScale=work.ccdScale)
+
+    def combine(self, ccd, expScales=None, ccdScale=None):
         dataRefList = [self._getDataRef(frame, ccd) for frame in self.frameList]
-
-        if self.detrend == "mask":
-            footprints = [data.footprintSets for data in self.maskData]
-            dimensions = [data.dim for data in self.maskData]
-            combined = self.task.mask.run(footprints, dimensions)
-        else:
-            combined = self.task.combine.run(dataRefList, expScales=expScales, finalScale=ccdScale)
-            
+        combined = self.task.combine.run(dataRefList, expScales=expScales, finalScale=ccdScale)
         combined.writeFits(self.outName % ccd)
+
+    def mask(self, ccd, processResults):
+        footprints = [data.footprintSets for data in processResults]
+        dimensions = [data.dim for data in processResults]
+        combined = self.task.mask.run(footprints, dimensions)
+        combined.writeFits(self.outName % ccd)
+
 
 
 if __name__ == "__main__":
@@ -108,7 +125,7 @@ if __name__ == "__main__":
     parser.add_argument("-i", "--instrument", type=str, required=True, help="Instrument name")
     parser.add_argument("-r", "--rerun", type=str, required=True, help="Rerun name")
     parser.add_argument("-d", "--detrend", type=str, choices=["bias", "dark", "flat", "fringe", "mask"],
-                        help="Detrend type")
+                        help="Detrend type", required=True)
     parser.add_argument("-o", "--out", type=str, help="Pattern for output name, with %%d for ccd number")
     parser.add_argument("frames", type=int, nargs="+", help="Frames to combine")
 
