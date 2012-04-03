@@ -39,8 +39,7 @@ def processDetrends(instrument, rerun, detrend, frameList, outName=None):
         return
 
     # Together: calculate scalings
-    if comm.Get_rank() == 0:
-        workList = pbasf.SafeCall(worker.scales, backgrounds)
+    workList = pbasf.SafeCall(worker.scales, backgrounds) if comm.Get_rank() == 0 else None
 
     # Scatter result: combine
     pbasf.ScatterJob(comm, worker.combineFlat, workList, root=0)
