@@ -20,7 +20,8 @@ if __name__ == "__main__":
     pbs, args = parser.parse_args()
     assert args.field and args.filter, "Field and filter not provided"
 
-    command = "python %s/bin/stackExposures.py --instrument=%s --rerun=%s" % (args.instrument, args.rerun)
+    command = "python %s/bin/stackExposures.py" % os.environ["HSCPIPE_DIR"]
+    command += " --instrument=%s --rerun=%s" % (args.instrument, args.rerun)
     command += " --program=%s --filter=%s --workDirRoot=%s" % (args.field, args.filter, args.output)
     if args.doMatchPsf:
         command += " --doMatchPsf"
