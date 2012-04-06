@@ -23,6 +23,7 @@ class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
     after producing a new multi-frame WCS.
     """
     ConfigClass = SubaruProcessCcdConfig
+    _DefaultName = "processCcd"
 
     def __init__(self, *args, **kwargs):
         super(SubaruProcessCcdTask, self).__init__(*args, **kwargs)
