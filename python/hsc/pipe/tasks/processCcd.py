@@ -22,7 +22,8 @@ import hsc.pipe.tasks.qaCalibrate as qaHscCalibrate
 
 #class QaWriteFits(pexConfig):
 class QaConfig(pexConfig.Config):
-    seeing = pexConfig.ConfigField(dtype=qaSeeing.QaSeeingConfig, doc="Qa.measSeeing")  
+    seeing = pexConfig.ConfigField(dtype=qaSeeing.QaSeeingConfig, doc="Qa.measSeeing")
+    camera = pexConfig.Field(dtype=str, doc="camera type [hsc] or [suprimecam]", default='suprimecam') # would be better to have another way to get camera
 
 class SubaruProcessCcdConfig(ptProcessCcd.ProcessCcdConfig):
     calibrate = pexConfig.ConfigField(dtype=qaHscCalibrate.HscCalibrateConfig, doc="Calibration")
@@ -223,6 +224,7 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
 
         ##== FH added this part for QA output by using the reduced exposure and final sources
         ## debug: QaSeeing.measureSeeingQaTest(exposure, self.config)
+        butler = sensorRef.butlerSubset.butler            
         fwhmRobust, ellRobust, ellPaRobust, catalogPsfLike, catalogPsfLikeRobust = qaSeeing.measureSeeingQa(exposure, sources, self.config, debugFlag=False, plotFlag=True, plotbasedir=None, butler=butler, log=self.log)
 
         self.log.log(self.log.INFO, "QA seeing: fwhm: %f (pix)" % fwhmRobust)
