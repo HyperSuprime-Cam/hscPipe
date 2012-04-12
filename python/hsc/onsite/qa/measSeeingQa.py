@@ -22,7 +22,7 @@ import numpy
 import matplotlib
 matplotlib.use('Agg') 
 import matplotlib.pyplot as plt
-### plt.switch_backend('Agg') # experimental option to work around unknown conflict in the Agg backend 
+plt.switch_backend('Agg') # experimental option to work around unknown conflict in the Agg backend 
 ### Be sure that other python modules do not call matplotlib.pyplot with TkAgg or non-Agg backend before this module.
 
 
@@ -66,8 +66,13 @@ class QaSeeingConfig(pexConfig.Config):
         dtype = float,
         doc = 'How many pixels around the peak are used for final seeing estimation as mode',
         default = 1.5,
+        ) 
+    camera = pexConfig.Field(
+        dtype = str, 
+        doc = 'camera same as in root.camera', 
+        default = 'hsc',
         )
-    
+   
 def measureSeeingQaTest(exposure, config):
     print '**** measSeeing: qa.seeing.fwhmIni: ', config.qa.seeing.fwhmIni
     print '**** measSeeing: qa.seeing.fwhmMin: ', config.qa.seeing.fwhmMin
@@ -170,7 +175,7 @@ def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, p
         magListAll.append(mag)
         fwhmListAll.append(fwhm)
         
-        if True:
+        if True: # definition by SExtractor
             Val1 = 0.5*(Ixx+Iyy)
             Ixx_Iyy = Ixx-Iyy
             Val2 = 0.25*Ixx_Iyy*Ixx_Iyy + Ixy*Ixy
@@ -182,11 +187,17 @@ def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, p
             else:
                 ell = None
                 ellPa = None
-        else:
+        else: # definition by Kaiser
+            # e=sqrt(e1^2+e2^2) where e1=(Ixx-Iyy)/(Ixx+Iyy), e2=2Ixy/(Ixx+Iy)
+            # SExtractor's B/A=sqrt((1-e)/(1+e)), ell=1-B/A
             e1 = (Ixx-Iyy)/(Ixx+Iyy)
-            e2 = 2.0*Ixy/(Ixy+Iyy)
-            ell = math.sqrt(e1*e1 + e2*e2)
-            ellPa = 0.5 * math.degrees(math.atan(2*Ixy / math.fabs(Ixx-Iyy)))            
+            if e1 > 0: 
+                e2 = 2.0*Ixy/(Ixx+Iyy)
+                ell = math.sqrt(e1*e1 + e2*e2)
+                ellPa = 0.5 * math.degrees(math.atan(2*Ixy / math.fabs(Ixx-Iyy)))            
+            else:
+                ell = 0
+                ellPa = 0
 
         ellListAll.append( ell )
         ellPaListAll.append( ellPa )
@@ -245,7 +256,7 @@ def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, p
 
     # making debug plots
     if plotFlag is True: 
-        log.log(log.INFO, "QaSeeing: Enetered ploting")
+        log.log(log.INFO, "QaSeeing: Entered plotting")
         # getting visitId and ccdId. here, we reconstruct those two values from FrameId.
         # maybe we should consider a better way.
         frameId = exposure.getMetadata().get('FRAMEID')
@@ -475,16 +486,20 @@ def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, p
 
 def getVisitIdAndCcdIdFromFrameId(frameId, config):
     span = re.search('[0-9]*[0-9]', frameId).span() # extracting a numeric part
-    if True:
+    if False:
         camera = 'suprimecam'
     else:
-        camera = config['camera']
-    if camera.lower() in ("hsc"):
+        #camera = config['camera']
+        #camera = config.camera
+        camera = config.qa.camera # I need know here what the instrument is or need any other way to get visitId and ccdId
+    if camera.lower() in ("hsc", "hscsim"):
         visitId = int(frameId[span[0]:span[1]-3])
         ccdId = int(frameId[span[1]-3:])
+        print '*** measSeeingQa:getVisitIdAndCcdIdFromFrameId - Hsc camera: %s visitId: %d  ccdId:  %d' % (camera, visitId, ccdId)        
     elif camera.lower() in ("suprimecam", "suprime-cam", "sc", "suprimecam-mit", "sc-mit", "scmit", "suprimecam-old", "sc-old", "scold"):
         visitId = int(frameId[span[0]:span[1]-1])
         ccdId = int(frameId[-1])
+        print '*** measSeeingQa:getVisitIdAndCcdIdFromFrameId - Sc camera: %s visitId: %d  ccdId:  %d' % (camera, visitId, ccdId)
     else:
         print 'Instrument specified is invalid.'
 
