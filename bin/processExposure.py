@@ -56,6 +56,7 @@ def ProcessExposure(instrument, rerun, frame):
 
     # Together: global WCS solution
     if comm.Get_rank() == 0:
+        wcsList = None
         wcsList = pbasf.SafeCall(globalWcs, instrument, matchLists)
         if not wcsList:
             sys.stderr.write("WARNING: Global astrometric solution failed!\n")

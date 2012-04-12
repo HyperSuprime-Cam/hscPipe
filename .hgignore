@@ -31,7 +31,7 @@ eups*
 *.a
 *.OU
 pbs-job-*
-python/hsc/dc2/version.py
+python/hsc/pipe/tasks/version.py
 *.cfgc
 
 syntax: regexp
