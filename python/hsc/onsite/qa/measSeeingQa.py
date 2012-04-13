@@ -227,11 +227,11 @@ def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, p
     magCumHist = list(magHist)
     magCumHist[0] = (magCumHist[0].cumsum())
     #print '------ mag cum hist ------'
-    log.log(log.INFO, "QaSeeing: calculating cumurative n(m)")    
+    log.log(log.INFO, "QaSeeing: calculating cumulative n(m)")    
 #    print magCumHist
     magCumHist[0] = magCumHist[0] / float(sumAll)
     #print '------ normalized mag cum hist ------'
-    log.log(log.INFO, "QaSeeing: normalizing cumurative n(m) by the sumAll")        
+    log.log(log.INFO, "QaSeeing: normalizing cumulative n(m) by the sumAll")        
 #    print magCumHist
 
     # -- Estimating mag limit based no the cumlative mag histogram
