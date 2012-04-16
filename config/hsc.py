@@ -19,6 +19,3 @@ root.calibrate.measurePsf.psfDeterminer["pca"].kernelSizeMin = 25
 # Final photometry
 root.measurement.slots.apFlux = "flux.sinc"
 
-# Astrometry
-import hsc.pipe.tasks.distortion
-root.calibrate.astrometry.distortion.name = "hsc"

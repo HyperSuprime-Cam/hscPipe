@@ -35,7 +35,7 @@ def ProcessExposure(instrument, rerun, frame):
     comm = mpi.COMM_WORLD
 
     if instrument.lower() in ("hsc"):
-        ProcessCcdTask = hscProcessCcd.HscDc2ProcessCcdTask
+        ProcessCcdTask = hscProcessCcd.HscProcessCcdTask
         overrides = "hsc.py"
     elif instrument == "suprimecam":
         ProcessCcdTask = hscProcessCcd.SuprimeCamProcessCcdTask
