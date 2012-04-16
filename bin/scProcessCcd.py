@@ -54,6 +54,7 @@ if __name__ == "__main__":
     except TypeError:
         parser = ArgumentParser(conflict_handler='resolve') # old style
 
+    parser.add_argument('--dumpconfig', action="store_true", help="Dump the configuration to stdout and exit")
     parser.add_argument('--output', type=str, dest="outPath", default=None, help="output root directory",
                         action=OutputAction)
     parser.add_argument('--rerun', type=str, default=None, help='Desired rerun (overrides --output)',
@@ -62,8 +63,14 @@ if __name__ == "__main__":
     try:
         namespace = parser.parse_args(config=TaskClass.ConfigClass())
     except Exception, e:
+        if "--doraise" in sys.argv:
+            raise
         print >> sys.stderr, e
         sys.exit(1)
+
+    if namespace.dumpconfig:
+        namespace.config._save(sys.stdout)
+        sys.exit(0)    
             
     task = TaskClass(config=namespace.config)
     for sensorRef in namespace.dataRefList:
