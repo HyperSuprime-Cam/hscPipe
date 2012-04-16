@@ -14,13 +14,14 @@ if __name__ == "__main__":
     parser.add_argument("-r", "--rerun", dest="rerun", help="Rerun name", default=os.getlogin())
     parser.add_argument("--wcs", dest="wcs", help="WCS for stack")
     parser.add_argument("-m", "--doMatchPsf", default=False, action='store_true',
-                        help="match PSFs before stacking (default=%default)")
+                        help="match PSFs before stacking?")
     parser.add_argument("field", help="Field name in butler for stack")
     parser.add_argument("filter", help="Filter name for stack")
     pbs, args = parser.parse_args()
     assert args.field and args.filter, "Field and filter not provided"
 
-    command = "python %s/bin/stackExposures.py --instrument=%s --rerun=%s" % (args.instrument, args.rerun)
+    command = "python %s/bin/stackExposures.py" % os.environ["HSCPIPE_DIR"]
+    command += " --instrument=%s --rerun=%s" % (args.instrument, args.rerun)
     command += " --program=%s --filter=%s --workDirRoot=%s" % (args.field, args.filter, args.output)
     if args.doMatchPsf:
         command += " --doMatchPsf"

@@ -158,7 +158,7 @@ def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None,
     
     if rank == 0:
         # phase 4
-        pbasf.SafeCall(phase4, butler, instrument, rerun, stackConfig)
+        pbasf.SafeCall(phase4, butler, stackConfig)
 
 def phase1(butler, lFrameId, lCcdId, workDirRoot, mosaicConfig):
     if True:
