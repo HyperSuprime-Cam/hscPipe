@@ -229,7 +229,7 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
 
         self.log.log(self.log.INFO, "QA seeing: fwhm: %f (pix)" % fwhmRobust)
         self.log.log(self.log.INFO, "QA seeing: ell (based on 2nd moments): %f" % ellRobust)
-        self.log.log(self.log.INFO, "QA seeing: ellPa (in CCDCoords based on 2nd moments): %f (deg)" % ellRobust)
+        self.log.log(self.log.INFO, "QA seeing: ellPa (in CCDCoords based on 2nd moments): %f (deg)" % ellPaRobust)
         self.log.log(self.log.INFO, "QA seeing: final Nsources for seeing: %d" % len(catalogPsfLikeRobust))        
 
         # this part should be done by calculating merit functions somewhere else in a polite manner.
