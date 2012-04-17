@@ -41,7 +41,7 @@ class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
         super(SubaruProcessCcdTask, self).__init__(*args, **kwargs)
         self.makeSubtask("isr", hscIsr.HscIsrTask)
         self.makeSubtask("calibrate", hscCalibrate.HscCalibrateTask)
-        self.makeSubtask("photometry", PhotometryTask)
+        self.makeSubtask("photometry", PhotometryTask) # this class seems to be not exist in this script, yet
 
     # The 'run' method is copied wholesale from lsst.pipe.tasks.processCcd.ProcessCcdTask.run, with minor
     # modifications to change when the CCD assembly is performed.
@@ -141,10 +141,11 @@ class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
 class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
     
     def __init__(self, **kwargs):
-        pipeBase.Task.__init__(self, **kwargs)
-## FH changed for QA outputs
-##        self.makeSubtask("isr", hscSuprimeCam.SuprimeCamIsrTask)
-##        self.makeSubtask("calibrate", hscCalibrate.HscCalibrateTask)
+        ## I would not like to call IsrTask.__init__() where methodList is created
+        pipeBase.Task.__init__(self, **kwargs) 
+        ## FH changed for QA outputs
+        ##        self.makeSubtask("isr", hscSuprimeCam.SuprimeCamIsrTask)
+        ##        self.makeSubtask("calibrate", hscCalibrate.HscCalibrateTask)
         self.makeSubtask("isr", qaSuprimeCamIsrTask.QaSuprimeCamIsrTask)#, config=SubaruProcessCcdConfig())
         self.makeSubtask("calibrate", qaHscCalibrate.HscCalibrateTask) #, config=self.config)        
         self.schema = afwTable.SourceTable.makeMinimalSchema()
@@ -155,23 +156,24 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
             self.makeSubtask("measurement", measAlg.SourceMeasurementTask,
                              schema=self.schema, algMetadata=self.algMetadata)
 
-## FH added run() function  for QA output
-## derived from & overriding hsc.pipe.tasks.processCcd.ProcessCcdTask(pipeBase.Task).run()
+    ## FH added the below run() function for QA output
+    ## This is alomst same as in the SubaruProcessCcdTask.run() but 
+    ## overriding it with minor modifications to change arguments of
+    ## self.isr.run() to accept butler and dataId.
     @pipeBase.timeMethod
     def run(self, sensorRef):
-
         self.log.log(self.log.INFO, "Processing %s" % (sensorRef.dataId))
         if self.config.doIsr:
             butler = sensorRef.butlerSubset.butler
             calibSet = self.isr.makeCalibDict(butler, sensorRef.dataId)
-            rawExposure = sensorRef.get("raw")
-
+            exposure = sensorRef.get("raw")
             dataId = sensorRef.dataId
-##            isrRes = self.isr.run(rawExposure, calibSet)
-            isrRes = self.isr.run(rawExposure, calibSet, butler, dataId)            
-            self.display("isr", exposure=isrRes.postIsrExposure, pause=True)
-            exposure = self.isr.doCcdAssembly([isrRes.postIsrExposure])
-            self.display("ccdAssembly", exposure=exposure)
+            ##isrRes = self.isr.run(rawExposure, calibSet)
+            ##isrRes = self.isr.run(rawExposure, calibSet, butler, dataId)            
+            isrRes = self.isr.run(exposure, calibSet, butler, dataId)            
+            ##exposure = self.isr.doCcdAssembly([isrRes.postIsrExposure])
+            exposure = isrRes.postIsrExposure
+            self.display("isr", exposure=exposure, pause=True)
             if self.config.doWriteIsr:
                 sensorRef.put(exposure, 'postISRCCD')
         else:
@@ -205,11 +207,8 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
                 exposure.setPsf(sensorRef.get('psf'))
             table = afwTable.SourceTable.make(self.schema)
             table.setMetadata(self.algMetadata)
-            ##== FH changed below in hscPipe 1.3.0 update
-            #sources = self.detection.makeSourceCatalog(table, exposure)
             detRet = self.detection.makeSourceCatalog(table, exposure)
             sources = detRet.sources
-
         else:
             sources = None
 
@@ -238,7 +237,6 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
         metadata.set('FLAG_USR', 0)
         metadata.set('FLAG_TAG', 1)
 
- 
         if self.config.doWriteSources:
             sensorRef.put(sources, 'src')
 
@@ -256,8 +254,8 @@ class HscProcessCcdTask(SubaruProcessCcdTask):
 
     def __init__(self, **kwargs):
         pipeBase.Task.__init__(self, **kwargs)
-        self.makeSubtask("isr", HscIsrTask)
-        self.makeSubtask("calibrate", hscDc2.HscDc2CalibrateTask)
+        self.makeSubtask("isr", hscIsr.HscIsrTask)
+        self.makeSubtask("calibrate", hscCalibrate.HscCalibrateTask)
         self.schema = afwTable.SourceTable.makeMinimalSchema()
         self.algMetadata = dafBase.PropertyList()
         if self.config.doDetection:

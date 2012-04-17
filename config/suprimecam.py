@@ -49,3 +49,4 @@ root.isr.qa.doWriteImage.doWriteFltImage = True # "Do we write out flatfielded i
 #root.isr.qa.doWriteImage.doWriteSsbImage = True # "Do we write out flatfielded & sky-subtracted image?"
 root.isr.qa.doWriteImage.doDumpSnapshot = True  # "Do we dump snapshot figures of images?"
 root.qa.camera = 'hsc'
+root.isr.qa.camera = root.qa.camera
