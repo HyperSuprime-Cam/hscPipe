@@ -18,13 +18,13 @@ import lsst.pex.logging as pexLog
 import lsst.afw.table as afwTable
 
 import numpy
+
 # this order is necessary to avoid X connection from this script
 import matplotlib
 matplotlib.use('Agg') 
 import matplotlib.pyplot as plt
-plt.switch_backend('Agg') # experimental option to work around unknown conflict in the Agg backend 
+##plt.switch_backend('Agg') # experimental option to work around unknown conflict in the Agg backend 
 ### Be sure that other python modules do not call matplotlib.pyplot with TkAgg or non-Agg backend before this module.
-
 
 class QaSeeingConfig(pexConfig.Config):
     fwhmIni = pexConfig.Field(
@@ -122,10 +122,15 @@ def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, p
 
 
     # -- Filtering sources with rough min-max fwhm
+    xListAll = []
+    yListAll = []
     magListAll = []
     fwhmListAll = []
     ellListAll = []
-    ellPaListAll = []        
+    ellPaListAll = []
+    IxxListAll = []
+    IyyListAll = []
+    IxyListAll = []    
     objFlagListAll = []
     indicesSourcesFwhmRange = [] # indices of sources in acceptable fwhm range 
 
@@ -142,6 +147,8 @@ def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, p
     iGoodId = 0
     for iseq, source in enumerate(catalog):
 
+        xc = source.getX()   
+        yc = source.getY()   
         Ixx = source.getIxx() # luminosity-weighted 2nd moment of pixels
         Iyy = source.getIyy() 
         Ixy = source.getIxy()
@@ -170,11 +177,15 @@ def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, p
             # this sample is excluded
             continue
 
-        print '*** %d : Ixx: %f Iyy: %f Ixy: %f fwhm: %f flux: %f isSatur: %x' % (iseq, Ixx, Iyy, Ixy, fwhm, fluxAper, isSaturated)
         mag = -2.5*numpy.log10(fluxForSeeing)
         magListAll.append(mag)
         fwhmListAll.append(fwhm)
-        
+        xListAll.append(xc)
+        yListAll.append(yc)
+        IxxListAll.append(Ixx)
+        IyyListAll.append(Iyy)
+        IxyListAll.append(Ixy)
+
         if True: # definition by SExtractor
             Val1 = 0.5*(Ixx+Iyy)
             Ixx_Iyy = Ixx-Iyy
@@ -194,11 +205,15 @@ def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, p
             if e1 > 0: 
                 e2 = 2.0*Ixy/(Ixx+Iyy)
                 ell = math.sqrt(e1*e1 + e2*e2)
-                ellPa = 0.5 * math.degrees(math.atan(2*Ixy / math.fabs(Ixx-Iyy)))            
+                ellPa = 0.5 * math.degrees(math.atan(2*Ixy / math.fabs(Ixx-Iyy))) 
             else:
-                ell = 0
-                ellPa = 0
+                ell = None
+                ellPa = None
 
+        if ellPa is not None:
+            ellPa = 90. - ellPa ## definition of PA to be confirmed
+
+        print '*** %d : Ixx: %f Iyy: %f Ixy: %f fwhm: %f flux: %f isSatur: %x' % (iseq, Ixx, Iyy, Ixy, fwhm, fluxAper, isSaturated)
         ellListAll.append( ell )
         ellPaListAll.append( ellPa )
         #objFlagListAll.append(objFlag)
@@ -216,6 +231,12 @@ def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, p
     fwhmListAll = numpy.array(fwhmListAll)
     ellListAll = numpy.array(ellListAll)
     ellPaListAll = numpy.array(ellPaListAll)    
+    xListAll = numpy.array(xListAll)
+    yListAll = numpy.array(yListAll)    
+    IxxListAll = numpy.array(IxxListAll)    
+    IyyListAll = numpy.array(IyyListAll)    
+    IxyListAll = numpy.array(IxyListAll)    
+
     #indicesSourcesFwhmRange = numpy.array(indicesSourcesFwhmRange)
     magListFwhmRange = magListAll[indicesSourcesFwhmRange] # magList only for sources within the FWHM range
     magHist = numpy.histogram(magListFwhmRange, range=(magMinHist,magMaxHist), bins=nbinMagHist)  # n.b. magHist[1] is sorted so index=0 is brightest
@@ -319,6 +340,13 @@ def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, p
 
     magListPsfLike = magListAll[indicesSourcesPsfLike]
     fwhmListPsfLike = fwhmListAll[indicesSourcesPsfLike]
+    ellListPsfLike = ellListAll[indicesSourcesPsfLike]
+    ellPaListPsfLike = ellPaListAll[indicesSourcesPsfLike]
+    xListPsfLike = xListAll[indicesSourcesPsfLike]
+    yListPsfLike = yListAll[indicesSourcesPsfLike]
+    IxxListPsfLike = IxxListAll[indicesSourcesPsfLike]
+    IyyListPsfLike = IyyListAll[indicesSourcesPsfLike]
+    IxyListPsfLike = IxyListAll[indicesSourcesPsfLike]
     
     #print '*** indicesSourcesFwhmRange:', indicesSourcesFwhmRange
     #print '*** indicesSoucresPsfLike:',  indicesSourcesPsfLike
@@ -390,11 +418,22 @@ def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, p
         fwhmRobust = None
         ellRobust = None
         ellPaRobust = None
+        xListPsfLikeRobust = None
+        yListPsfLikeRobust =  None
+        IxxListPsfLikeRobust =  None
+        IyyListPsfLikeRobust =  None
+        IxyListPsfLikeRobust =  None
     else:
         magListPsfLikeRobust = magListAll[indicesSourcesPsfLikeRobust]
         fwhmListPsfLikeRobust = fwhmListAll[indicesSourcesPsfLikeRobust]
         ellListPsfLikeRobust = ellListAll[indicesSourcesPsfLikeRobust]
-        ellPaListPsfLikeRobust = ellPaListAll[indicesSourcesPsfLikeRobust]        
+        ellPaListPsfLikeRobust = numpy.array(ellPaListAll[indicesSourcesPsfLikeRobust])
+        xListPsfLikeRobust = xListAll[indicesSourcesPsfLikeRobust]
+        yListPsfLikeRobust = yListAll[indicesSourcesPsfLikeRobust]
+        IxxListPsfLikeRobust = IxxListAll[indicesSourcesPsfLikeRobust]
+        IyyListPsfLikeRobust = IyyListAll[indicesSourcesPsfLikeRobust]
+        IxyListPsfLikeRobust = IxyListAll[indicesSourcesPsfLikeRobust]
+        
         #print '*** fwhmListPsfLikeRobust:', fwhmListPsfLikeRobust
         log.log(log.INFO, "QaSeeing: fwhmListPsfLikeRobust: %s" % fwhmListPsfLikeRobust)
         
@@ -440,6 +479,80 @@ def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, p
         fname = qaOutputDirName + '/' + 'seeing3_'+frameId+'.png'
         plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None, format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
 
+    # making debug plots
+    if True:
+        xSize=2048
+        ySize=4177
+        facSize = 10.0 / max(xSize,ySize)  # targeting 10 inch in size
+        wFig = xSize * facSize * 1.3
+        hFig = ySize * facSize
+        fig = plt.figure(figsize=(wFig,hFig))
+        pltFwhmMap = plt.axes([0.2, 0.1, 0.7, 0.8]) # left,bottom,width,height
+        
+#        fig = plt.figure(1, figsize=(2048,4177))
+#        pltFwhmMap = fig.add_subplot(1,1,1)
+        pltFwhmMap.set_xlim(0,2048)
+        pltFwhmMap.set_ylim(0,4177)
+        pointSize = math.pi*(4*fwhmListPsfLikeRobust/2)**2. # 10pix=2arcsec fwhm = 20 point radius
+#        pltFwhmMap.plot(xListPsfLikeRobust, yListPsfLikeRobust, markersize=pointSize, marker='o', label='PSF sample')
+        pltFwhmMap.scatter(xListPsfLikeRobust, yListPsfLikeRobust, s=pointSize, marker='o', color=None, facecolor=(1,1,1,0), label='PSF sample')
+        pltFwhmMap.set_title('FWHM of PSF sources')
+        pltFwhmMap.set_xlabel('X (pix)')
+        pltFwhmMap.set_ylabel('Y (pix)')
+#        plt.draw()
+        pltFwhmMap.legend()
+#        plt.show()
+        fname = qaOutputDirName + '/' + 'fwhmmap_'+frameId+'.png'
+        plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None, format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
+        
+    if True:
+        xSize=2048
+        ySize=4177
+        facSize = 10.0 / max(xSize,ySize)  # targeting 10 inch in size
+        wFig = xSize * facSize * 1.3
+        hFig = ySize * facSize
+        fig = plt.figure(figsize=(wFig,hFig))
+        
+#        pltEllMap = fig.add_subplot(1,1,1)
+        pltEllMap = plt.axes([0.2, 0.1, 0.7, 0.8]) # left,bottom,width,height
+        pltEllMap.set_xlim(0,2048)
+        pltEllMap.set_ylim(0,4177)
+#        pointSize = math.pi*(2*fwhmListPsfLikeRobust/2)**2. # 10pix=2arcsec fwhm = 10 point radius
+        #pointSize = fwhmListPsfLikeRobust
+#        pltEllMap.plot(xListPsfLikeRobust, yListPsfLikeRobust, markersize=pointSize, marker='o', label='PSF sample')
+        #pltEllMap.scatter(xListPsfLikeRobust, yListPsfLikeRobust, s=pointSize, marker='o', label='PSF sample')
+        #pltEllMap.quiver(xListPsfLikeRobust, yListPsfLikeRobust, 10*IxxListPsfLikeRobust, 10*IyyListPsfLikeRobust, headlength=0)
+#        print '*** ellPaListPsfLikeRobust:', ellPaListPsfLikeRobust
+#        print '*** len(ellPaListPsfLikeRobust):', len(ellPaListPsfLikeRobust)
+#        for iii, xxx in enumerate(ellPaListPsfLikeRobust):
+#            print iii, xxx 
+#        for ell, ellPa in zip(ellListPsfLikeRobust, ellPaListPsfLikeRobust):
+#            print ell, ellPa
+            
+#        ellPaRadianListPsfLikeRobust = numpy.array([numpy.radians(x) for x in ellPaListPsfLikeRobust if x is not None])
+        ellX = numpy.array([ell*math.cos(numpy.radians(ellPa)) for ell, ellPa in zip(ellListPsfLikeRobust, ellPaListPsfLikeRobust) if ell is not None])
+        ellY = numpy.array([ell*math.sin(numpy.radians(ellPa)) for ell, ellPa in zip(ellListPsfLikeRobust, ellPaListPsfLikeRobust) if ell is not None])
+        pltEllMap.quiver(
+            xListPsfLikeRobust, yListPsfLikeRobust,
+#            ellListPsfLikeRobust*numpy.cos(ellPaRadianListPsfLikeRobust),
+#            ellListPsfLikeRobust*numpy.sin(ellPaRadianListPsfLikeRobust),
+            50.*ellX, 50.*ellY, 
+            headwidth=0,
+            headlength=0,
+            headaxislength=0,
+            label='PSF sample'
+            )
+        
+        pltEllMap.set_title('Ellipticity of PSF sources')
+        pltEllMap.set_xlabel('X (pix)')
+        pltEllMap.set_ylabel('Y (pix)')
+#        plt.draw()
+        pltEllMap.legend()
+#        plt.show()
+        fname = qaOutputDirName + '/' + 'ellmap_'+frameId+'.png'
+        plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None, format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
+
+        
     #print '*** fwhmRobust: %f (pix) SC: %f (arcsec) HSC: %f (arcsec)  ellRobust: %f' % (fwhmRobust, fwhmRobust*0.202, fwhmRobust*0.168, ellRobust)
 
     # preparing sourceSet which has been used for rough FWHM estimation
@@ -447,6 +560,7 @@ def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, p
     #sourceSetPsfLikeRobust = afwDetection.SourceSet()
 
     # catalogPsfLike = afwTable.Catalog.Catalog(catalogSchema)
+    ##### It would be nice if I can add measured fwhm, ellipticity, pa of each source entry here 
     catalogPsfLike = afwTable.SourceCatalog(catalogSchema)
     catalogPsfLikeRobust = afwTable.SourceCatalog(catalogSchema)
     #for i, record in enumerate(catalog):
@@ -492,7 +606,9 @@ def getVisitIdAndCcdIdFromFrameId(frameId, config):
         #camera = config['camera']
         #camera = config.camera
         camera = config.qa.camera # I need know here what the instrument is or need any other way to get visitId and ccdId
-    if camera.lower() in ("hsc", "hscsim"):
+
+    print '*** measSeeing: camera:', camera
+    if camera.lower() == "hsc" or camera.lower() == "hscsim":
         visitId = int(frameId[span[0]:span[1]-3])
         ccdId = int(frameId[span[1]-3:])
         print '*** measSeeingQa:getVisitIdAndCcdIdFromFrameId - Hsc camera: %s visitId: %d  ccdId:  %d' % (camera, visitId, ccdId)        
