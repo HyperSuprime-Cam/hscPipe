@@ -249,17 +249,19 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
             sources = sources,
         )
 
+#
+class HscProcessCcdTask(SuprimeCamProcessCcdTask):
+####class HscProcessCcdTask(SubaruProcessCcdTask):
+    pass
 
-class HscProcessCcdTask(SubaruProcessCcdTask):
-
-    def __init__(self, **kwargs):
-        pipeBase.Task.__init__(self, **kwargs)
-        self.makeSubtask("isr", hscIsr.HscIsrTask)
-        self.makeSubtask("calibrate", hscCalibrate.HscCalibrateTask)
-        self.schema = afwTable.SourceTable.makeMinimalSchema()
-        self.algMetadata = dafBase.PropertyList()
-        if self.config.doDetection:
-            self.makeSubtask("detection", measAlg.SourceDetectionTask, schema=self.schema)
-        if self.config.doMeasurement:
-            self.makeSubtask("measurement", measAlg.SourceMeasurementTask,
-                             schema=self.schema, algMetadata=self.algMetadata)
+#    def __init__(self, **kwargs):
+#        pipeBase.Task.__init__(self, **kwargs)
+#        self.makeSubtask("isr", hscIsr.HscIsrTask)
+#        self.makeSubtask("calibrate", hscCalibrate.HscCalibrateTask)
+#        self.schema = afwTable.SourceTable.makeMinimalSchema()
+#        self.algMetadata = dafBase.PropertyList()
+#        if self.config.doDetection:
+#            self.makeSubtask("detection", measAlg.SourceDetectionTask, schema=self.schema)
+#        if self.config.doMeasurement:
+#            self.makeSubtask("measurement", measAlg.SourceMeasurementTask,
+#                             schema=self.schema, algMetadata=self.algMetadata)
