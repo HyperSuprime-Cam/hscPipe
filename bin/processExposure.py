@@ -35,7 +35,7 @@ def ProcessExposure(instrument, rerun, frame):
     comm = mpi.COMM_WORLD
 
     if instrument.lower() in ("hsc"):
-        ProcessCcdTask = hscProcessCcd.HscDc2ProcessCcdTask
+        ProcessCcdTask = hscProcessCcd.HscProcessCcdTask
         overrides = "hsc.py"
     elif instrument == "suprimecam":
         ProcessCcdTask = hscProcessCcd.SuprimeCamProcessCcdTask
@@ -56,7 +56,7 @@ def ProcessExposure(instrument, rerun, frame):
 
     # Together: global WCS solution
     if comm.Get_rank() == 0:
-        wcsList = pbasf.SafeCall(globalWcs, instrument, matchLists)
+        wcsList = pbasf.SafeCall(globalWcs, instrument, matchLists) if False else None # XXX disabled
         if not wcsList:
             sys.stderr.write("WARNING: Global astrometric solution failed!\n")
             wcsList = [None] * len(dataIdList)
