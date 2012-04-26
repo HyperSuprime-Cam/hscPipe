@@ -39,8 +39,8 @@ if __name__ == "__main__":
     parser.add_argument('--rerun', type=str, default=None, help='Desired rerun (overrides --output)',
                         action=RerunAction)
 
-    parser.add_argument('--stack', type=int, optional=False, help='Stack identifier')
-    parser.add_argument('--filter', type=str, optional=False, help='Filter name')
+    parser.add_argument('--stack', type=int, required=True, help='Stack identifier')
+    parser.add_argument('--filter', type=str, required=True, help='Filter name')
 
     try:
         namespace = parser.parse_args(config=fp.ForcedPhotConfig())
@@ -49,7 +49,8 @@ if __name__ == "__main__":
         sys.exit(1)
             
     task = fp.ForcedPhotTask(config=namespace.config)
-    stackId = {'stack': namespace.stack, 'filter': namespace.filter}
+    butler = namespace.butler
+    stackId = {'stack': namespace.stack, 'filter': namespace.filter, 'patch': 999999}
     expIdList = [dataRef.dataId for dataRef in namespace.dataRefList]
 
     if namespace.doRaise:
@@ -58,4 +59,4 @@ if __name__ == "__main__":
         try:
             task.run(butler, stackId, expIdList)
         except Exception, e:
-            task.log.log(task.log.FATAL, "Failed on dataId=%s: %s" % (sensorRef.dataId, e))
+            task.log.log(task.log.FATAL, "Failed: %s" % e)
