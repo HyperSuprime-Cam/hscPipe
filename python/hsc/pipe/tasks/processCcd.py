@@ -23,7 +23,7 @@ import hsc.pipe.tasks.qaCalibrate as qaHscCalibrate
 #class QaWriteFits(pexConfig):
 class QaConfig(pexConfig.Config):
     seeing = pexConfig.ConfigField(dtype=qaSeeing.QaSeeingConfig, doc="Qa.measSeeing")
-    camera = pexConfig.Field(dtype=str, doc="camera type [hsc] or [suprimecam]", default='suprimecam') # would be better to have another way to get camera
+    camera = pexConfig.Field(dtype=str, doc="camera type [hsc] or [suprimecam]", default='hsc') # would be better to have another way to get camera
 
 class SubaruProcessCcdConfig(ptProcessCcd.ProcessCcdConfig):
     calibrate = pexConfig.ConfigField(dtype=qaHscCalibrate.HscCalibrateConfig, doc="Calibration")
@@ -199,6 +199,17 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
         else:
             calib = None
 
+        if True:
+            ##== FH added this part for QA output to use the reduced exposure and (bright) sources in calibration 
+            butler = sensorRef.butlerSubset.butler            
+            fwhmRobust, ellRobust, ellPaRobust, catalogPsfLike, catalogPsfLikeRobust = qaSeeing.measureSeeingQa(exposure, calib.sources, self.config, debugFlag=False, plotFlag=True, plotbasedir=None, butler=butler, log=self.log)
+
+            self.log.log(self.log.INFO, "QA seeing: fwhm: %f (pix)" % fwhmRobust)
+            self.log.log(self.log.INFO, "QA seeing: ell (based on 2nd moments): %f" % ellRobust)
+            self.log.log(self.log.INFO, "QA seeing: ellPa (in CCDCoords based on 2nd moments): %f (deg)" % ellPaRobust)
+            self.log.log(self.log.INFO, "QA seeing: final Nsources for seeing: %d" % len(catalogPsfLikeRobust))        
+
+        ## Final source detection
         if self.config.doDetection:
             if exposure is None:
                 exposure = sensorRef.get('calexp')
@@ -221,15 +232,16 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
                 apCorr = calib.apCorr
             self.measurement.run(exposure, sources, apCorr)
 
-        ##== FH added this part for QA output by using the reduced exposure and final sources
-        ## debug: QaSeeing.measureSeeingQaTest(exposure, self.config)
-        butler = sensorRef.butlerSubset.butler            
-        fwhmRobust, ellRobust, ellPaRobust, catalogPsfLike, catalogPsfLikeRobust = qaSeeing.measureSeeingQa(exposure, sources, self.config, debugFlag=False, plotFlag=True, plotbasedir=None, butler=butler, log=self.log)
+        if False:
+            ##== QA output is now to use (bright) sources in calibration rather than
+            ## final sources by deep detection. So, commented measSeeing here in the meantime.
+            butler = sensorRef.butlerSubset.butler            
+            fwhmRobust, ellRobust, ellPaRobust, catalogPsfLike, catalogPsfLikeRobust = qaSeeing.measureSeeingQa(exposure, sources, self.config, debugFlag=False, plotFlag=True, plotbasedir=None, butler=butler, log=self.log)
 
-        self.log.log(self.log.INFO, "QA seeing: fwhm: %f (pix)" % fwhmRobust)
-        self.log.log(self.log.INFO, "QA seeing: ell (based on 2nd moments): %f" % ellRobust)
-        self.log.log(self.log.INFO, "QA seeing: ellPa (in CCDCoords based on 2nd moments): %f (deg)" % ellPaRobust)
-        self.log.log(self.log.INFO, "QA seeing: final Nsources for seeing: %d" % len(catalogPsfLikeRobust))        
+            self.log.log(self.log.INFO, "QA seeing: fwhm: %f (pix)" % fwhmRobust)
+            self.log.log(self.log.INFO, "QA seeing: ell (based on 2nd moments): %f" % ellRobust)
+            self.log.log(self.log.INFO, "QA seeing: ellPa (in CCDCoords based on 2nd moments): %f (deg)" % ellPaRobust)
+            self.log.log(self.log.INFO, "QA seeing: final Nsources for seeing: %d" % len(catalogPsfLikeRobust))        
 
         # this part should be done by calculating merit functions somewhere else in a polite manner.
         metadata = exposure.getMetadata()
@@ -237,7 +249,8 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
         metadata.set('FLAG_USR', 0)
         metadata.set('FLAG_TAG', 1)
 
-        if self.config.doWriteSources:
+        if self.config.doWriteSources and sources is not None:
+        ##if self.config.doWriteSources:
             sensorRef.put(sources, 'src')
 
         if self.config.doWriteCalibrate:
