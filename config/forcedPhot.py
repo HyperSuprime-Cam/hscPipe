@@ -1,19 +1,24 @@
 root.calibrate.repair.doCosmicRay = False
 #root.calibrate.background.binSize = 1024
 
-# Diable background re-estimation due to ticket #2037
+# Diable background estimation due to ticket #2037
+root.calibrate.doBackground = False
 root.calibrate.detection.reEstimateBackground = False
 root.detection.reEstimateBackground = False
-root.calibrate.background.binSize = 500
+
 
 # PSF determination
+root.calibrate.detection.thresholdValue = 50
 root.calibrate.measurePsf.starSelector.name = "secondMoment"
 root.calibrate.measurePsf.psfDeterminer.name = "pca"
 root.calibrate.measurePsf.starSelector["secondMoment"].clumpNSigma = 2.0
 root.calibrate.measurePsf.psfDeterminer["pca"].nEigenComponents = 4
-root.calibrate.measurePsf.psfDeterminer["pca"].kernelSize = 10
-root.calibrate.measurePsf.psfDeterminer["pca"].spatialOrder = 2
+root.calibrate.measurePsf.psfDeterminer["pca"].kernelSize = 12
+root.calibrate.measurePsf.psfDeterminer["pca"].spatialOrder = 4
 root.calibrate.measurePsf.psfDeterminer["pca"].kernelSizeMin = 25
+root.calibrate.measurePsf.psfDeterminer["pca"].reducedChi2ForPsfCandidates = 10.0
+root.calibrate.measurePsf.psfDeterminer["pca"].spatialReject = 10.0
+
 
 # Final photometry
 root.measurement.slots.apFlux = "flux.sinc"

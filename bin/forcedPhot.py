@@ -50,7 +50,7 @@ if __name__ == "__main__":
             
     task = fp.ForcedPhotTask(config=namespace.config)
     butler = namespace.butler
-    stackId = {'stack': namespace.stack, 'filter': namespace.filter, 'patch': 666666}
+    stackId = {'stack': namespace.stack, 'filter': namespace.filter, 'patch': 999999}
     expIdList = [dataRef.dataId for dataRef in namespace.dataRefList]
 
     if namespace.doRaise:
