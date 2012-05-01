@@ -114,6 +114,7 @@ class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
         )
 
     def write(self, butler, dataId, struct, wcs=None):
+
         if wcs is None:
             wcs = struct.exposure.getWcs()
             self.log.log(self.log.WARN, "WARNING: No new WCS provided")
@@ -137,6 +138,7 @@ class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
         butler.put(struct.calib.psf, 'psf', dataId)
         butler.put(struct.calib.apCorr, 'apCorr', dataId)
         butler.put(struct.calib.sources, 'icSrc', dataId)
+
 
 class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
     
@@ -196,6 +198,11 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
                     print '*** len(normalizedMatches):',len(normalizedMatches)
                     normalizedMatches.table.setMetadata(calib.matchMeta)
                     sensorRef.put(normalizedMatches, 'icMatch')
+
+                    # === For QA db
+
+                    writeMatchesToBintableFits(calib.matches, butler=sensorRef)
+                    
         else:
             calib = None
 
@@ -278,3 +285,65 @@ class HscProcessCcdTask(SuprimeCamProcessCcdTask):
 #        if self.config.doMeasurement:
 #            self.makeSubtask("measurement", measAlg.SourceMeasurementTask,
 #                             schema=self.schema, algMetadata=self.algMetadata)
+
+            
+def namedCopy(dstRecord, dstName, srcRecord, srcName):
+    dstKey = dstRecord.schema.find(dstName).key
+    srcKey = srcRecord.schema.find(srcName).key
+    dstRecord.set(dstKey, srcRecord.get(srcKey))
+    
+def writeMatchesToBintableFits(matchlist, butler=None, fileName=None):
+
+    refSchema = matchlist[0].first.getSchema()
+    srcSchema = matchlist[0].second.getSchema()
+    if False:
+        print 'refSchema:', refSchema.getNames()
+        print 'srcSchema:', srcSchema.getNames()
+
+    # creating a new catalog schema for output involving both ref and src
+    mergedSchema = afwTable.Schema()
+
+    for keyName in refSchema.getNames():
+        field = refSchema.find(keyName).field
+        typeStr = field.getTypeString()
+        mergedSchema.addField('ref.'+keyName, type=typeStr)
+    for keyName in srcSchema.getNames():
+        field = srcSchema.find(keyName).field
+        typeStr = field.getTypeString()
+        mergedSchema.addField('src.'+keyName, type=typeStr)
+                
+    mergedCatalog = afwTable.BaseCatalog(mergedSchema)
+
+    refKeys = []
+    for keyName in refSchema.getNames():
+        refKeys.append((refSchema.find(keyName).key, mergedSchema.find('ref.' + keyName).key))
+    srcKeys = []
+    for keyName in srcSchema.getNames():
+        srcKeys.append((srcSchema.find(keyName).key, mergedSchema.find('src.' + keyName).key))
+
+    for match in matchlist:
+        record = mergedCatalog.addNew()
+        for key in refKeys:
+            keyIn = key[0]
+            keyOut = key[1]
+            record.set(keyOut, match.first.get(keyIn))
+        for key in srcKeys:
+            keyIn = key[0]
+            keyOut = key[1]
+            record.set(keyOut, match.second.get(keyIn))
+
+    if butler is not None:
+        butler.put(mergedCatalog, 'matchedList')
+        return 
+    elif fileName is not None:
+        mergedCatalog.writeFits(fileName)
+        return
+    else:
+        print '** No file has been written.'
+        return
+        
+def namedCopy(dstRecord, dstName, srcRecord, srcName):
+    dstKey = dstRecord.schema.find(dstName).key
+    srcKey = srcRecord.schema.find(srcName).key
+    dstRecord.set(dstKey, srcRecord.get(srcKey))
+
