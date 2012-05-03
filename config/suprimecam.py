@@ -18,12 +18,12 @@ root.calibrate.measurePsf.psfDeterminer["pca"].kernelSizeMin = 25
 
 # Final photometry
 root.measurement.slots.apFlux = "flux.sinc"
-import lsst.meas.extensions.photometryKron
-import lsst.meas.extensions.rotAngle
-import lsst.meas.extensions.shapeHSM
-root.measurement.algorithms.names += ("rotAngle", "flux.kron",)
-root.measurement.algorithms.names += tuple(["shape.hsm." + s for s in ('bj', 'linear', 'ksb', 'regauss', 
-                                                                       'shapelet')])
+#import lsst.meas.extensions.photometryKron
+#import lsst.meas.extensions.rotAngle
+#import lsst.meas.extensions.shapeHSM
+#root.measurement.algorithms.names += ("rotAngle", "flux.kron",)
+#root.measurement.algorithms.names += tuple(["shape.hsm." + s for s in ('bj', 'linear', 'ksb', 'regauss', 
+#                                                                       'shapelet')])
 #import lsst.meas.extensions.shapeMiyatake
 #root.measurement.algorithms.names += ("shape.miyatake.hmfit",)
 
