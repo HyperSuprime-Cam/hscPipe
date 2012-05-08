@@ -43,7 +43,7 @@ def ProcessExposure(instrument, rerun, frame):
     else:
         raise RuntimeError("Unknown instrument: %s" % (instrument))
 
-    butler = hscCamera.getButler(instrument, rerun)
+    butler = hscCamera.getButler(instrument, rerun=rerun)
     dataIdList = [{'visit': frame, 'ccd': ccd} for ccd in range(hscCamera.getNumCcds(instrument))]
 
     config = ProcessCcdTask.ConfigClass()
