@@ -32,11 +32,12 @@ class HscCalibrateTask(ptCalibrate.CalibrateTask):
         self.makeSubtask("measurement", measAlg.SourceMeasurementTask,
                          schema=self.schema, algMetadata=self.algMetadata)
         self.makeSubtask("astrometry", hscAstrom.HscAstrometryTask, schema=self.schema)
-##== FH modified for QA output
-##        self.makeSubtask("photocal", photocal.PhotoCalTask, schema=self.schema)
+        ##== FH modified for QA output
+        ##self.makeSubtask("photocal", photocal.PhotoCalTask, schema=self.schema)
         self.makeSubtask("photocal", photocalQa.PhotoCalTask, schema=self.schema)        
 
-##== FH modified for QA output
+    ##== FH modified for QA output
+    ## copied from pipe_tasks::calibrate::CalibrateTask::run() to get a bit change in run() function. 
     @pipeBase.timeMethod
     def run(self, exposure, defects=None):
         """Calibrate an exposure: measure PSF, subtract background, measure astrometry and photometry
