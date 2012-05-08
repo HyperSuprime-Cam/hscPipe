@@ -158,11 +158,7 @@ class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
 	pathToSrcFile = butler.get('src_filename', dataId)[0]
 	qaOutputDirName = os.path.dirname(pathToSrcFile)
 	if os.path.exists(qaOutputDirName) is not True:
-            dirName = ''
-	    for d in qaOutputDirName.split('/'):
-                dirName += d + '/'
-		if os.path.exists(dirName) is not True:
-                    os.mkdir(dirName)
+		os.makedirs(qaOutputDirName)
         else:
 	    pass
         frameId = exposure.getMetadata().get('FRAMEID')
@@ -186,11 +182,7 @@ class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
         pathToSrcFile = butler.get('src_filename', dataId)[0]
         qaOutputDirName = os.path.dirname(pathToSrcFile)
         if os.path.exists(qaOutputDirName) is not True:
-            dirName = ''
-            for d in qaOutputDirName.split('/'):
-                dirName += d + '/'
-                if os.path.exists(dirName) is not True:
-                    os.mkdir(dirName)
+		os.makedirs(qaOutputDirName)
         else:
             pass
         frameId = exposure.getMetadata().get('FRAMEID')
