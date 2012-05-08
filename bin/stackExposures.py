@@ -131,29 +131,21 @@ def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None,
     # phase 3 (measure PSFs in warped images)
     sigmas = []
     if doMatchPsf:
-	if rank == 0:
-	    phase3a = None
-	else:
-	    phase3a = Phase3aWorker(butler, config=stackConfig, wcs=wcs)
+        phase3a = Phase3aWorker(butler, config=stackConfig, wcs=wcs)
 	sigmas = pbasf.ScatterJob(comm, phase3a, [f for f in fileList], root=0)
 
     # phase 3b
-    dummy = None
-    if rank == 0: # or sigmas is None:
-        phase3b = None
-        comm.bcast(sigmas, root=0)
-    else:
-        sigmas = comm.bcast(sigmas, root=0)
-        matchPsf = None
-        print "rank/sigmas:", rank, type(sigmas), sigmas
-        if sigmas:
-            maxSigma = max(sigmas)
-            sigma1 = maxSigma
-            sigma2 = 2.0*maxSigma
-            kwid = int(4.0*sigma2) + 1
-            peakRatio = 0.1
-            matchPsf = ['DoubleGaussian', kwid, kwid, sigma1, sigma2, peakRatio]
-        phase3b = Phase3bWorker(butler, config=stackConfig, matchPsf=matchPsf)
+    sigmas = comm.bcast(sigmas, root=0)
+    matchPsf = None
+    print "rank/sigmas:", rank, type(sigmas), sigmas
+    if sigmas:
+        maxSigma = max(sigmas)
+        sigma1 = maxSigma
+        sigma2 = 2.0*maxSigma
+        kwid = int(4.0*sigma2) + 1
+        peakRatio = 0.1
+        matchPsf = ['DoubleGaussian', kwid, kwid, sigma1, sigma2, peakRatio]
+    phase3b = Phase3bWorker(butler, config=stackConfig, matchPsf=matchPsf)
     pbasf.ScatterJob(comm, phase3b, [index for index in indexes], root=0)
     
     if rank == 0:
