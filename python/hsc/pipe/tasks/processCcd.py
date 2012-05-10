@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import os
 import lsst.pex.config as pexConfig
 import lsst.afw.detection as afwDet
 import lsst.afw.table as afwTable
@@ -205,8 +206,7 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
                     sdssFluxes = retrieveReferenceMagnitudes(calib.matches)
                     #print '*** returned sdssFluxes:', sdssFluxes
                     #writeMatchesToBintableFits(calib.matches, butler=sensorRef)
-                    writeEnhancedMatchesToBintableFits(calib.matches, refMags=sdssFluxes, butler=sensorRef)                    
-                    
+                    writeEnhancedMatchesToBintableFits(calib.matches, calib.matchMeta, refMags=sdssFluxes, butler=sensorRef)                    
         else:
             calib = None
 
@@ -381,7 +381,7 @@ def namedCopy(dstRecord, dstName, srcRecord, srcName):
     srcKey = srcRecord.schema.find(srcName).key
     dstRecord.set(dstKey, srcRecord.get(srcKey))
 
-def writeEnhancedMatchesToBintableFits(matchlist, refMags=None, butler=None, fileName=None):
+def writeEnhancedMatchesToBintableFits(matchlist, matchMeta, refMags=None, butler=None, fileName=None):
 
     # - creating a new catalog schema for output involving
     #  both ref(plus reference magnitudes in additional filters) and src
@@ -389,7 +389,7 @@ def writeEnhancedMatchesToBintableFits(matchlist, refMags=None, butler=None, fil
 
     if refMags is None:
         print '** additional reference magnitudes are not provided.'
-        
+
     refSchema = matchlist[0].first.getSchema()
     srcSchema = matchlist[0].second.getSchema()
     if False:
@@ -442,6 +442,11 @@ def writeEnhancedMatchesToBintableFits(matchlist, refMags=None, butler=None, fil
         for filter, flux, fluxerr in zip(filters, fluxes, fluxerrs):
             record.set(mergedSchema.find('ref.flux.'+filter).key, flux)
             record.set(mergedSchema.find('ref.flux.err.'+filter).key, fluxerr)            
+
+    # obtaining reference catalog name
+    catalogName = os.path.basename(os.getenv("ASTROMETRY_NET_DATA_DIR").rstrip('/'))
+    matchMeta.add('REFCAT', catalogName)
+    mergedCatalog.getTable().setMetadata(matchMeta)
 
     if butler is not None:
         butler.put(mergedCatalog, 'matchedList')
