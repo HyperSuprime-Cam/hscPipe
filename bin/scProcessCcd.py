@@ -79,7 +79,13 @@ if __name__ == "__main__":
         if namespace.doRaise:
             task.run(sensorRef)
         else:
-            try:
-                task.run(sensorRef)
-            except Exception, e:
-                task.log.log(task.log.FATAL, "Failed on dataId=%s: %s" % (sensorRef.dataId, e))
+            if False:
+                try:
+                    task.run(sensorRef)
+                except Exception, e:
+                    task.log.log(task.log.FATAL, "Failed on dataId=%s: %s" % (sensorRef.dataId, e))
+            else:
+                print '* * '*40
+                print sensorRef
+                print '* * '*40
+                task.run(sensorRef)                    

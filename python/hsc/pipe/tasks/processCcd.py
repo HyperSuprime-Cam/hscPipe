@@ -254,11 +254,22 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
             self.log.log(self.log.INFO, "QA seeing: ellPa (in CCDCoords based on 2nd moments): %f (deg)" % ellPaRobust)
             self.log.log(self.log.INFO, "QA seeing: final Nsources for seeing: %d" % len(catalogPsfLikeRobust))        
 
-        # this part should be done by calculating merit functions somewhere else in a polite manner.
+        ## == Putting in necessary information for QA data management
+
         metadata = exposure.getMetadata()
+        
+        # = flags
+        # this part should be done by calculating merit functions somewhere else in a polite manner.
         metadata.set('FLAG_AUTO', 0)
         metadata.set('FLAG_USR', 0)
         metadata.set('FLAG_TAG', 1)
+
+        # = info for data management
+        # = rerun; assuming directory tree has the fixed form where 'rerun/' is just followed by '$rerun_name/'
+        corrPath = sensorRef.get('calexp_filename')[0]
+        #print '*** corrPath:', corrPath
+        rerunName = corrPath[corrPath.find('rerun'):].split('/')[1]
+        metadata.set('RERUN', rerunName)
 
         if self.config.doWriteSources and sources is not None:
         ##if self.config.doWriteSources:
