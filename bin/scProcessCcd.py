@@ -47,17 +47,29 @@ class RerunAction(argparse.Action):
         envar = "SUPRIME_DATA_DIR"
         if os.environ.has_key(envar):
             namespace.rerun = values
-            namespace.outPath = os.path.join(os.environ[envar], "SUPA", "rerun", namespace.rerun)
+            if namespace.camera == 'suprimecam':
+                cameraKey = 'SUPA'
+            elif namespace.camera == 'hsc':
+                cameraKey = 'HSC'
+            elif namespace.camera == 'hscsim':
+                cameraKey = 'HSC'
+            namespace.outPath = os.path.join(os.environ[envar], cameraKey, "rerun", namespace.rerun)
             if not os.path.exists(namespace.outPath):
                 os.makedirs(namespace.outPath) # should be in butler
         else:
             raise argparse.ArgumentTypeError("You must define $%s to use --rerun XXX" % envar)
 
 if __name__ == "__main__":
-    try:
-        parser = ArgumentParser(name="suprimecam", conflict_handler='resolve') # new style
-    except TypeError:
-        parser = ArgumentParser(conflict_handler='resolve') # old style
+    if sys.argv[1] == 'suprimecam':
+        try:
+            parser = ArgumentParser(name="suprimecam", conflict_handler='resolve') # new style
+        except TypeError:
+            parser = ArgumentParser(conflict_handler='resolve') # old style
+    elif sys.argv[1] == 'hscsim':
+        try:
+            parser = ArgumentParser(name="hscsim", conflict_handler='resolve') # new style
+        except TypeError:
+            parser = ArgumentParser(conflict_handler='resolve') # old style
 
     parser.add_argument('--output', type=str, dest="outPath", default=None, help="output root directory",
                         action=OutputAction)
