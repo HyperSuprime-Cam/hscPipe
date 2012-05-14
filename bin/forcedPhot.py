@@ -45,6 +45,8 @@ if __name__ == "__main__":
     try:
         namespace = parser.parse_args(config=fp.ForcedPhotConfig())
     except Exception, e:
+        if "--doraise" in sys.argv:
+            raise
         print >> sys.stderr, e
         sys.exit(1)
             
