@@ -70,6 +70,11 @@ if __name__ == "__main__":
             parser = ArgumentParser(name="hscsim", conflict_handler='resolve') # new style
         except TypeError:
             parser = ArgumentParser(conflict_handler='resolve') # old style
+    else:
+        try:
+            parser = ArgumentParser(name="suprimecam", conflict_handler='resolve') # new style
+        except TypeError:
+            parser = ArgumentParser(conflict_handler='resolve') # old style
 
     parser.add_argument('--output', type=str, dest="outPath", default=None, help="output root directory",
                         action=OutputAction)
