@@ -7,22 +7,21 @@ import lsst.afw.geom as afwGeom
 import lsst.pipe.tasks.calibrate as ptCal
 import lsst.meas.algorithms as measAlg
 
-from lsst.pipe.tasks.forcedPhot import ForcedPhotTask, ForcedPhotConfig
-from lsst.pex.config import ConfigField
+from lsst.pipe.tasks.forcedPhot import ForcedPhotTask, ReferencesTask, ReferencesConfig
+from lsst.pex.config import ConfigurableField
 
-class HscForcedPhotConfig(ForcedPhotConfig):
-    calibrate = ConfigField(dtype=ptCal.CalibrateConfig, doc="Configuration for calibration of stack")
-    detection = ConfigField(dtype=measAlg.SourceDetectionConfig, doc="Configuration for detection on stack")
-    
+class HscReferencesConfig(ReferencesConfig):
+    calibrate = ConfigurableField(target=ptCal.CalibrateConfig, doc="Configuration for calibration of stack")
+    detection = ConfigurableField(target=measAlg.SourceDetectionConfig,
+                                  doc="Configuration for detection on stack")
 
-
-class HscForcedPhotTask(ForcedPhotTask):
+class HscReferencesTask(ReferencesTask):
     def __init__(self, *args, **kwargs):
-        super(ForcedPhotTask, self).__init__(*args, **kwargs)
-        self.makeSubtask("calibrate", ptCal.CalibrateTask)
+        super(ReferencesTask, self).__init__(*args, **kwargs)
+        self.makeSubtask("calibrate")
         self.schema = afwTable.SourceTable.makeMinimalSchema()
         self.algMetadata = dafBase.PropertyList()
-        self.makeSubtask("detection", measAlg.SourceDetectionTask, schema=self.schema)
+        self.makeSubtask("detection", schema=self.schema)
 
     def getReferences(self, dataRef, exposure):
         """Get reference sources on (or close to) exposure"""
@@ -68,6 +67,12 @@ class HscForcedPhotTask(ForcedPhotTask):
         table.setMetadata(self.algMetadata)
         return self.detection.makeSourceCatalog(table, exposure)
 
+
+class HscForcedPhotTask(ForcedPhotTask):
+    def readInputs(self, dataRef, *args, **kwargs):
+        struct = super(HscForcedPhotTask, self).readInputs(dataRef, *args, **kwargs)
+        struct.exposure.setWcs(dataRef.get("wcs"))
+        return struct
 
 
 def foilReadProxy(obj):
