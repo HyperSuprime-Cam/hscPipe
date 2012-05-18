@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+import .monkeypatch
+
 import lsst.daf.persistence as dafPersist
 import lsst.afw.table as afwTable
 import lsst.afw.coord as afwCoord
