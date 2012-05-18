@@ -98,7 +98,7 @@ class Worker(object):
     def scales(self, backgrounds):
         assert self.detrend == "flat"
         import numpy
-        result = self.task.scale.run(numpy.array(backgrounds))
+        result = self.task.scale.run(numpy.array(backgrounds, dtype=float))
         ccdScales = result.components
         expScales = result.exposures
         return [Struct(ccd=ccd, ccdScale=scale, expScales=expScales) for ccd, scale in enumerate(ccdScales)]
