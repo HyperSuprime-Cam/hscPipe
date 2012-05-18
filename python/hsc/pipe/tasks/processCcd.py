@@ -266,9 +266,8 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
 
         # = info for data management
         # = rerun; assuming directory tree has the fixed form where 'rerun/' is just followed by '$rerun_name/'
-        corrPath = sensorRef.get('calexp_filename')[0]
-        #print '*** corrPath:', corrPath
-        rerunName = corrPath[corrPath.find('rerun'):].split('/')[1]
+
+        rerunName = getRerunName(sensorRef)
         metadata.set('RERUN', rerunName)
 
         if self.config.doWriteSources and sources is not None:
@@ -283,6 +282,13 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
             calib = calib,
             sources = sources,
         )
+
+
+def getRerunName(sensorRef):
+    corrPath = sensorRef.get('calexp_filename')[0]
+    rerunName = corrPath[corrPath.find('rerun'):].split('/')[1]        
+    #print '*** corrPath:', corrPath
+    return rerunName
 
 #
 class HscProcessCcdTask(SuprimeCamProcessCcdTask):
@@ -412,18 +418,22 @@ def writeEnhancedMatchesToBintableFits(matchlist, matchMeta, refMags=None, butle
     for keyName in refSchema.getNames():
         field = refSchema.find(keyName).field
         typeStr = field.getTypeString()
-        mergedSchema.addField('ref.'+keyName, type=typeStr)
+        fieldDoc = field.getDoc()
+        fieldUnits = field.getUnits()
+        mergedSchema.addField('ref.'+keyName, type=typeStr, doc=fieldDoc, units=fieldUnits)
 
     filters, fluxes, fluxerrs = refMags[0]
     for filter in filters:
         #print '** filter', filter
-        mergedSchema.addField('ref.flux.'+filter, type='F8')
-        mergedSchema.addField('ref.flux.err.'+filter, type='F8')
+        mergedSchema.addField('ref.flux.'+filter, type='F8', doc='reference flux in %s band' % filter)
+        mergedSchema.addField('ref.flux.err.'+filter, type='F8', doc='reference flux error in %s band' % filter)
 
     for keyName in srcSchema.getNames():
         field = srcSchema.find(keyName).field
         typeStr = field.getTypeString()
-        mergedSchema.addField('src.'+keyName, type=typeStr)
+        fieldDoc = field.getDoc()
+        fieldUnits = field.getUnits()
+        mergedSchema.addField('src.'+keyName, type=typeStr, doc=fieldDoc, units=fieldUnits)
                 
     mergedCatalog = afwTable.BaseCatalog(mergedSchema)
 
