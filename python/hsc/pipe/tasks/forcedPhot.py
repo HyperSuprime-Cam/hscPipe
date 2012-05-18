@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 
-import hsc.pipe.tasks.monkeypatch
+import hsc.pipe.tasks.monkeypatch # For lsst.pex.config.ConfigurableField and lsst.pipe.base.CmdLineTask
 
+import lsst.daf.base as dafBase
 import lsst.daf.persistence as dafPersist
 import lsst.afw.table as afwTable
 import lsst.afw.coord as afwCoord
@@ -9,15 +10,17 @@ import lsst.afw.geom as afwGeom
 import lsst.pipe.tasks.calibrate as ptCal
 import lsst.meas.algorithms as measAlg
 
-from lsst.pipe.tasks.forcedPhot import ForcedPhotTask, ReferencesTask, ReferencesConfig
+from lsst.pipe.tasks.forcedPhot import ForcedPhotTask, ForcedPhotConfig, ReferencesTask, ReferencesConfig
 from lsst.pex.config import ConfigurableField
 
 class HscReferencesConfig(ReferencesConfig):
-    calibrate = ConfigurableField(target=ptCal.CalibrateConfig, doc="Configuration for calibration of stack")
-    detection = ConfigurableField(target=measAlg.SourceDetectionConfig,
+    calibrate = ConfigurableField(target=ptCal.CalibrateTask, doc="Configuration for calibration of stack")
+    detection = ConfigurableField(target=measAlg.SourceDetectionTask,
                                   doc="Configuration for detection on stack")
 
 class HscReferencesTask(ReferencesTask):
+    ConfigClass = HscReferencesConfig
+    
     def __init__(self, *args, **kwargs):
         super(ReferencesTask, self).__init__(*args, **kwargs)
         self.makeSubtask("calibrate")
@@ -68,6 +71,9 @@ class HscReferencesTask(ReferencesTask):
         table = afwTable.SourceTable.make(self.schema)
         table.setMetadata(self.algMetadata)
         return self.detection.makeSourceCatalog(table, exposure)
+
+class HscForcedPhotConfig(ForcedPhotConfig):
+    references = ConfigurableField(target=HscReferencesTask, doc="Get reference objects")
 
 
 class HscForcedPhotTask(ForcedPhotTask):

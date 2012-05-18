@@ -27,6 +27,12 @@ subclassing all the way up the hierarchy, overloading the __init__ of each
 Task that is subclassed to use self.makeSubtask() to select the correct
 subclass of its children tasks.
 
+We also make a bare-bones definition of lsst.pipe.base.CmdLineTask (intended
+to make scripts be simple two-liners: import the task and call its parseAndRun()
+method).  Our definition is merely to prevent failure due to the symbol not
+being defined.  We do not provide an implementation of parseAndRun() as it's
+not (yet?) part of the HSC way.
+
 See http://en.wikipedia.org/wiki/Monkey_patch
 """
 
@@ -50,6 +56,8 @@ if not 'ConfigurableField' in dir(lsst.pex.config):
             """
             if ConfigClass is None and hasattr(target, 'ConfigClass'):
                 ConfigClass = target.ConfigClass
+            if ConfigClass is None:
+                raise RuntimeError("Unable to determine configuration class for %s" % target.__name__)
             lsst.pex.config.ConfigField.__init__(self, doc=doc, dtype=ConfigClass)
             REGISTRY[ConfigClass] = target
 
@@ -79,3 +87,12 @@ if not 'ConfigurableField' in dir(lsst.pex.config):
     # Patch them in
     setattr(lsst.pex.config, 'ConfigurableField', MP_ConfigurableField)
     setattr(lsst.pipe.base, 'Task', MP_Task)
+
+
+if not 'CmdLineTask' in dir(lsst.pipe.base):
+    class MP_CmdLineTask(lsst.pipe.base.Task):
+        @classmethod
+        def parseAndRun(cls, *args, **kwargs):
+            raise NotImplementedError("This replacement CmdLineTask cannot parseAndRun; call run yourself")
+
+    setattr(lsst.pipe.base, 'CmdLineTask', MP_CmdLineTask)

@@ -5,7 +5,7 @@ import hsc.pipe.tasks.forcedPhot as fp
 from hsc.pipe.base import HscArgumentParser
 
 if __name__ == "__main__":
-    parser = HscArgumentParser(name="suprimecam")
+    parser = HscArgumentParser()
 
     try:
         namespace = parser.parse_args(config=fp.HscForcedPhotConfig())
@@ -14,10 +14,8 @@ if __name__ == "__main__":
         sys.exit(1)
 
     task = fp.HscForcedPhotTask(config=namespace.config)
-    butler = namespace.butler
-    expIdList = [dataRef.dataId for dataRef in namespace.dataRefList]
 
-    for dataRef in dataRefList:
+    for dataRef in namespace.dataRefList:
         if namespace.doRaise:
             task.run(dataRef)
         else:
