@@ -129,6 +129,19 @@ def colorcolor(dataRefList1, dataRefList2, dataRefList3, config):
 
     figure.show()
 
+    figure = newFigure()
+    axes = figure.add_axes((0.1, 0.1, 0.85, 0.80));
+    def plotCentroids(index, cat, brightMag):
+        dx = cat.columns["centroid.sdss.x"] - cat.columns["centroid.record.x"]
+        dy = cat.columns["centroid.sdss.y"] - cat.columns["centroid.record.y"]
+        bright = -2.5 * numpy.log10(cat.columns["flux.psf"]) < brightMag
+        axes.plot(dx[bright], dy[bright], "o", color=config.colors[index % len(config.colors)], alpha=0.1)
+    plotCentroids(1, cat1, config.bright1)
+    plotCentroids(2, cat2, config.bright2)
+    plotCentroids(3, cat3, config.bright3)
+    axes.set_xlabel("dx")
+    axes.set_ylabel("dy")
+    figure.show()
 
 
 if __name__ == "__main__":
