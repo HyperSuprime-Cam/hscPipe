@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import .monkeypatch
+import hsc.pipe.tasks.monkeypatch
 
 import lsst.daf.persistence as dafPersist
 import lsst.afw.table as afwTable
