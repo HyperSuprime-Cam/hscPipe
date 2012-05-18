@@ -21,43 +21,11 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 import argparse, os, sys
-from lsst.pipe.base import ArgumentParser
+from hsc.pipe.base import HscArgumentParser
 from hsc.pipe.tasks.processCcd import SuprimeCamProcessCcdTask as TaskClass
 
-class OutputAction(argparse.Action):
-    def __call__(self, parser, namespace, values, option_string=None):
-        if namespace.rerun:
-            raise argparse.ArgumentTypeError("Please specify --output or --rerun, but not both")
-
-        namespace.outPath = values
-
-class RerunAction(argparse.Action):
-    def __call__(self, parser, namespace, values, option_string=None):
-        """We can't just parse the arguments and reset namespace.outPath as the Mapper's been
-        instantiated before we get a chance"""
-
-        if namespace.outPath:
-            raise argparse.ArgumentTypeError("Please specify --output or --rerun, but not both")
-
-        envar = "SUPRIME_DATA_DIR"
-        if os.environ.has_key(envar):
-            namespace.rerun = values
-            namespace.outPath = os.path.join(os.environ[envar], "SUPA", "rerun", namespace.rerun)
-            if not os.path.exists(namespace.outPath):
-                os.makedirs(namespace.outPath) # should be in butler
-        else:
-            raise argparse.ArgumentTypeError("You must define $%s to use --rerun XXX" % envar)
-
 if __name__ == "__main__":
-    try:
-        parser = ArgumentParser(name="suprimecam", conflict_handler='resolve') # new style
-    except TypeError:
-        parser = ArgumentParser(conflict_handler='resolve') # old style
-
-    parser.add_argument('--output', type=str, dest="outPath", default=None, help="output root directory",
-                        action=OutputAction)
-    parser.add_argument('--rerun', type=str, default=None, help='Desired rerun (overrides --output)',
-                        action=RerunAction)
+    parser = HscArgumentParser(name="suprimecam")
 
     try:
         namespace = parser.parse_args(config=TaskClass.ConfigClass())
