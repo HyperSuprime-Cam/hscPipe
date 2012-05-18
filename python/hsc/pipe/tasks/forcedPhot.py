@@ -7,16 +7,19 @@ import lsst.daf.persistence as dafPersist
 import lsst.afw.table as afwTable
 import lsst.afw.coord as afwCoord
 import lsst.afw.geom as afwGeom
+import lsst.afw.detection as afwDet
+import lsst.ip.isr as ipIsr
 import lsst.pipe.tasks.calibrate as ptCal
 import lsst.meas.algorithms as measAlg
 
 from lsst.pipe.tasks.forcedPhot import ForcedPhotTask, ForcedPhotConfig, ReferencesTask, ReferencesConfig
-from lsst.pex.config import ConfigurableField
+from lsst.pex.config import Field, ConfigurableField
 
 class HscReferencesConfig(ReferencesConfig):
     calibrate = ConfigurableField(target=ptCal.CalibrateTask, doc="Configuration for calibration of stack")
     detection = ConfigurableField(target=measAlg.SourceDetectionTask,
                                   doc="Configuration for detection on stack")
+    filter = Field(dtype=str, doc="Filter name of stack for references", optional=True)
 
 class HscReferencesTask(ReferencesTask):
     ConfigClass = HscReferencesConfig
@@ -30,19 +33,20 @@ class HscReferencesTask(ReferencesTask):
 
     def getReferences(self, dataRef, exposure):
         """Get reference sources on (or close to) exposure"""
-        butler = dataRef.butler
+        butler = dataRef.butlerSubset.butler
         dataId = dataRef.dataId
+        filterName = self.config.filter if self.config.filter is not None else dataId['filter']
         stackId = {'stack': dataId['pointing'],
                    'patch': 999999,
-                   'filter': dataId['filter'],
+                   'filter': filterName,
                    }
         try:
             sources = foilReadProxy(butler.get("stacksources", stackId))
         except Exception, e:
             self.log.log(self.log.INFO, "Stack products not available (%s); attempting to create" % e)
-            sources = measureStack(butler, stackId)
+            sources = self.measureStack(butler, stackId)
         
-        return measureStack(butler, stackId)
+        return sources
 
     def measureStack(self, butler, dataId):
         exposure = butler.get("stack", dataId)
@@ -79,7 +83,12 @@ class HscForcedPhotConfig(ForcedPhotConfig):
 class HscForcedPhotTask(ForcedPhotTask):
     def readInputs(self, dataRef, *args, **kwargs):
         struct = super(HscForcedPhotTask, self).readInputs(dataRef, *args, **kwargs)
-        struct.exposure.setWcs(dataRef.get("wcs"))
+        try:
+            wcs = dataRef.get("wcs")
+            struct.exposure.setWcs(wcs)
+        except Exception, e:
+            self.log.log(self.log.WARN, "No WCS tweak available; not updating WCS.")
+            
         return struct
 
 
