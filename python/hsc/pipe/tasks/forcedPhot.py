@@ -84,10 +84,10 @@ class HscForcedPhotTask(ForcedPhotTask):
     def readInputs(self, dataRef, *args, **kwargs):
         struct = super(HscForcedPhotTask, self).readInputs(dataRef, *args, **kwargs)
         try:
-            wcs = dataRef.get("wcs")
-            struct.exposure.setWcs(wcs)
+            wcsExp = dataRef.get("wcs")
+            struct.exposure.setWcs(wcsExp.getWcs())
         except Exception, e:
-            self.log.log(self.log.WARN, "No WCS tweak available; not updating WCS.")
+            self.log.log(self.log.WARN, "No WCS tweak available (%s); not updating WCS." % e)
             
         return struct
 
