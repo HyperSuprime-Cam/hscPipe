@@ -21,12 +21,13 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 import argparse, os, sys
-from hsc.pipe.base import HscArgumentParser
+from lsst.pipe.base import ArgumentParser
+from hsc.pipe.base import OutputAction, RerunAction
 from hsc.pipe.tasks.processCcd import SuprimeCamProcessCcdTask as TaskClass
 
 if __name__ == "__main__":
     try:
-        parser = HscArgumentParser(name="suprimecam", conflict_handler='resolve') # new style
+        parser = ArgumentParser(name="suprimecam", conflict_handler='resolve') # new style
     except TypeError:
         parser = ArgumentParser(conflict_handler='resolve') # old style
 
