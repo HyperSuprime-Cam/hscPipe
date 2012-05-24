@@ -85,6 +85,9 @@ class ForcedPhotTask(Task):
     def measureExp(self, butler, dataId, stackMeas):
         exposure = butler.get("calexp", dataId)
         psf = butler.get("psf", dataId)
+        ccd = exposure.getDetector()
+        ccd.setTrimmed(True)
+        psf.setDetector(ccd)
         exposure.setPsf(psf)
         wcs = exposure.getWcs()
         apCorr = butler.get("apCorr", dataId)
