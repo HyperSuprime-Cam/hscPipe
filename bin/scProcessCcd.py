@@ -25,7 +25,7 @@ from hsc.pipe.base import HscArgumentParser
 from hsc.pipe.tasks.processCcd import SuprimeCamProcessCcdTask as TaskClass
 
 if __name__ == "__main__":
-    parser = HscArgumentParser(name="suprimecam")
+    parser = HscArgumentParser()
 
     try:
         namespace = parser.parse_args(config=TaskClass.ConfigClass())
