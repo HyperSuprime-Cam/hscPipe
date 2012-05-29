@@ -39,8 +39,8 @@ root.calibrate.astrometry.solver.filterMap = { 'B': 'g',
                                                }
 
 # FH below for QA stuff
-#root.qa.seeing.fwhmIni = 3.465      #pix
-#root.qa.seeing.fwhmIni = 4.12      #pix hsc
+##root.qa.seeing.fwhmIni = 3.465      #pix
+root.qa.seeing.fwhmIni = 4.12      #pix hsc
 root.qa.seeing.fwhmMin = 1.5        #pix
 root.qa.seeing.fwhmMax = 12.0       #pix
 root.qa.seeing.nbinMagHist = 80
@@ -58,6 +58,9 @@ root.isr.qa.doWriteImage.doWriteOssImage = False # "Do we write out overscan-sub
 root.isr.qa.doWriteImage.doWriteFltImage = False # "Do we write out flatfielded image?"
 #root.isr.qa.doWriteImage.doWriteSsbImage = True # "Do we write out flatfielded & sky-subtracted image?"
 root.isr.qa.doWriteImage.doDumpSnapshot = True  # "Do we dump snapshot figures of images?"
-root.qa.camera = 'suprimecam'
-root.isr.qa.camera = 'suprimecam'
-root.qa.seeing.camera = 'suprimecam'
+root.qa.camera = 'hsc'
+root.isr.qa.camera = 'hsc'
+root.qa.seeing.camera = 'hsc'
+#root.qa.camera = 'suprimecam'
+#root.isr.qa.camera = 'suprimecam'
+#root.qa.seeing.camera = 'suprimecam'

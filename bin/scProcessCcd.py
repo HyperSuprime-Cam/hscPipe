@@ -55,7 +55,14 @@ class RerunAction(argparse.Action):
                 cameraKey = 'HSC'
             namespace.outPath = os.path.join(os.environ[envar], cameraKey, "rerun", namespace.rerun)
             if not os.path.exists(namespace.outPath):
-                os.makedirs(namespace.outPath) # should be in butler
+                try:
+                    os.makedirs(namespace.outPath) # should be in butler
+                except OSError, e:
+                    print "*** making output directories failed once."
+                    if not e.errno == errno.EEXIST:
+                        # if directory does not exist, something wrong occured
+                        #raise RuntimeError, "Failed to create output directories: %s" % namespace.outPath
+                        raise
         else:
             raise argparse.ArgumentTypeError("You must define $%s to use --rerun XXX" % envar)
 
