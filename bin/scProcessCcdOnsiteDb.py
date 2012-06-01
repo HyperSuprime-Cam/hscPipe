@@ -29,7 +29,7 @@ from hsc.pipe.tasks.processCcd import SuprimeCamProcessCcdTask as TaskClass
 # import hsc.onsite.qa.fitsthumb as QaFitsthumb
 # import hsc.onsite.qa.measSeeingQa as QaSeeing
 #import hsc.onsite.qa.onsiteDbUtils as onsiteDbUtils
-import onsiteDbUtils as onsiteDbUtils
+#import onsiteDbUtils as onsiteDbUtils
 #import hsc.hscDb.frame_regist_CorrSuprime  as registCorrSup
 
 class OutputAction(argparse.Action):
@@ -108,17 +108,32 @@ if __name__ == "__main__":
         dataId = (namespace.dataIdList)[0]
         ccd = int(dataId['ccd'])
         visit = int(dataId['visit'])
-        if namespace.camera == 'suprimecam':
+        if namespace.camera in ['suprimecam', 'sc', 'suprimecam-mit', 'mit']:
             id = int(visit)*10 + int(ccd)
-        elif namespace.camera == 'hsc' or namespace.camera == 'hscsim':
+        elif namespace.camera in ['hsc', 'hscsim']:
             #### !!! TBD how to assign visit for HSC data
             id = int(visit)*1000 + int(ccd)
             #id = int(visit)*100 + int(ccd)
+        else:
+            print >> sys.stderr, "Given instrument name is not valid: %s" % namespace.camera
+            sys.exit(1)
+            
         return id, visit, ccd
+
+    try:
+        if namspace.camera in ['suprimecam', 'sc', 'suprimecam-mit', 'mit']:
+            import onsiteDbUtilsSuprime as onsiteDbUtils
+        elif namspace.camera in ['hsc', 'hscsim']:
+            import onsiteDbUtilsHsc as onsiteDbUtils
+        else:
+            print >> sys.stderr, "Given instrument name is not valid: %s" % namespace.camera
+            sys.exit(1)
+    except Exception, e:
+        print >> sys.stderr, e
+        sys.exit(1)
 
     id, visit, ccd =  getDataId(namespace)
     onsiteDbUtils.updateStatusFrameAnalysisStart(id)
-
     
     ## === create task objects and run tasks 
     task = TaskClass(config=namespace.config)
