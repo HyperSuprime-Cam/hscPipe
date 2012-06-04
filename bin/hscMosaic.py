@@ -31,16 +31,19 @@ if __name__ == "__main__":
     parser.add_argument("--filter", type=str)
     parser.add_argument("--tract", type=int)
 
-    if True:#try:
+    try:
         namespace = parser.parse_args(config=TaskClass.ConfigClass())
-#    except Exception, e:
-#        print >> sys.stderr, e
-#        sys.exit(1)
+    except Exception, e:
+        print >> sys.stderr, e
+        sys.exit(1)
 
     task = TaskClass(config=namespace.config)
-#    for dataRef in namespace.dataRefList:
     butler = namespace.butler
-    dataId = {'tract': namespace.tract, 'filter': namespace.filter}
+    dataId = {}
+    if namespace.tract is not None:
+        dataId['tract'] = namespace.tract
+    if namespace.filter is not None:
+        dataId['filter'] = namespace.filter
     if True:
         if namespace.doraise:
             task.run(butler, dataId, coaddName)
