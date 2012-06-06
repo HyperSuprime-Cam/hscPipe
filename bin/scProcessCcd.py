@@ -25,13 +25,21 @@ from hsc.pipe.base import HscArgumentParser
 from hsc.pipe.tasks.processCcd import SuprimeCamProcessCcdTask as TaskClass
 
 if __name__ == "__main__":
-    parser = HscArgumentParser()
+    parser = HscArgumentParser(conflict_handler='resolve') # old style
+
+    parser.add_argument('--dumpconfig', action="store_true", help="Dump the configuration to stdout and exit")
 
     try:
         namespace = parser.parse_args(config=TaskClass.ConfigClass())
     except Exception, e:
+        if "--doraise" in sys.argv:
+            raise
         print >> sys.stderr, e
         sys.exit(1)
+
+    if namespace.dumpconfig:
+        namespace.config._save(sys.stdout)
+        sys.exit(0)    
             
     task = TaskClass(config=namespace.config)
     for sensorRef in namespace.dataRefList:

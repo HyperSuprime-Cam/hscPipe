@@ -76,9 +76,19 @@ class HscReferencesTask(ReferencesTask):
         table.setMetadata(self.algMetadata)
         return self.detection.makeSourceCatalog(table, exposure)
 
+    def measureExp(self, butler, dataId, stackMeas):
+        exposure = butler.get("calexp", dataId)
+        psf = butler.get("psf", dataId)
+        ccd = exposure.getDetector()
+        ccd.setTrimmed(True)
+        psf.setDetector(ccd)
+        exposure.setPsf(psf)
+        wcs = exposure.getWcs()
+        apCorr = butler.get("apCorr", dataId)
+        box = afwGeom.Box2D(exposure.getBBox())
+
 class HscForcedPhotConfig(ForcedPhotConfig):
     references = ConfigurableField(target=HscReferencesTask, doc="Get reference objects")
-
 
 class HscForcedPhotTask(ForcedPhotTask):
     def readInputs(self, dataRef, *args, **kwargs):

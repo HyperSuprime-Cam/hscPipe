@@ -1,7 +1,9 @@
 root.calibrate.repair.doCosmicRay = False
 #root.calibrate.background.binSize = 1024
+root.calibrate.repair.doCrosstalk = False
+root.calibrate.repair.doLinearize = False
 
-# Diable background estimation due to ticket #2037
+# Disable background estimation due to ticket #2037
 root.calibrate.doBackground = False
 root.calibrate.detection.reEstimateBackground = False
 root.detection.reEstimateBackground = False

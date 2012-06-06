@@ -7,7 +7,6 @@ import lsst.daf.base as dafBase
 import lsst.meas.algorithms as measAlg
 import lsst.pipe.base as pipeBase
 import lsst.pipe.tasks.processCcd as ptProcessCcd
-import hsc.pipe.tasks.astrometry as hscAstrom
 import hsc.pipe.tasks.suprimecam as hscSuprimeCam
 import hsc.pipe.tasks.calibrate as hscCalibrate
 import hsc.pipe.tasks.isr as hscIsr
@@ -23,6 +22,7 @@ class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
     after producing a new multi-frame WCS.
     """
     ConfigClass = SubaruProcessCcdConfig
+    _DefaultName = "processCcd"
 
     def __init__(self, *args, **kwargs):
         super(SubaruProcessCcdTask, self).__init__(*args, **kwargs)
@@ -126,7 +126,12 @@ class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
         butler.put(struct.calib.apCorr, 'apCorr', dataId)
         butler.put(struct.calib.sources, 'icSrc', dataId)
 
+class SuprimeCamProcessCcdConfig(SubaruProcessCcdConfig):
+    isr = pexConfig.ConfigField(dtype=hscSuprimeCam.SuprimeCamIsrTask.ConfigClass,
+                                doc="Instrument signature removal")
+
 class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
+    ConfigClass = SuprimeCamProcessCcdConfig
     
     def __init__(self, **kwargs):
         pipeBase.Task.__init__(self, **kwargs)
