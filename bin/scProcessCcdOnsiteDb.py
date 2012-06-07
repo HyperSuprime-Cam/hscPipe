@@ -121,9 +121,9 @@ if __name__ == "__main__":
         return id, visit, ccd
 
     try:
-        if namspace.camera in ['suprimecam', 'sc', 'suprimecam-mit', 'mit']:
+        if namespace.camera in ['suprimecam', 'sc', 'suprimecam-mit', 'mit']:
             import onsiteDbUtilsSuprime as onsiteDbUtils
-        elif namspace.camera in ['hsc', 'hscsim']:
+        elif namespace.camera in ['hsc', 'hscsim']:
             import onsiteDbUtilsHsc as onsiteDbUtils
         else:
             print >> sys.stderr, "Given instrument name is not valid: %s" % namespace.camera
