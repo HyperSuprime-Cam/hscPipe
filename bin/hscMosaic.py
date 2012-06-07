@@ -51,4 +51,4 @@ if __name__ == "__main__":
             try:
                 task.run(butler, dataId, coaddName)
             except Exception, e:
-                task.log.log(task.log.FATAL, "Failed on dataId=%s: %s" % (sensorRef.dataId, e))
+                task.log.log(task.log.FATAL, "Failed on dataId=%s: %s" % (dataId, e))

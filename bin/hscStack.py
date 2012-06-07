@@ -53,6 +53,6 @@ if __name__ == "__main__":
         task.run(coaddRefList[0], namespace.dataRefList)
     else:
         try:
-            task.run(dataRef)
+            task.run(coaddRefList[0], namespace.dataRefList)
         except Exception, e:
             task.log.log(task.log.FATAL, "Failed: %s" % e)
