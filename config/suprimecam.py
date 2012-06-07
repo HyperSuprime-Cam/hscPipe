@@ -8,7 +8,7 @@ root.isr.methodList=["doConversionForIsr", "doSaturationDetection",
 
 root.calibrate.repair.doCosmicRay = True
 root.calibrate.repair.cosmicray.nCrPixelMax = 1000000
-root.calibrate.background.binSize = 1024
+root.calibrate.background.binSize = 256
 
 # PSF determination
 root.calibrate.measurePsf.starSelector.name = "secondMoment"
