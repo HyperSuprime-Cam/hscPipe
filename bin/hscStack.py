@@ -20,33 +20,39 @@
 # the GNU General Public License along with this program.  If not,
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
-import argparse, os, sys
-from hsc.pipe.base import HscArgumentParser
-from hsc.pipe.tasks.processCcd import SuprimeCamProcessCcdTask as TaskClass
+import sys
+import hsc.pipe.tasks.monkeypatch
+from lsst.pipe.base import ArgumentParser
+from hsc.meas.mosaic.task import HscCoaddTask as TaskClass
 
 if __name__ == "__main__":
-    parser = HscArgumentParser(conflict_handler='resolve') # old style
-
-    parser.add_argument('--dumpconfig', action="store_true", help="Dump the configuration to stdout and exit")
+    coaddName = "deep"
+    parser = ArgumentParser("hscCoadd", datasetType="calexp")
+    parser.add_argument("--filter", type=str, required=True)
+    parser.add_argument("--tract", type=int, required=True)
+    parser.add_argument("--patch", type=str, required=True)
 
     try:
         namespace = parser.parse_args(config=TaskClass.ConfigClass())
     except Exception, e:
-        if "--doraise" in sys.argv:
-            raise
         print >> sys.stderr, e
         sys.exit(1)
 
-    if namespace.dumpconfig:
-        namespace.config._save(sys.stdout)
-        sys.exit(0)    
-            
     task = TaskClass(config=namespace.config)
-    for sensorRef in namespace.dataRefList:
-        if namespace.doRaise:
-            task.run(sensorRef)
-        else:
-            try:
-                task.run(sensorRef)
-            except Exception, e:
-                task.log.log(task.log.FATAL, "Failed on dataId=%s: %s" % (sensorRef.dataId, e))
+    coaddId = {'filter': namespace.filter,
+               'tract': namespace.tract,
+               'patch': namespace.patch,
+               }
+    coaddRefList = list(namespace.butler.subset(datasetType=namespace.config.coaddName + "Coadd_skyMap",
+                        level=None, dataId=coaddId))
+    if len(coaddRefList) != 1:
+        raise RuntimeError("Non-specific coadd reference list: %s" % coaddRefList)
+
+    
+    if namespace.doraise:
+        task.run(coaddRefList[0], namespace.dataRefList)
+    else:
+        try:
+            task.run(coaddRefList[0], namespace.dataRefList)
+        except Exception, e:
+            task.log.log(task.log.FATAL, "Failed: %s" % e)

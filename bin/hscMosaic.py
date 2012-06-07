@@ -20,33 +20,35 @@
 # the GNU General Public License along with this program.  If not,
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
-import argparse, os, sys
-from hsc.pipe.base import HscArgumentParser
-from hsc.pipe.tasks.processCcd import SuprimeCamProcessCcdTask as TaskClass
+import sys
+import hsc.pipe.tasks.monkeypatch
+from lsst.pipe.base import ArgumentParser
+from hsc.meas.mosaic.task import MosaicTask as TaskClass
 
 if __name__ == "__main__":
-    parser = HscArgumentParser(conflict_handler='resolve') # old style
-
-    parser.add_argument('--dumpconfig', action="store_true", help="Dump the configuration to stdout and exit")
+    coaddName = "deep"
+    parser = ArgumentParser("hscMosaic", datasetType=None)
+    parser.add_argument("--filter", type=str)
+    parser.add_argument("--tract", type=int)
 
     try:
         namespace = parser.parse_args(config=TaskClass.ConfigClass())
     except Exception, e:
-        if "--doraise" in sys.argv:
-            raise
         print >> sys.stderr, e
         sys.exit(1)
 
-    if namespace.dumpconfig:
-        namespace.config._save(sys.stdout)
-        sys.exit(0)    
-            
     task = TaskClass(config=namespace.config)
-    for sensorRef in namespace.dataRefList:
-        if namespace.doRaise:
-            task.run(sensorRef)
+    butler = namespace.butler
+    dataId = {}
+    if namespace.tract is not None:
+        dataId['tract'] = namespace.tract
+    if namespace.filter is not None:
+        dataId['filter'] = namespace.filter
+    if True:
+        if namespace.doraise:
+            task.run(butler, dataId, coaddName)
         else:
             try:
-                task.run(sensorRef)
+                task.run(butler, dataId, coaddName)
             except Exception, e:
-                task.log.log(task.log.FATAL, "Failed on dataId=%s: %s" % (sensorRef.dataId, e))
+                task.log.log(task.log.FATAL, "Failed on dataId=%s: %s" % (dataId, e))
