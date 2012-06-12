@@ -49,7 +49,7 @@ if __name__ == "__main__":
         raise RuntimeError("Non-specific coadd reference list: %s" % coaddRefList)
 
     
-    if namespace.doraise:
+    if namespace.doRaise:
         task.run(coaddRefList[0], namespace.dataRefList)
     else:
         try:
