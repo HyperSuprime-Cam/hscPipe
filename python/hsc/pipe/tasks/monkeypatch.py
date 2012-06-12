@@ -45,6 +45,11 @@ method).  Our definition is merely to prevent failure due to the symbol not
 being defined.  We do not provide an implementation of parseAndRun() as it's
 not (yet?) part of the HSC way.
 
+We also provide a definition for lsst.pex.config.Config.freeze (intended to
+protect a Config from further modification).  Our definition is merely to
+prevent failure due to the symbol not being defined.  We do not seek to
+implement any real 'freeze' capability.
+
 Use
 ===
 
@@ -115,3 +120,10 @@ if not 'CmdLineTask' in dir(lsst.pipe.base):
 
     print "NOTE: Monkey-patching lsst.pipe.base.CmdLineTask"
     setattr(lsst.pipe.base, 'CmdLineTask', MP_CmdLineTask)
+
+
+if not 'freeze' in dir(lsst.pex.config.Config):
+    def MP_freeze(*args, **kwargs):
+        pass
+    print "NOTE: Monkey-patching lsst.pex.config.Config.freeze"
+    setattr(lsst.pex.config.Config, 'freeze', MP_freeze)
