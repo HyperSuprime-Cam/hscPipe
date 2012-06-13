@@ -20,18 +20,13 @@
 # the GNU General Public License along with this program.  If not,
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
-import sys
 import hsc.pipe.tasks.monkeypatch
-from lsst.pipe.base import ArgumentParser
-from hsc.meas.mosaic.task import HscCoaddTask as TaskClass
+import sys
+from lsst.pipe.tasks.makeSkyMap import MakeSkyMapTask as TaskClass
+from hsc.pipe.base import HscArgumentParser
 
 if __name__ == "__main__":
-    coaddName = "deep"
-    parser = ArgumentParser("hscCoadd", datasetType="calexp")
-    parser.add_argument("--filter", type=str, required=True)
-    parser.add_argument("--tract", type=int, required=True)
-    parser.add_argument("--patch", type=str, required=True)
-
+    parser = HscArgumentParser()
     try:
         namespace = parser.parse_args(config=TaskClass.ConfigClass())
     except Exception, e:
@@ -39,20 +34,13 @@ if __name__ == "__main__":
         sys.exit(1)
 
     task = TaskClass(config=namespace.config)
-    coaddId = {'filter': namespace.filter,
-               'tract': namespace.tract,
-               'patch': namespace.patch,
-               }
-    coaddRefList = list(namespace.butler.subset(datasetType=namespace.config.coaddName + "Coadd_skyMap",
-                        level=None, dataId=coaddId))
-    if len(coaddRefList) != 1:
-        raise RuntimeError("Non-specific coadd reference list: %s" % coaddRefList)
+    datasetType = namespace.config.coaddName + "Coadd_skyMap"
+    dataRef = namespace.butler.dataRef(datasetType=datasetType, dataId=dict())
 
-    
     if namespace.doRaise:
-        task.run(coaddRefList[0], namespace.dataRefList)
+        task.run(dataRef)
     else:
         try:
-            task.run(coaddRefList[0], namespace.dataRefList)
+            task.run(dataRef)
         except Exception, e:
             task.log.log(task.log.FATAL, "Failed: %s" % e)
