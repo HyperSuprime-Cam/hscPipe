@@ -32,6 +32,11 @@ class QaSeeingConfig(pexConfig.Config):
         doc = 'Inintial guess of seeing (pix)',
         default = 3.465,
         )
+    fracSrcIni = pexConfig.Field(
+        dtype = float, 
+        doc = 'What fraction of sources from the brightest is to be included for initial guess of seeing to avoid cosmic rays which dominate faint magnitudes', 
+        default = 0.15, # is good for SC with 5-sigma detection
+        )
     fwhmMin  = pexConfig.Field(
         dtype = float,
         doc = 'Minimum fwhm allowed in estimation of seeing (pix)',
@@ -106,6 +111,8 @@ def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, p
         magMaxHist = seeingConfig.magMaxHist
         nSampleRoughFwhm = seeingConfig.nSampleRoughFwhm
         fwhmMarginFinal = seeingConfig.fwhmMarginFinal
+        fracSrcIni = seeingConfig.fracSrcIni
+        
     else:
         fwhmIni = 0.7/0.202  # pix <- assuming SC. 
         fwhmMin = 1.5        # pix
@@ -120,6 +127,7 @@ def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, p
         nSampleRoughFwhm = 30 # objects
         fwhmMarginFinal = 1.5  # pix
 
+        fracSrcIni = 0.15
 
     # -- Filtering sources with rough min-max fwhm
     xListAll = []
@@ -259,7 +267,7 @@ def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, p
 
     magLim = None
     for i, cumFraction in enumerate(magCumHist[0]):
-        if cumFraction >= 0.15:
+        if cumFraction >= fracSrcIni:
             magLim = magCumHist[1][i] # magLim is the mag which exceeds the cumulative n(m) of 0.15
             break
     if not magLim:
