@@ -39,6 +39,7 @@ root.calibrate.astrometry.solver.filterMap = { 'B': 'g',
                                                }
 
 # FH below for QA stuff
+root.qa.seeing.fracSrcIni = 0.15
 #root.qa.seeing.fwhmIni = 3.465      #pix
 #root.qa.seeing.fwhmIni = 4.12      #pix hsc
 root.qa.seeing.fwhmMin = 1.5        #pix
