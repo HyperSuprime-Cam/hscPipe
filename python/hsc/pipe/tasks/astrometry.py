@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import lsst.pex.config as pexConfig
+import lsst.afw.cameraGeom as afwCG
 import lsst.pipe.base as pipeBase
 import lsst.meas.astrom as measAstrom
 import lsst.pipe.tasks.astrometry as ptAstrometry
@@ -74,3 +75,12 @@ class HscAstrometryTask(ptAstrometry.AstrometryTask):
         self.display('astrometry', exposure=exposure, sources=sources, matches=matches)
 
         return matches, matchMeta
+
+
+    def distort(self, exposure, sources):
+        if exposure.getWcs().hasDistortion():
+            for s in sources:
+                s.set(self.centroidKey, s.getCentroid())
+            return (0,0), (exposure.getWidth(), exposure.getHeight())
+        return super(HscAstrometryTask, self).distort(exposure, sources)
+
