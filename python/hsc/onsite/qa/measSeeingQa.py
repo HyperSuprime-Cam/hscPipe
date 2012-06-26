@@ -541,14 +541,14 @@ def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, p
 #        pltFwhmMap = fig.add_subplot(1,1,1)
         pltFwhmMap.set_xlim(0, xSize)
         pltFwhmMap.set_ylim(0, ySize)
-        pointSize = math.pi*(4*fwhmListPsfLikeRobust/2)**2. # 10pix=2arcsec fwhm = 20 point radius
+        pointSize = math.pi*(10*fwhmListPsfLikeRobust/2)**2. # 10pix=2arcsec fwhm = 50 point radius
 #        pltFwhmMap.plot(xListPsfLikeRobust, yListPsfLikeRobust, markersize=pointSize, marker='o', label='PSF sample')
         pltFwhmMap.scatter(xListPsfLikeRobust, yListPsfLikeRobust, s=pointSize, marker='o', color=None, facecolor=(1,1,1,0), label='PSF sample')
         ###pltFwhmMap.legend()
 
         # reference sample point
         fwhmPix = numpy.array([5.0]) # pixel in fwhm
-        pointSize = math.pi*(4*fwhmPix/2)**2.
+        pointSize = math.pi*(10*fwhmPix/2)**2.
         pltFwhmMap.scatter([0.1*xSize], [0.9*ySize], s=pointSize, marker='o', color='magenta', facecolor=(1,1,1,0), label='PSF sample')        
         plt.text(0.1 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
 
@@ -580,9 +580,10 @@ def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, p
         pltEllipseMap.set_xlim(0, xSize)
         pltEllipseMap.set_ylim(0, ySize)
 #        pltEllipseMap.plot(xListPsfLikeRobust, yListPsfLikeRobust, markersize=pointSize, marker='o', label='PSF sample')
-        scaleFactor = 50.  # 10pix~2arcsec (width) -> 500pix
+        scaleFactor = 100.  # 10pix~2arcsec (width) -> 1000pix
         for xEllipse, yEllipse, aa, bb, ellPa in zip(xListPsfLikeRobust, yListPsfLikeRobust, AEllListPsfLikeRobust, BEllListPsfLikeRobust, ellPaListPsfLikeRobust):
-            ell = patches.Ellipse((xEllipse, yEllipse), 2.*aa*scaleFactor, 2.*bb*scaleFactor, angle=ellPa, linewidth=2., fill=False, zorder=2)
+            if all([aa, bb, ellPa]):
+                ell = patches.Ellipse((xEllipse, yEllipse), 2.*aa*scaleFactor, 2.*bb*scaleFactor, angle=ellPa, linewidth=2., fill=False, zorder=2)
             pltEllipseMap.add_patch(ell)
 
         # reference sample point
@@ -1002,9 +1003,10 @@ def makePlotPsfEllipseInGrids(xCcd, yCcd, xGridSize, yGridSize, xListPsfLikeRobu
     print '** BEllList:', BEllList    
 
     #pltPsf.plot(xListPsfLikeRobust, yListPsfLikeRobust, markersize=pointSize, marker='o', label='PSF sample')
-    scaleFactor = (1/10.)*0.6*min(xGridSize, yGridSize) # 10pix=2arcsec(fwhm)==>A=0.6*gridSize~1200pix(for whole_CCD)
+    scaleFactor = (1/10.)*0.8*min(xGridSize, yGridSize) # 10pix=2arcsec(fwhm)==>A=0.6*gridSize~1200pix(for whole_CCD)
     for xEllipse, yEllipse, aa, bb, ellPa in zip(xGridList, yGridList, AEllList, BEllList, ellPaList):
-        ell = patches.Ellipse((xEllipse, yEllipse), 2.*aa*scaleFactor, 2.*bb*scaleFactor, angle=ellPa, linewidth=2., fill=False, zorder=2)
+        if all([aa, bb, ellPa]):
+            ell = patches.Ellipse((xEllipse, yEllipse), 2.*aa*scaleFactor, 2.*bb*scaleFactor, angle=ellPa, linewidth=2., fill=False, zorder=2)
         pltEllipse.add_patch(ell)
     pltEllipse.set_title('Size and Ellongation of PSF sources')
     pltEllipse.set_xlabel('X (pix)')
