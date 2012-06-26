@@ -8,4 +8,4 @@
 echo "mpiexec is at: $(which mpiexec)"
 eups list -s
 echo $PATH
-mpiexec --verbose python $DC2_PIPELINE_DIR/bin/test.py suprimecam price 126969
+mpiexec --verbose python $HSCPIPE_DIR/bin/test.py suprimecam price 126969
