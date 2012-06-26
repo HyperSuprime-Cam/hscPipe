@@ -1015,7 +1015,8 @@ def makePlotPsfEllipseInGrids(xCcd, yCcd, xGridSize, yGridSize, xListPsfLikeRobu
     #pltEllipse.legend()
 
     # reference sample point
-    fwhmPix = aa = bb = 2.5 # pixel in A, B (in half width)
+    fwhmPix = 5 # pixel in A, B (in half width)
+    aa = bb = fwhmPix/2.
     ell = patches.Ellipse((0.1*xSize, 0.9*ySize), 2.*aa*scaleFactor, 2.*bb*scaleFactor, angle=0., linewidth=4., color='magenta', fill=False, zorder=2)
     pltEllipse.add_patch(ell)
     plt.text(0.1 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
