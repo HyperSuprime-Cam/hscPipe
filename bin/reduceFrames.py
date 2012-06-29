@@ -14,7 +14,7 @@ if __name__ == "__main__":
     where FRAME_ID are integers identifying frames.
     """)
     parser.add_argument("-i", "--instrument", dest="instrument", help="Instrument name", default="hsc")
-    parser.add_argument("-r", "--rerun", dest="rerun", help="Rerun name", default=os.getlogin())
+    parser.add_argument("-r", "--rerun", dest="rerun", help="Rerun name", default=os.environ["LOGNAME"])
     parser.add_argument("frame", nargs='*', help="Frame numbers to reduce")
     pbs, args = parser.parse_args()
 

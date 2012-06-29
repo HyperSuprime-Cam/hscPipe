@@ -15,7 +15,7 @@ if __name__ == "__main__":
     where FRAME_ID are integers identifying frames.
     """)
     parser.add_argument("-i", "--instrument", dest="instrument", help="Instrument name", default="hsc")
-    parser.add_argument("-r", "--rerun", dest="rerun", help="Rerun name", default=os.getlogin())
+    parser.add_argument("-r", "--rerun", dest="rerun", help="Rerun name", default=os.environ["LOGNAME"])
     parser.add_argument("-d", "--detrend", type=str, choices=["bias", "dark", "flat", "fringe", "mask"],
                         help="Detrend type", required=True)
     parser.add_argument("-O", "--out", type=str, help="Pattern for output name, with %%d for ccd number")

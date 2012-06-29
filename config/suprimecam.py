@@ -8,16 +8,22 @@ root.isr.methodList=["doConversionForIsr", "doSaturationDetection",
 
 root.calibrate.repair.doCosmicRay = True
 root.calibrate.repair.cosmicray.nCrPixelMax = 1000000
-root.calibrate.background.binSize = 256
+root.calibrate.repair.cosmicray.cond3_fac2 = 0.4
+root.calibrate.background.binSize = 1024
+root.calibrate.detection.background.binSize = 1024
 
 # PSF determination
-root.calibrate.measurePsf.starSelector.name = "secondMoment"
+#root.calibrate.measurePsf.starSelector.name = "secondMoment"
+import lsst.meas.astrom.catalogStarSelector
+root.calibrate.measurePsf.starSelector.name = "catalog"
 root.calibrate.measurePsf.psfDeterminer.name = "pca"
+root.calibrate.measurePsf.starSelector["secondMoment"].fluxLim = 60000.0
 root.calibrate.measurePsf.starSelector["secondMoment"].clumpNSigma = 2.0
-root.calibrate.measurePsf.psfDeterminer["pca"].nEigenComponents = 4
+root.calibrate.measurePsf.psfDeterminer["pca"].nEigenComponents = 6
 root.calibrate.measurePsf.psfDeterminer["pca"].kernelSize = 10
-root.calibrate.measurePsf.psfDeterminer["pca"].spatialOrder = 2
+root.calibrate.measurePsf.psfDeterminer["pca"].spatialOrder = 4
 root.calibrate.measurePsf.psfDeterminer["pca"].kernelSizeMin = 25
+root.calibrate.measurePsf.psfDeterminer["pca"].constantWeight = False
 
 # Final photometry
 root.measurement.slots.apFlux = "flux.sinc"

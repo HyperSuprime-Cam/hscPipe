@@ -11,7 +11,7 @@ if __name__ == "__main__":
         stackFrames [OPTIONS] FIELD_NAME FILTER_NAME
     """)
     parser.add_argument("-i", "--instrument", dest="instrument", help="Instrument name", default="hsc")
-    parser.add_argument("-r", "--rerun", dest="rerun", help="Rerun name", default=os.getlogin())
+    parser.add_argument("-r", "--rerun", dest="rerun", help="Rerun name", default=os.environ["LOGNAME"])
     parser.add_argument("--wcs", dest="wcs", help="WCS for stack")
     parser.add_argument("-m", "--doMatchPsf", default=False, action='store_true',
                         help="match PSFs before stacking?")

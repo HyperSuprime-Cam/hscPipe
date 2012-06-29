@@ -21,7 +21,7 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 import argparse, os, sys
-from lsst.pipe.base import ArgumentParser
+from hsc.pipe.base import HscArgumentParser
 from hsc.pipe.tasks.processCcd import SuprimeCamProcessCcdTask as TaskClass
 
 # FH added for QA output
@@ -29,77 +29,30 @@ from hsc.pipe.tasks.processCcd import SuprimeCamProcessCcdTask as TaskClass
 # import hsc.onsite.qa.measSeeingQa as QaSeeing
 
 
-class OutputAction(argparse.Action):
-    def __call__(self, parser, namespace, values, option_string=None):
-        if namespace.rerun:
-            raise argparse.ArgumentTypeError("Please specify --output or --rerun, but not both")
-
-        namespace.outPath = values
-
-class RerunAction(argparse.Action):
-    def __call__(self, parser, namespace, values, option_string=None):
-        """We can't just parse the arguments and reset namespace.outPath as the Mapper's been
-        instantiated before we get a chance"""
-
-        if namespace.outPath:
-            raise argparse.ArgumentTypeError("Please specify --output or --rerun, but not both")
-
-        envar = "SUPRIME_DATA_DIR"
-        if os.environ.has_key(envar):
-            namespace.rerun = values
-            if namespace.camera == 'suprimecam':
-                cameraKey = 'SUPA'
-            elif namespace.camera == 'hsc':
-                cameraKey = 'HSC'
-            elif namespace.camera == 'hscsim':
-                cameraKey = 'HSC'
-            namespace.outPath = os.path.join(os.environ[envar], cameraKey, "rerun", namespace.rerun)
-            if not os.path.exists(namespace.outPath):
-                try:
-                    os.makedirs(namespace.outPath) # should be in butler
-                except OSError, e:
-                    print "*** making output directories failed once."
-                    if not e.errno == errno.EEXIST:
-                        # if directory does not exist, something wrong occured
-                        #raise RuntimeError, "Failed to create output directories: %s" % namespace.outPath
-                        raise
-        else:
-            raise argparse.ArgumentTypeError("You must define $%s to use --rerun XXX" % envar)
-
 if __name__ == "__main__":
-    if sys.argv[1] == 'suprimecam':
-        try:
-            parser = ArgumentParser(name="suprimecam", conflict_handler='resolve') # new style
-        except TypeError:
-            parser = ArgumentParser(conflict_handler='resolve') # old style
-    elif sys.argv[1] == 'hscsim':
-        try:
-            parser = ArgumentParser(name="hscsim", conflict_handler='resolve') # new style
-        except TypeError:
-            parser = ArgumentParser(conflict_handler='resolve') # old style
-    else:
-        try:
-            parser = ArgumentParser(name="suprimecam", conflict_handler='resolve') # new style
-        except TypeError:
-            parser = ArgumentParser(conflict_handler='resolve') # old style
-
-    parser.add_argument('--output', type=str, dest="outPath", default=None, help="output root directory",
-                        action=OutputAction)
-    parser.add_argument('--rerun', type=str, default=None, help='Desired rerun (overrides --output)',
-                        action=RerunAction)
+    parser = HscArgumentParser(conflict_handler='resolve') # old style
+    parser.add_argument('--dumpconfig', action="store_true", help="Dump the configuration to stdout and exit")
 
     try:
         namespace = parser.parse_args(config=TaskClass.ConfigClass())
     except Exception, e:
+        if "--doraise" in sys.argv:
+            raise
         print >> sys.stderr, e
         sys.exit(1)
+
+    if namespace.dumpconfig:
+        namespace.config._save(sys.stdout)
+        sys.exit(0)    
             
     task = TaskClass(config=namespace.config)
-    print '************ Here, config start **************'
-    print namespace.config
-    print '************ Here, config end **************'
+    if False: ## debugging
+        print '************ Here, config start **************'
+        print namespace.config
+        print '************ Here, config end **************'
 
-    print '*** len(namespace.dataRefList)', len(namespace.dataRefList)
+        print '*** len(namespace.dataRefList)', len(namespace.dataRefList)
+
     for sensorRef in namespace.dataRefList:
 
         filename = sensorRef.get("calexp_filename")
