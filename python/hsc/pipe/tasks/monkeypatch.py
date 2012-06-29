@@ -50,6 +50,10 @@ protect a Config from further modification).  Our definition is merely to
 prevent failure due to the symbol not being defined.  We do not seek to
 implement any real 'freeze' capability.
 
+We also set namespace.doraise from namespace.doRaise for the namespace returned
+from lsst.pipe.base.ArgumentParser.parse_args() to protect from variable name
+changes.
+
 Use
 ===
 
@@ -127,3 +131,13 @@ if not 'freeze' in dir(lsst.pex.config.Config):
         pass
     print "NOTE: Monkey-patching lsst.pex.config.Config.freeze"
     setattr(lsst.pex.config.Config, 'freeze', MP_freeze)
+
+
+class MP_ArgumentParser(lsst.pipe.base.ArgumentParser):
+    def parse_args(self, *args, **kwargs):
+        namespace = super(MP_ArgumentParser, self).parse_args(*args, **kwargs)
+        if not hasattr(namespace, 'doraise') and hasattr(namespace, 'doRaise'):
+            namespace.doraise = namespace.doRaise
+        return namespace
+print "NOTE: Monkey-patching lsst.pipe.base.ArgumentParser"
+setattr(lsst.pipe.base, 'ArgumentParser', MP_ArgumentParser)
