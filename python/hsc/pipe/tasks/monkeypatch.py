@@ -54,6 +54,8 @@ We also set namespace.doraise from namespace.doRaise for the namespace returned
 from lsst.pipe.base.ArgumentParser.parse_args() to protect from variable name
 changes.
 
+We also add lsst.daf.persistence.ButlerDataRef to add the getButler() method.
+
 Use
 ===
 
@@ -64,6 +66,7 @@ that underhanded practises are afoot.
 
 import lsst.pex.config
 import lsst.pipe.base
+import lsst.daf.persistence
 
 if not 'ConfigurableField' in dir(lsst.pex.config):
     global REGISTRY # Mapping from Config class to Task
@@ -141,3 +144,12 @@ class MP_ArgumentParser(lsst.pipe.base.ArgumentParser):
         return namespace
 print "NOTE: Monkey-patching lsst.pipe.base.ArgumentParser"
 setattr(lsst.pipe.base, 'ArgumentParser', MP_ArgumentParser)
+
+
+if not 'getButler' in dir(lsst.daf.persistence.ButlerDataRef):
+    class MP_ButlerDataRef(lsst.daf.persistence.ButlerDataRef):
+        def getButler(self):
+            return self.butlerSubset.butler
+    print "NOTE: Monkey-patching lsst.daf.persistence.ButlerDataRef"
+    setattr(lsst.daf.persistence, 'ButlerDataRef', MP_ButlerDataRef)
+    setattr(lsst.daf.persistence.butlerSubset, 'ButlerDataRef', MP_ButlerDataRef)
