@@ -13,7 +13,7 @@ root.calibrate.background.binSize = 1024
 root.calibrate.detection.background.binSize = 1024
 
 # PSF determination
-#root.calibrate.measurePsf.starSelector.name = "secondMoment"
+##root.calibrate.measurePsf.starSelector.name = "secondMoment"
 import lsst.meas.astrom.catalogStarSelector
 root.calibrate.measurePsf.starSelector.name = "catalog"
 root.calibrate.measurePsf.psfDeterminer.name = "pca"

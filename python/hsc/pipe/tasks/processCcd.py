@@ -144,9 +144,10 @@ class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
 
 
 class SuprimeCamProcessCcdConfig(SubaruProcessCcdConfig):
-    isr = pexConfig.ConfigField(dtype=hscSuprimeCam.SuprimeCamIsrTask.ConfigClass,
-                                doc="Instrument signature removal")
-
+    pass
+####    isr = pexConfig.ConfigField(dtype=qaHscSuprimeCam.qaSuprimeCamIsrTask.ConfigClass,
+####    isr = pexConfig.ConfigField(dtype=hscSuprimeCam.SuprimeCamIsrTask.ConfigClass,
+####                                doc="Instrument signature removal")
 
 class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
     ConfigClass = SuprimeCamProcessCcdConfig

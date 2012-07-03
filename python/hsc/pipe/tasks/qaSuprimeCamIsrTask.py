@@ -71,7 +71,8 @@ class QaConfig(pexConfig.Config):
     
 #class QaIsrTaskConfig(ptProcessCcd.ProcessCcdConfig):
 ###class QaIsrTaskConfig(ipIsr.IsrTaskConfig):
-class QaIsrTaskConfig(hscIsr.HscIsrConfig):
+###class QaIsrTaskConfig(hscIsr.HscIsrConfig):
+class QaIsrTaskConfig(hscSuprimeCam.HamamatsuIsrTaskConfig):
     qa = pexConfig.ConfigField(dtype=QaConfig, doc="Qa configuration")
         
 class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
