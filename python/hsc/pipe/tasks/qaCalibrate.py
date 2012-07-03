@@ -37,7 +37,7 @@ class HscCalibrateTask(ptCalibrate.CalibrateTask):
         self.makeSubtask("photocal", photocalQa.PhotoCalTask, schema=self.schema)        
 
     ##== FH modified for QA output
-    ## copied from pipe_tasks::calibrate::CalibrateTask::run() to get a bit change in run() function. 
+    ## copied from pipe_tasks::calibrate::CalibrateTask::run() with a slight change for onsiteQA. 
     @pipeBase.timeMethod
     def run(self, exposure, defects=None):
         """Calibrate an exposure: measure PSF, subtract background, measure astrometry and photometry
@@ -73,6 +73,11 @@ class HscCalibrateTask(ptCalibrate.CalibrateTask):
 
         if self.config.doPsf:
             self.initialMeasurement.measure(exposure, sources)
+
+            if self.config.doAstrometry:
+                oldWcs = exposure.getWcs()
+                self.astrometry.run(exposure, sources)
+
             psfRet = self.measurePsf.run(exposure, sources)
             cellSet = psfRet.cellSet
             psf = psfRet.psf
@@ -82,7 +87,7 @@ class HscCalibrateTask(ptCalibrate.CalibrateTask):
         # Wash, rinse, repeat with proper PSF
 
         if self.config.doPsf:
-            self.repair.run(exposure, defects=defects, keepCRs=None)
+            self.repair.run(exposure, defects=defects, keepCRs=None, fixCrosstalk=False, linearize=False)
             self.display('repair', exposure=exposure)
 
         if self.config.doBackground:   # is repeating this necessary?  (does background depend on PSF model?)
@@ -96,6 +101,9 @@ class HscCalibrateTask(ptCalibrate.CalibrateTask):
 
         if self.config.doComputeApCorr or self.config.doAstrometry or self.config.doPhotoCal:
             self.measurement.measure(exposure, sources)   # don't use run, because we don't have apCorr yet
+
+        if self.measurement.config.doCorrectDistortion:
+            self.measurement.correctDistortion(exposure, sources)
 
         if self.config.doComputeApCorr:
             assert(self.config.doPsf)
@@ -116,7 +124,7 @@ class HscCalibrateTask(ptCalibrate.CalibrateTask):
 
         if self.config.doPhotoCal:
             assert(matches is not None)
-            photocalRet = self.photocal.run(matches)
+            photocalRet = self.photocal.run(matches, exposure.getFilter().getName())
             zp = photocalRet.photocal
             self.log.log(self.log.INFO, "Photometric zero-point: %f" % zp.getMag(1.0))
             exposure.getCalib().setFluxMag0(zp.getFlux(0))

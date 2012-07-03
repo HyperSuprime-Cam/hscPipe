@@ -70,6 +70,5 @@ if __name__ == "__main__":
                 print '* * '*40
                 print sensorRef
                 print '* * '*40
-                task.run(sensorRef)                    
-
+                task.run(sensorRef) 
         
