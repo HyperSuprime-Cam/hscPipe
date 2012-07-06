@@ -20,6 +20,8 @@ root.calibrate.measurePsf.psfDeterminer.name = "pca"
 root.calibrate.measurePsf.starSelector["secondMoment"].fluxLim = 60000.0
 root.calibrate.measurePsf.starSelector["secondMoment"].clumpNSigma = 2.0
 root.calibrate.measurePsf.psfDeterminer["pca"].nEigenComponents = 6
+#### new meas_algorithms has changed the name of kernelSize to kernelScaling
+####root.calibrate.measurePsf.psfDeterminer["pca"].kernelScaling = 10.0
 root.calibrate.measurePsf.psfDeterminer["pca"].kernelSize = 10
 root.calibrate.measurePsf.psfDeterminer["pca"].spatialOrder = 4
 root.calibrate.measurePsf.psfDeterminer["pca"].kernelSizeMin = 25

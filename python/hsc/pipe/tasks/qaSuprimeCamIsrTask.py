@@ -21,32 +21,32 @@ from hsc.pipe.tasks.qaSuprimeCamIsr import QaSuprimeCamIsr
 
 #== FH changed for QA output
 class QaFlatnessConfig(pexConfig.Config):
-        meshX = pexConfig.Field(
-            dtype = int,
-            doc = 'Mesh size in X (pix) to calculate count statistics',
-            default = 256,
-            )
-        meshY = pexConfig.Field(
-            dtype = int,
-            doc = 'Mesh size in Y (pix) to calculate count statistics',
-            default = 256,
-            )
-        doClip = pexConfig.Field(
-            dtype = bool,
-            doc = 'Do we clip outliers in calculate count statistics?',
-            default = True,
-            )
-        clipSigma = pexConfig.Field(
-            dtype = float,
-            doc = 'How many sigma is used to clip outliers in calculate count statistics?',
-            default = 3.0,
-            )
-        nIter = pexConfig.Field(
-            dtype = int,
-            doc = 'How many times do we iterate clipping outliers in calculate count statistics?',
-            default = 3,
-            )
-        
+    meshX = pexConfig.Field(
+        dtype = int,
+        doc = 'Mesh size in X (pix) to calculate count statistics',
+        default = 256,
+        )
+    meshY = pexConfig.Field(
+        dtype = int,
+        doc = 'Mesh size in Y (pix) to calculate count statistics',
+        default = 256,
+        )
+    doClip = pexConfig.Field(
+        dtype = bool,
+        doc = 'Do we clip outliers in calculate count statistics?',
+        default = True,
+        )
+    clipSigma = pexConfig.Field(
+        dtype = float,
+        doc = 'How many sigma is used to clip outliers in calculate count statistics?',
+        default = 3.0,
+        )
+    nIter = pexConfig.Field(
+        dtype = int,
+        doc = 'How many times do we iterate clipping outliers in calculate count statistics?',
+        default = 3,
+        )
+    
 class QaDoWriteImageConfig(pexConfig.Config):
     doWriteOssImage = pexConfig.Field(
         dtype = bool,
@@ -99,7 +99,7 @@ class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
             exposure = self.doVariance(exposure, calibSet)
         ## FH: doWriteOssImageQa includes ccdAssembly which requires variance plance there, so
 	##     placed after doVariance
-        if self.config.qa.doWriteImage.doWriteOssImage: 
+        if self.config.qa.doWriteImage.doWriteOssImage or self.config.qa.doWriteImage.doDumpSnapshot:
             self.doWriteOssImageQa(exposure, calibSet, butler, dataId)
 
         exposure = self.doCcdAssembly([exposure])
@@ -110,7 +110,7 @@ class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
             exposure = self.doDarkCorrection(exposure, calibSet)
         if self.config.doFlat:
             exposure = self.doFlatCorrectionQa(exposure, calibSet)
-        if self.config.qa.doWriteImage.doWriteFltImage:
+        if self.config.qa.doWriteImage.doWriteFltImage or self.config.qa.doWriteImage.doDumpSnapshot:
             self.doWriteFltImageQa(exposure, calibSet, butler, dataId)
 	if self.config.qa.camera in ['suprimecam', 'suprime', 'sup', 'sc']:
 	    self.guider(exposure) ## to be compatible with hscSuprimeCam.SuprimeCamIsrTask.run()
@@ -151,22 +151,22 @@ class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
         metadata.set('OSSIGMA3', osSigma[2])
         metadata.set('OSSIGMA4', osSigma[3])
                                                                
-        return exposure
+	return exposure
 
-    ##== FH for QA output
+##== FH for QA output
     def doWriteOssImageQa(self, exposure, calibSet, butler, dataId):
-        #if self.config.qa.doWriteImage.doWriteOssImage is True:
-	pathToSrcFile = butler.get('src_filename', dataId)[0]
+	trimmedExposure = self.doCcdAssembly([exposure])
+        frameId = exposure.getMetadata().get('FRAMEID')	
+        pathToSrcFile = butler.get('src_filename', dataId)[0]
 	qaOutputDirName = os.path.dirname(pathToSrcFile)
 	if os.path.exists(qaOutputDirName) is not True:
-		os.makedirs(qaOutputDirName)
+	    os.makedirs(qaOutputDirName)
         else:
 	    pass
-        frameId = exposure.getMetadata().get('FRAMEID')
-        outfile = qaOutputDirName + '/' + 'oss_'+frameId+'.fits'
-        trimmedExposure = self.doCcdAssembly([exposure])
-        self.isr.writeFitsImageQa(trimmedExposure, outfile)
-        self.log.log(self.log.INFO, "QA writing overscan-subtracted FITS image: %s" % outfile)
+        if self.config.qa.doWriteImage.doWriteOssImage is True:
+            outfile = qaOutputDirName + '/' + 'oss_'+frameId+'.fits'
+            self.isr.writeFitsImageQa(trimmedExposure, outfile)
+            self.log.log(self.log.INFO, "QA writing overscan-subtracted FITS image: %s" % outfile)
                                                                
         #if True:
         if self.config.qa.doWriteImage.doDumpSnapshot is True:
@@ -178,18 +178,17 @@ class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
 
     ##== FH for QA output
     def doWriteFltImageQa(self, exposure, calibSet, butler, dataId):
-        #if True:
-        #if self.config.qa.doWriteImage.doWriteFltImage is True:
+        frameId = exposure.getMetadata().get('FRAMEID')
         pathToSrcFile = butler.get('src_filename', dataId)[0]
         qaOutputDirName = os.path.dirname(pathToSrcFile)
-        if os.path.exists(qaOutputDirName) is not True:
-		os.makedirs(qaOutputDirName)
+	if os.path.exists(qaOutputDirName) is not True:
+            os.makedirs(qaOutputDirName)
         else:
             pass
-        frameId = exposure.getMetadata().get('FRAMEID')
-        outfile = qaOutputDirName + '/' + 'flt_'+frameId+'.fits'
-        self.isr.writeFitsImageQa(exposure, outfile)
-        self.log.log(self.log.INFO, "QA writing flatfielded FITS image: %s" % outfile)
+        if self.config.qa.doWriteImage.doWriteFltImage is True:
+            outfile = qaOutputDirName + '/' + 'flt_'+frameId+'.fits'
+            self.isr.writeFitsImageQa(exposure, outfile)
+            self.log.log(self.log.INFO, "QA writing flatfielded FITS image: %s" % outfile)
                                                                
         #if True:
         if self.config.qa.doWriteImage.doDumpSnapshot is True:
