@@ -46,7 +46,7 @@ class QaFlatnessConfig(pexConfig.Config):
         doc = 'How many times do we iterate clipping outliers in calculate count statistics?',
         default = 3,
         )
-    
+
 class QaDoWriteImageConfig(pexConfig.Config):
     doWriteOssImage = pexConfig.Field(
         dtype = bool,
@@ -68,13 +68,13 @@ class QaConfig(pexConfig.Config):
     flatness = pexConfig.ConfigField(dtype=QaFlatnessConfig, doc="Qa.flatness")
     doWriteImage = pexConfig.ConfigField(dtype=QaDoWriteImageConfig, doc="Qa.DoWriteImage")
     camera = pexConfig.Field(dtype=str, doc="suprimecam or hsc", default='hsc')
-    
+
 #class QaIsrTaskConfig(ptProcessCcd.ProcessCcdConfig):
 ###class QaIsrTaskConfig(ipIsr.IsrTaskConfig):
 ###class QaIsrTaskConfig(hscIsr.HscIsrConfig):
 class QaIsrTaskConfig(hscSuprimeCam.HamamatsuIsrTaskConfig):
     qa = pexConfig.ConfigField(dtype=QaConfig, doc="Qa configuration")
-        
+
 class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
 
     ConfigClass = QaIsrTaskConfig
@@ -84,7 +84,7 @@ class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
         ## other parent classes do not have specific __init__(), so I just call pipeBase.Task.__init__().
         ##super(QaSuprimeCamIsrTask, self).__init__(**kwargs)
         pipeBase.Task.__init__(self, *args, **kwargs)
-	self.isr = QaSuprimeCamIsr()
+        self.isr = QaSuprimeCamIsr()
 
     ## The run() function is copied from hsc.pipe.tasks.isr(=hscIsr).HscIsrTask.run() 
     ## with changing doWriteXxxImageQa() functions to accept <butler & dataId> in their arguments
@@ -98,7 +98,7 @@ class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
             # Ideally, this should be done after bias subtraction, but CCD assembly demands a variance plane
             exposure = self.doVariance(exposure, calibSet)
         ## FH: doWriteOssImageQa includes ccdAssembly which requires variance plance there, so
-	##     placed after doVariance
+        ##     placed after doVariance
         if self.config.qa.doWriteImage.doWriteOssImage or self.config.qa.doWriteImage.doDumpSnapshot:
             self.doWriteOssImageQa(exposure, calibSet, butler, dataId)
 
@@ -112,8 +112,8 @@ class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
             exposure = self.doFlatCorrectionQa(exposure, calibSet)
         if self.config.qa.doWriteImage.doWriteFltImage or self.config.qa.doWriteImage.doDumpSnapshot:
             self.doWriteFltImageQa(exposure, calibSet, butler, dataId)
-	if self.config.qa.camera in ['suprimecam', 'suprime', 'sup', 'sc']:
-	    self.guider(exposure) ## to be compatible with hscSuprimeCam.SuprimeCamIsrTask.run()
+        if self.config.qa.camera in ['suprimecam', 'suprime', 'sup', 'sc']:
+            self.guider(exposure) ## to be compatible with hscSuprimeCam.SuprimeCamIsrTask.run()
 
         return Struct(postIsrExposure=exposure)
 
@@ -128,7 +128,7 @@ class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
         metadata = exposure.getMetadata()
         osLevel = [None,None,None,None] # overscan values in each readout channel
         osSigma = [None,None,None,None]
-        
+
         for amp in self._getAmplifiers(exposure):
             expImage = exposure.getMaskedImage().getImage()
             overscan = expImage.Factory(expImage, amp.getDiskBiasSec())
@@ -141,7 +141,7 @@ class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
 
             self.log.log(self.log.INFO, "QA overscan: osLevel[%d]: %f" % (channelId, osLevel[channelId]))
             self.log.log(self.log.INFO, "QA overscan: osSigmal[%d]: %f" % (channelId, osSigma[channelId]))
-            
+
         metadata.set('OSLEVEL1', osLevel[0])
         metadata.set('OSLEVEL2', osLevel[1])
         metadata.set('OSLEVEL3', osLevel[2])
@@ -150,24 +150,24 @@ class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
         metadata.set('OSSIGMA2', osSigma[1])
         metadata.set('OSSIGMA3', osSigma[2])
         metadata.set('OSSIGMA4', osSigma[3])
-                                                               
-	return exposure
+
+        return exposure
 
 ##== FH for QA output
     def doWriteOssImageQa(self, exposure, calibSet, butler, dataId):
-	trimmedExposure = self.doCcdAssembly([exposure])
+        trimmedExposure = self.doCcdAssembly([exposure])
         frameId = exposure.getMetadata().get('FRAMEID')	
         pathToSrcFile = butler.get('src_filename', dataId)[0]
-	qaOutputDirName = os.path.dirname(pathToSrcFile)
-	if os.path.exists(qaOutputDirName) is not True:
-	    os.makedirs(qaOutputDirName)
+        qaOutputDirName = os.path.dirname(pathToSrcFile)
+        if os.path.exists(qaOutputDirName) is not True:
+            os.makedirs(qaOutputDirName)
         else:
-	    pass
+            pass
         if self.config.qa.doWriteImage.doWriteOssImage is True:
             outfile = qaOutputDirName + '/' + 'oss_'+frameId+'.fits'
             self.isr.writeFitsImageQa(trimmedExposure, outfile)
             self.log.log(self.log.INFO, "QA writing overscan-subtracted FITS image: %s" % outfile)
-                                                               
+
         #if True:
         if self.config.qa.doWriteImage.doDumpSnapshot is True:
             snapName = qaOutputDirName + '/' + 'oss_%s.png' % str(frameId)
@@ -181,7 +181,7 @@ class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
         frameId = exposure.getMetadata().get('FRAMEID')
         pathToSrcFile = butler.get('src_filename', dataId)[0]
         qaOutputDirName = os.path.dirname(pathToSrcFile)
-	if os.path.exists(qaOutputDirName) is not True:
+        if os.path.exists(qaOutputDirName) is not True:
             os.makedirs(qaOutputDirName)
         else:
             pass
@@ -189,7 +189,7 @@ class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
             outfile = qaOutputDirName + '/' + 'flt_'+frameId+'.fits'
             self.isr.writeFitsImageQa(exposure, outfile)
             self.log.log(self.log.INFO, "QA writing flatfielded FITS image: %s" % outfile)
-                                                               
+
         #if True:
         if self.config.qa.doWriteImage.doDumpSnapshot is True:
             snapName = qaOutputDirName + '/' + 'flt_%s.png' % str(frameId)
@@ -204,33 +204,33 @@ class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
         scalingtype = self.config.flatScalingType
         scalingvalue = self.config.flatScalingValue
         #### FH
-	if False: # if self._display:
+        if False: # if self._display:
             import lsst.afw.display.ds9 as ds9
 
         for amp in self._getAmplifiers(exposure):
             exp, flat = self._getCalibration(exposure, flatfield, amp)
             self.isr.flatCorrection(exp.getMaskedImage(), flat.getMaskedImage(), scalingtype, scaling = scalingvalue)
             #### FH
-	    if False:
+            if False:
                 ampId = amp.getId().getSerial()
-		ds9.mtv(exp.getMaskedImage(), frame=2*ampId, title='exp-amp %1d' % ampId)
-		ds9.mtv(flat.getMaskedImage(), frame=2*ampId+1, title='flat-amp %1d' % ampId)
+                ds9.mtv(exp.getMaskedImage(), frame=2*ampId, title='exp-amp %1d' % ampId)
+                ds9.mtv(flat.getMaskedImage(), frame=2*ampId+1, title='flat-amp %1d' % ampId)
 
         # Qa mesurement of skylevel of flatfielded image
         # - As background is not done here, I measure skyLevel and skySigma here.  
-	self.doMeasureFlatnessImageQa(exposure)
-	
-	return exposure
+        self.doMeasureFlatnessImageQa(exposure)
+
+        return exposure
 
     ##== FH for QA output
     def doMeasureFlatnessImageQa(self, exposure):
 
         metadata = exposure.getMetadata()
-	### exposure is already trimmed just before doFlatCorrection so no need to ccdAssemble here.
-	if False:
+        ### exposure is already trimmed just before doFlatCorrection so no need to ccdAssemble here.
+        if False:
             trimmedExposure = self.doCcdAssembly([exposure])
             trimmedImage = trimmedExposure.getMaskedImage().getImage()
-	else:
+        else:
             trimmedImage = exposure.getMaskedImage().getImage()
 
         clipSigma = 3.0; nIter = 3
@@ -262,24 +262,22 @@ class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
 
         (flatness, flatness_pp, flatness_min, flatness_max, flatness_rms, skyMedian, nX, nY) = \
                    self.isr.measureFlatnessImageQa(
-		trimmedImage,
-		meshX=meshX,
-		meshY=meshY,
-		doClip=doClip,
-		clipSigma=clipSigma,
-		nIter=nIter
-		)
-        
+            trimmedImage,
+            meshX=meshX,
+            meshY=meshY,
+            doClip=doClip,
+            clipSigma=clipSigma,
+            nIter=nIter
+            )
+
         self.log.log(self.log.INFO, "QA flatfield: measuring skylevels in %dx%d grids: %f" % (nX, nY, skyMedian))
         self.log.log(self.log.INFO, "QA flatfield: flatness in %dx%d grids - pp: %f rms: %f" % (nX, nY, flatness_pp, flatness_rms))
 
         metadata.set('FLATNESS_PP', flatness_pp)
-        metadata.set('FLATNESS_RMS', flatness_rms)        
+        metadata.set('FLATNESS_RMS', flatness_rms)
         metadata.set('FLATNESS_NGRIDS', '%dx%d' % (nX, nY))
         metadata.set('FLATNESS_MESHX', meshX)
-        metadata.set('FLATNESS_MESHY', meshY)                
-            
-
+        metadata.set('FLATNESS_MESHY', meshY)
 #    def doIlluminationCorrection(self, exposure, calibSet):
 #        pass
 

@@ -31,9 +31,9 @@ class HamamatsuIsrTaskConfig(hscIsr.HscIsrTask.ConfigClass):
     minPixelToMask = pexConfig.Field(
         dtype = float,
         doc = "Minimum pixel value (in electrons) to cause crosstalkMaskPlane bit to be set",
-        default = 45000,        
-    )
-    
+        default = 45000,
+        )
+
     doLinearize = pexConfig.Field(
         dtype = bool,
         doc = "Correct for nonlinearity of the detector's response (ignored if coefficients are 0.0)",
@@ -42,13 +42,13 @@ class HamamatsuIsrTaskConfig(hscIsr.HscIsrTask.ConfigClass):
     linearizationThreshold = pexConfig.Field(
         dtype = float,
         doc = "Minimum pixel value (in electrons) to apply linearity corrections",
-        default = 0.0,        
-    )
+        default = 0.0,
+        )
     linearizationCoefficient = pexConfig.Field(
         dtype = float,
         doc = "Linearity correction coefficient",
-        default = 0.0,        
-    )
+        default = 0.0,
+        )
 
 class SuprimeCamIsrTaskConfig(HamamatsuIsrTaskConfig):
     pass
@@ -65,10 +65,10 @@ class SuprimeCamIsrTask(hscIsr.HscIsrTask):
 
         if self.config.doLinearize:
             self.linearize(exposure)
-        
+
         self.guider(exposure)
         return result
-    
+
     def crosstalk(self, exposure):
         coeffs = self.config.crosstalkCoeffs.getCoeffs()
 
@@ -86,7 +86,7 @@ class SuprimeCamIsrTask(hscIsr.HscIsrTask):
         @return Defect list
         """
         assert exposure, "No exposure provided"
-        
+
         ccd = afwCG.cast_Ccd(exposure.getDetector()) # This is Suprime-Cam so we know the Detector is a Ccd
         ccdNum = ccd.getId().getSerial()
         if ccdNum not in [0, 1, 2, 6, 7]:
@@ -104,7 +104,6 @@ class SuprimeCamIsrTask(hscIsr.HscIsrTask):
         elif ccdNum in [0, 6]:
             maskLimit = int(60.0 * xGuider - 2000.0) # From SDFRED
 
-        
         mi = exposure.getMaskedImage()
         height = mi.getHeight()
         if height < maskLimit:
@@ -118,10 +117,10 @@ class SuprimeCamIsrTask(hscIsr.HscIsrTask):
             bbox = afwGeom.Box2I(afwGeom.Point2I(0, maskLimit - 1),
                                  afwGeom.Point2I(mask.getWidth() - 1, height - 1))
             badMask = mask.Factory(mask, bbox, afwImage.LOCAL)
-            
+
             mask.addMaskPlane("GUIDER")
             badBitmask = mask.getPlaneBitMask("GUIDER")
-            
+
             badMask |= badBitmask
         else:
             # XXX Temporary solution until a mask plane is respected by downstream processes
@@ -151,7 +150,7 @@ class SuprimeCamIsrTask(hscIsr.HscIsrTask):
 
             if linearizationCoefficient == 0.0:     # nothing to do
                 continue
-            
+
             self.log.log(self.log.INFO,
                          "Applying linearity corrections to Ccd %s Amp %s" % (ccd.getId(), amp.getId()))
 
@@ -173,5 +172,3 @@ class SuprimeCamIsrTask(hscIsr.HscIsrTask):
                         if val > linearizationThreshold:
                             val += val*linearizationCoefficient*(math.log10(val) - log10_thresh)
                             ampImage.set(x, y, val)
-        
-            

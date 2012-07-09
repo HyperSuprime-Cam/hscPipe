@@ -25,7 +25,7 @@ class HscAstrometryTask(ptAstrometry.AstrometryTask):
     @pipeBase.timeMethod
     def run(self, exposure, sources):
         """AstrometryTask an exposure: PSF, astrometry and photometry
-        
+
         @param exposure Exposure to calibrate
         @param sources List of measured sources
         @return a pipeBase.Struct with fields:
@@ -33,7 +33,7 @@ class HscAstrometryTask(ptAstrometry.AstrometryTask):
         - matchMeta: Metadata for astrometric matches
         """
         assert exposure is not None, "No exposure provided"
-        
+
         llc, size = self.distort(exposure, sources)
         oldCentroidKey = sources.table.getCentroidKey()
         sources.table.defineCentroid(self.centroidKey, sources.table.getCentroidErrKey(),
@@ -45,8 +45,7 @@ class HscAstrometryTask(ptAstrometry.AstrometryTask):
 
         ##== FH calls undistortQa() 
         self.undistortQa(exposure, sources, matches)
-        
-        
+
         return pipeBase.Struct(
             matches = matches,
             matchMeta = matchMeta,
@@ -88,7 +87,7 @@ class HscAstrometryTask(ptAstrometry.AstrometryTask):
             self.log.log(self.log.WARN, "hsc.meas.astrom failed (%s); trying lsst.meas.astrom" % e)
             astrometer = measAstrom.Astrometry(self.config.solver, log=self.log)
             astrom = astrometer.determineWcs(sources, exposure)
-        
+
         if astrom is None:
             raise RuntimeError("Unable to solve astrometry for %s", exposure.getDetector().getId())
 
@@ -124,9 +123,9 @@ class HscAstrometryTask(ptAstrometry.AstrometryTask):
         assert exposure, "No exposure provided"
 
         metadata = exposure.getMetadata()
-        
+
         self.log.log(self.log.INFO, "QA astrometry: Solving astrometry and recording QA outputs")
-        
+
         try:
             import hsc.meas.astrom as hscAst
         except ImportError:
@@ -149,7 +148,7 @@ class HscAstrometryTask(ptAstrometry.AstrometryTask):
             self.log.log(self.log.WARN, "hsc.meas.astrom failed (%s); trying lsst.meas.astrom" % e)
             astrometer = measAstrom.Astrometry(self.config.solver, log=self.log)
             astrom = astrometer.determineWcs(sources, exposure)
-        
+
         if astrom is None:
             raise RuntimeError("Unable to solve astrometry for %s", exposure.getDetector().getId())
 
@@ -199,8 +198,8 @@ class HscAstrometryTask(ptAstrometry.AstrometryTask):
 
         # dummy values in the case of 'without distortion'
         metadata.set('WCS_SIPORDER', 0)
-        metadata.set('WCS_RMS', -1)        
-                     
+        metadata.set('WCS_RMS', -1)
+
         # Re-fit the WCS with the distortion undone
         if self.config.solver.calculateSip:
             self.log.log(self.log.INFO, "QA astrometry: Refitting WCS with distortion removed")
@@ -216,14 +215,14 @@ class HscAstrometryTask(ptAstrometry.AstrometryTask):
             else: sipOrder = 0
             metadata.set('WCS_SIPORDER', self.config.solver.sipOrder)
             metadata.set('WCS_RMS', sip.getScatterOnSky().asArcseconds()) # arcsec rms
-            
+
             # Apply WCS to sources
             for index, source in enumerate(sources):
                 sky = wcs.pixelToSky(source.getX(), source.getY())
                 source.setCoord(sky)
         else:
             self.log.log(self.log.WARN, "Not calculating a SIP solution; matches may be suspect")
-        
+
         self.display('astrometry', exposure=exposure, sources=sources, matches=matches)
 
 

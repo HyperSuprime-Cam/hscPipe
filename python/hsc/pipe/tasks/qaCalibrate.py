@@ -34,7 +34,7 @@ class HscCalibrateTask(ptCalibrate.CalibrateTask):
         self.makeSubtask("astrometry", hscAstrom.HscAstrometryTask, schema=self.schema)
         ##== FH modified for QA output
         ##self.makeSubtask("photocal", photocal.PhotoCalTask, schema=self.schema)
-        self.makeSubtask("photocal", photocalQa.PhotoCalTask, schema=self.schema)        
+        self.makeSubtask("photocal", photocalQa.PhotoCalTask, schema=self.schema)
 
     ##== FH modified for QA output
     ## copied from pipe_tasks::calibrate::CalibrateTask::run() with a slight change for onsiteQA. 
@@ -65,7 +65,7 @@ class HscCalibrateTask(ptCalibrate.CalibrateTask):
                 del bg
 
             self.display('background', exposure=exposure)
-        
+
         table = afwTable.SourceTable.make(self.schema) # TODO: custom IdFactory for globally unique IDs
         table.setMetadata(self.algMetadata)
         detRet = self.detection.makeSourceCatalog(table, exposure)
@@ -139,8 +139,8 @@ class HscCalibrateTask(ptCalibrate.CalibrateTask):
             self.log.log(self.log.INFO, "QA photocal: exptime: %f (sec)" % exptime)
             self.log.log(self.log.INFO, "QA photocal: magzero: %f" % magZero)
             self.log.log(self.log.INFO, "QA photocal: magzeroRms: %f" % magSigma)
-            self.log.log(self.log.INFO, "QA photocal: magzeroNref: %d" % nRef)                        
-            
+            self.log.log(self.log.INFO, "QA photocal: magzeroNref: %d" % nRef)
+
             magZero = magZero - 2.5 * math.log10(exptime) # convert to (mag/sec/adu)
             metadata = exposure.getMetadata()
             metadata.set('MAGZERO', magZero)

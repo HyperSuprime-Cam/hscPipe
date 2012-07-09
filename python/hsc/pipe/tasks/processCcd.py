@@ -103,13 +103,13 @@ class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
             else:
                 apCorr = calib.apCorr
             self.measurement.run(exposure, sources, apCorr)
- 
+
         if self.config.doWriteSources:
             sensorRef.put(sources, 'src')
 
         if self.config.doWriteCalibrate:
             sensorRef.put(exposure, 'calexp')
-            
+
         return pipeBase.Struct(
             exposure = exposure,
             calib = calib,
@@ -131,7 +131,7 @@ class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
                 continue
             for s in sources:
                 s.updateCoord(wcs)
-                
+
         normalizedMatches = afwTable.packMatches(struct.calib.matches)
         normalizedMatches.table.setMetadata(struct.calib.matchMeta)
 
@@ -151,7 +151,7 @@ class SuprimeCamProcessCcdConfig(SubaruProcessCcdConfig):
 
 class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
     ConfigClass = SuprimeCamProcessCcdConfig
-    
+
     def __init__(self, **kwargs):
         ## I would not like to call IsrTask.__init__() where methodList is created
         pipeBase.Task.__init__(self, **kwargs) 
@@ -159,7 +159,7 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
         ##        self.makeSubtask("isr", hscSuprimeCam.SuprimeCamIsrTask)
         ##        self.makeSubtask("calibrate", hscCalibrate.HscCalibrateTask)
         self.makeSubtask("isr", qaSuprimeCamIsrTask.QaSuprimeCamIsrTask)#, config=SubaruProcessCcdConfig())
-        self.makeSubtask("calibrate", qaHscCalibrate.HscCalibrateTask) #, config=self.config)        
+        self.makeSubtask("calibrate", qaHscCalibrate.HscCalibrateTask) #, config=self.config)
         self.schema = afwTable.SourceTable.makeMinimalSchema()
         self.algMetadata = dafBase.PropertyList()
         if self.config.doDetection:
@@ -169,7 +169,7 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
                              schema=self.schema, algMetadata=self.algMetadata)
 
     ## FH added the below run() function for QA output
-    ## This is alomst same as in the SubaruProcessCcdTask.run() but 
+    ## This is alomst same as in the SubaruProcessCcdTask.run() but
     ## overriding it with minor modifications to change arguments of
     ## self.isr.run() to accept butler and dataId.
     @pipeBase.timeMethod
@@ -181,8 +181,8 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
             exposure = sensorRef.get("raw")
             dataId = sensorRef.dataId
             ##isrRes = self.isr.run(rawExposure, calibSet)
-            ##isrRes = self.isr.run(rawExposure, calibSet, butler, dataId)            
-            isrRes = self.isr.run(exposure, calibSet, butler, dataId)            
+            ##isrRes = self.isr.run(rawExposure, calibSet, butler, dataId)
+            isrRes = self.isr.run(exposure, calibSet, butler, dataId)
             ##exposure = self.isr.doCcdAssembly([isrRes.postIsrExposure])
             exposure = isrRes.postIsrExposure
             self.display("isr", exposure=exposure, pause=True)
@@ -213,19 +213,19 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
                     sdssFluxes = retrieveReferenceMagnitudes(calib.matches)
                     #print '*** returned sdssFluxes:', sdssFluxes
                     #writeMatchesToBintableFits(calib.matches, butler=sensorRef)
-                    writeEnhancedMatchesToBintableFits(calib.matches, calib.matchMeta, refMags=sdssFluxes, butler=sensorRef)                    
+                    writeEnhancedMatchesToBintableFits(calib.matches, calib.matchMeta, refMags=sdssFluxes, butler=sensorRef)
         else:
             calib = None
 
         if True:
-            ##== FH added this part for QA output to use the reduced exposure and (bright) sources in calibration 
-            butler = sensorRef.butlerSubset.butler            
+            ##== FH added this part for QA output to use the reduced exposure and (bright) sources in calibration
+            butler = sensorRef.butlerSubset.butler
             fwhmRobust, ellRobust, ellPaRobust, catalogPsfLike, catalogPsfLikeRobust = qaSeeing.measureSeeingQa(exposure, calib.sources, self.config, debugFlag=False, plotFlag=True, plotbasedir=None, butler=butler, log=self.log)
 
             self.log.log(self.log.INFO, "QA seeing: fwhm: %f (pix)" % fwhmRobust)
             self.log.log(self.log.INFO, "QA seeing: ell (based on 2nd moments): %f" % ellRobust)
             self.log.log(self.log.INFO, "QA seeing: ellPa (in CCDCoords based on 2nd moments): %f (deg)" % ellPaRobust)
-            self.log.log(self.log.INFO, "QA seeing: final Nsources for seeing: %d" % len(catalogPsfLikeRobust))        
+            self.log.log(self.log.INFO, "QA seeing: final Nsources for seeing: %d" % len(catalogPsfLikeRobust))
 
         ## Final source detection
         if self.config.doDetection:
@@ -253,18 +253,18 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
         if False:
             ##== QA output is now to use (bright) sources in calibration rather than
             ## final sources by deep detection. So, commented measSeeing here in the meantime.
-            butler = sensorRef.butlerSubset.butler            
+            butler = sensorRef.butlerSubset.butler
             fwhmRobust, ellRobust, ellPaRobust, catalogPsfLike, catalogPsfLikeRobust = qaSeeing.measureSeeingQa(exposure, sources, self.config, debugFlag=False, plotFlag=True, plotbasedir=None, butler=butler, log=self.log)
 
             self.log.log(self.log.INFO, "QA seeing: fwhm: %f (pix)" % fwhmRobust)
             self.log.log(self.log.INFO, "QA seeing: ell (based on 2nd moments): %f" % ellRobust)
             self.log.log(self.log.INFO, "QA seeing: ellPa (in CCDCoords based on 2nd moments): %f (deg)" % ellPaRobust)
-            self.log.log(self.log.INFO, "QA seeing: final Nsources for seeing: %d" % len(catalogPsfLikeRobust))        
+            self.log.log(self.log.INFO, "QA seeing: final Nsources for seeing: %d" % len(catalogPsfLikeRobust))
 
         ## == Putting in necessary information for QA data management
 
         metadata = exposure.getMetadata()
-        
+
         # = flags
         # this part should be done by calculating merit functions somewhere else in a polite manner.
         metadata.set('FLAG_AUTO', 0)
@@ -293,7 +293,7 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
 
 def getRerunName(sensorRef):
     corrPath = sensorRef.get('calexp_filename')[0]
-    rerunName = corrPath[corrPath.find('rerun'):].split('/')[1]        
+    rerunName = corrPath[corrPath.find('rerun'):].split('/')[1]
     #print '*** corrPath:', corrPath
     return rerunName
 
@@ -339,10 +339,10 @@ def retrieveReferenceMagnitudes(matchlist):
 
     config = hscAstrom.TaburAstrometryConfig()
     astrometer = hscAstrom.TaburAstrometry(config, andConfig=None)
-    
+
     solver = getSolverFromAstrometryNet()
 
-    filterName = 'g' 
+    filterName = 'g'
     sgCol = astrometer.andConfig.starGalaxyColumn
     varCol = astrometer.andConfig.variableColumn
     idcolumn = astrometer.andConfig.idColumn
@@ -368,7 +368,7 @@ def retrieveReferenceMagnitudes(matchlist):
     #        (Field['Flag'](name="photometric", doc="set if the reference object can be used in photometric calibration"), Key['Flag'](offset=40, bit=1)),
      #   )
     fluxKey = refSchema.find('flux').key
-    fluxErrKey = refSchema.find('flux.err').key    
+    fluxErrKey = refSchema.find('flux.err').key
 
     sdssFluxesForMatches  = []
     for match in matchlist:
@@ -390,7 +390,7 @@ def retrieveReferenceMagnitudes(matchlist):
                 if refId != catId:
                     continue
                 sdssFluxes.append(s.get(fluxKey))
-                sdssFluxErrors.append(s.get(fluxErrKey))                
+                sdssFluxErrors.append(s.get(fluxErrKey))
 
         if False: # debug code
             print refId, ra, dec, match.first.get(fluxKey), match.second.getId(), match.second.getX(), match.second.getY(), -2.5*numpy.log10(match.second.getPsfFlux()), '<==>', catId, sdssFluxes, sdssFluxErrors
@@ -399,7 +399,7 @@ def retrieveReferenceMagnitudes(matchlist):
 
     del solver
     return sdssFluxesForMatches
-    
+
 def namedCopy(dstRecord, dstName, srcRecord, srcName):
     dstKey = dstRecord.schema.find(dstName).key
     srcKey = srcRecord.schema.find(srcName).key
@@ -419,7 +419,7 @@ def writeEnhancedMatchesToBintableFits(matchlist, matchMeta, refMags=None, butle
     if False:
         print 'refSchema:', refSchema.getNames()
         print 'srcSchema:', srcSchema.getNames()
-    
+
     mergedSchema = afwTable.Schema()
 
     for keyName in refSchema.getNames():
@@ -441,7 +441,7 @@ def writeEnhancedMatchesToBintableFits(matchlist, matchMeta, refMags=None, butle
         fieldDoc = field.getDoc()
         fieldUnits = field.getUnits()
         mergedSchema.addField('src.'+keyName, type=typeStr, doc=fieldDoc, units=fieldUnits)
-                
+
     mergedCatalog = afwTable.BaseCatalog(mergedSchema)
 
     refKeys = []
@@ -457,7 +457,7 @@ def writeEnhancedMatchesToBintableFits(matchlist, matchMeta, refMags=None, butle
             keyIn = key[0]
             keyOut = key[1]
             record.set(keyOut, match.first.get(keyIn))
-            
+
         for key in srcKeys:
             keyIn = key[0]
             keyOut = key[1]
@@ -469,7 +469,7 @@ def writeEnhancedMatchesToBintableFits(matchlist, matchMeta, refMags=None, butle
         #print '*** filters, fluxes, fluxerrs:', filters, fluxes, fluxerrs
         for filter, flux, fluxerr in zip(filters, fluxes, fluxerrs):
             record.set(mergedSchema.find('ref.flux.'+filter).key, flux)
-            record.set(mergedSchema.find('ref.flux.err.'+filter).key, fluxerr)            
+            record.set(mergedSchema.find('ref.flux.err.'+filter).key, fluxerr)
 
     # obtaining reference catalog name
     catalogName = os.path.basename(os.getenv("ASTROMETRY_NET_DATA_DIR").rstrip('/'))
@@ -478,7 +478,7 @@ def writeEnhancedMatchesToBintableFits(matchlist, matchMeta, refMags=None, butle
 
     if butler is not None:
         butler.put(mergedCatalog, 'matchedList')
-        return 
+        return
     elif fileName is not None:
         mergedCatalog.writeFits(fileName)
         return
@@ -505,7 +505,7 @@ def writeMatchesToBintableFits(matchlist, butler=None, fileName=None):
         field = srcSchema.find(keyName).field
         typeStr = field.getTypeString()
         mergedSchema.addField('src.'+keyName, type=typeStr)
-                
+
     mergedCatalog = afwTable.BaseCatalog(mergedSchema)
 
     refKeys = []
@@ -528,7 +528,7 @@ def writeMatchesToBintableFits(matchlist, butler=None, fileName=None):
 
     if butler is not None:
         butler.put(mergedCatalog, 'matchedList')
-        return 
+        return
     elif fileName is not None:
         mergedCatalog.writeFits(fileName)
         return

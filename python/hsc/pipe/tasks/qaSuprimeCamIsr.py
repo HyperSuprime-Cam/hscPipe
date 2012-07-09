@@ -50,14 +50,14 @@ class QaSuprimeCamIsr(Isr):
             flatscaling = scaling
         else:
             raise pexExcept.LsstException, '%s : %s not implemented' % ("flatCorrection", scalingtype)
-        
+
         maskedImage.scaledDivides(1./flatscaling, flatMaskedImage)
 
         if self.display:
             ds9.mtv(maskedImage, title="Flattened")
 
         return
-    
+
     ##== FH added for QA output
     def measureFlatnessImageQa(self, maskedImage, meshX=256, meshY=256, doClip=True, clipSigma=3, nIter=3):
 
@@ -83,7 +83,7 @@ class QaSuprimeCamIsr(Isr):
                 yLLC = yc - meshYHalf
                 xURC = xc + meshXHalf - 1
                 yURC = yc + meshYHalf - 1
-                
+
                 bbox = afwGeom.Box2I(afwGeom.Point2I(xLLC, yLLC), afwGeom.Point2I(xURC, yURC))
                 miMesh = maskedImage.Factory(maskedImage, bbox, afwImage.LOCAL)
 
@@ -91,17 +91,17 @@ class QaSuprimeCamIsr(Isr):
                 #nIter = 3
                 #stats = afwMath.makeStatistics(miMesh, afwMath.MEDIAN|afwMath.STDEVCLIP, sctrl)
                 #stats = afwMath.makeStatistics(miMesh, afwMath.MEDIAN|afwMath.MEAN|afwMath.MEANCLIP, sctrl)
-                stats = afwMath.makeStatistics(miMesh, afwMath.MEDIAN|afwMath.MEAN|afwMath.MEANCLIP, sctrl)                
+                stats = afwMath.makeStatistics(miMesh, afwMath.MEDIAN|afwMath.MEAN|afwMath.MEANCLIP, sctrl)
 
                 if doClip is True:
                     skyLevels[i, j] = stats.getValue(afwMath.MEANCLIP)
                 else:
                     skyLevels[i, j] = stats.getValue(afwMath.MEAN)
                 #skyLevels[i, j] = stats.getValue(afwMath.MEDIAN)
-                #skySigma[i, j] = stats.getValue(afwMath.STDEVCLIP)                
+                #skySigma[i, j] = stats.getValue(afwMath.STDEVCLIP)
 
         skyMedian = numpy.median(skyLevels)
-        flatness =  (skyLevels - skyMedian) / skyMedian        
+        flatness =  (skyLevels - skyMedian) / skyMedian
         flatness_rms = numpy.std(flatness)
         flatness_min = flatness.min()
         flatness_max = flatness.max() 
@@ -180,15 +180,14 @@ class QaSuprimeCamIsr(Isr):
     ##== FH added for QA output
     def writeFitsImageQa(self, exposure, outfile):
         """
-        writing out exposure to an FITS image named outfile. 
+        writing out exposure to an FITS image named outfile.
         """
         exposure.getMaskedImage().writeFits(outfile)
 
     ##== FH added for QA output
     def writeSnapshotImageQa(self, exposure, outfile, format='png', width=500, height=0):
         """
-        writing out exposure to a snapshot file named outfile in the given image format and size.  
+        writing out exposure to a snapshot file named outfile in the given image format and size.
         """
         qaFitsthumb.createFitsThumb(exposure.getMaskedImage().getImage(), outfile, format, width, height, True)
-        
 

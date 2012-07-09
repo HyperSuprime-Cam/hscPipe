@@ -23,7 +23,7 @@ class HscReferencesConfig(ReferencesConfig):
 
 class HscReferencesTask(ReferencesTask):
     ConfigClass = HscReferencesConfig
-    
+
     def __init__(self, *args, **kwargs):
         super(ReferencesTask, self).__init__(*args, **kwargs)
         self.makeSubtask("calibrate")
@@ -45,12 +45,12 @@ class HscReferencesTask(ReferencesTask):
         except Exception, e:
             self.log.log(self.log.INFO, "Stack products not available (%s); attempting to create" % e)
             sources = self.measureStack(butler, stackId)
-        
+
         return sources
 
     def measureStack(self, butler, dataId):
         exposure = butler.get("stack", dataId)
-        self.interpolateNans(exposure, afwDet.createPsf("DoubleGaussian", 15, 15, 1.0))       
+        self.interpolateNans(exposure, afwDet.createPsf("DoubleGaussian", 15, 15, 1.0))
         calib = self.calibrate.run(exposure)
         exposure = calib.exposure
 
@@ -70,7 +70,7 @@ class HscReferencesTask(ReferencesTask):
         nans = ipIsr.Isr().getDefectListFromMask(exposure.getMaskedImage(), maskName='UNMASKEDNAN')
         self.log.log(self.log.INFO, "Interpolating over %d NANs" % len(nans))
         measAlg.interpolateOverDefects(exposure.getMaskedImage(), psf, nans, 0.0)
-        
+
     def detect(self, exposure):
         table = afwTable.SourceTable.make(self.schema)
         table.setMetadata(self.algMetadata)
@@ -98,7 +98,7 @@ class HscForcedPhotTask(ForcedPhotTask):
             struct.exposure.setWcs(wcsExp.getWcs())
         except Exception, e:
             self.log.log(self.log.WARN, "No WCS tweak available (%s); not updating WCS." % e)
-            
+
         return struct
 
 
