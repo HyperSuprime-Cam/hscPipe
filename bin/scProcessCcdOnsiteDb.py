@@ -21,8 +21,7 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 import argparse, os, sys
-from lsst.pipe.base import HscArgumentParser
-
+from hsc.pipe.base import HscArgumentParser
 from hsc.pipe.tasks.processCcd import SuprimeCamProcessCcdTask as TaskClass
 
 # FH added for QA output
@@ -48,12 +47,11 @@ if __name__ == "__main__":
         namespace.config._save(sys.stdout)
         sys.exit(0)
 
-
     ## === update onsite Db status
     # !!! it is better to db update for frame_analysis_start just before execution of this script
     #     but, to get 'id' on time when this analysis process is invoked, I'm temporarily 
     #     doing this here. 
-    def getDataId(namespace):  
+    def getDataId(namespace):
         dataId = (namespace.dataIdList)[0]
         ccd = int(dataId['ccd'])
         visit = int(dataId['visit'])
@@ -66,7 +64,7 @@ if __name__ == "__main__":
         else:
             print >> sys.stderr, "Given instrument name is not valid: %s" % namespace.camera
             sys.exit(1)
-            
+
         return id, visit, ccd
 
     try:
@@ -83,7 +81,7 @@ if __name__ == "__main__":
 
     id, visit, ccd =  getDataId(namespace)
     onsiteDbUtils.updateStatusFrameAnalysisStart(id)
-    
+
     ## === create task objects and run tasks 
     task = TaskClass(config=namespace.config)
     if False: ### debugging
@@ -91,9 +89,9 @@ if __name__ == "__main__":
         print namespace.config
         print '************ Here, config end **************'
 
-    
+
     for sensorRef in namespace.dataRefList:
-        
+
         if namespace.doRaise:
             task.run(sensorRef)
         else:
@@ -120,4 +118,3 @@ if __name__ == "__main__":
     print '**** CORR filename:', filename
     #registCorrSup.registCorrFrameMetaInfo(filename)
     onsiteDbUtils.registFrameQaMetaInfo(id, filename)
-   

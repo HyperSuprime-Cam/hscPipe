@@ -43,8 +43,8 @@ if __name__ == "__main__":
 
     if namespace.dumpconfig:
         namespace.config._save(sys.stdout)
-        sys.exit(0)    
-            
+        sys.exit(0)
+
     task = TaskClass(config=namespace.config)
     if False: ## debugging
         print '************ Here, config start **************'
@@ -57,7 +57,7 @@ if __name__ == "__main__":
 
         filename = sensorRef.get("calexp_filename")
         print '*** filename:', filename
-        
+
         if namespace.doRaise:
             task.run(sensorRef)
         else:
@@ -71,4 +71,3 @@ if __name__ == "__main__":
                 print sensorRef
                 print '* * '*40
                 task.run(sensorRef) 
-        
