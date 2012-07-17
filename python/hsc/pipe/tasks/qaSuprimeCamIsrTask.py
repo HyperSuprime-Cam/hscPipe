@@ -160,7 +160,11 @@ class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
         pathToSrcFile = butler.get('src_filename', dataId)[0]
         qaOutputDirName = os.path.dirname(pathToSrcFile)
         if os.path.exists(qaOutputDirName) is not True:
-            os.makedirs(qaOutputDirName)
+            try:
+                os.makedirs(qaOutputDirName)
+            except OSError, e:
+                if not e.errno == errno.EEXIST:
+                    raise
         else:
             pass
         if self.config.qa.doWriteImage.doWriteOssImage is True:
@@ -182,7 +186,11 @@ class QaSuprimeCamIsrTask(hscSuprimeCam.SuprimeCamIsrTask):
         pathToSrcFile = butler.get('src_filename', dataId)[0]
         qaOutputDirName = os.path.dirname(pathToSrcFile)
         if os.path.exists(qaOutputDirName) is not True:
-            os.makedirs(qaOutputDirName)
+            try:
+                os.makedirs(qaOutputDirName)
+            except OSError, e:
+                if not e.errno == errno.EEXIST:
+                    raise
         else:
             pass
         if self.config.qa.doWriteImage.doWriteFltImage is True:
