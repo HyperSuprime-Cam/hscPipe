@@ -17,7 +17,7 @@ def processDetrends(instrument, rerun, detrend, frameList, outName=None):
     comm = mpi.COMM_WORLD
 
     if outName is None:
-        outName = "detrend-" + rerun + "-%d.fits"
+        outName = detrend + "-" + rerun + "-%d.fits"
 
     butler = hscCamera.getButler(instrument, rerun)
     numCcds = hscCamera.getNumCcds(instrument)
