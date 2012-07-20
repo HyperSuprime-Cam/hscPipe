@@ -56,7 +56,7 @@ def ProcessExposure(instrument, rerun, frame):
 
     # Together: global WCS solution
     if comm.Get_rank() == 0:
-        wcsList = pbasf.SafeCall(globalWcs, instrument, matchLists) if False else None # XXX disabled
+        wcsList = pbasf.SafeCall(globalWcs, instrument, butler.mapper.camera, matchLists)
         if not wcsList:
             sys.stderr.write("WARNING: Global astrometric solution failed!\n")
             wcsList = [None] * len(dataIdList)
@@ -116,30 +116,18 @@ class Worker(object):
         print "Finished writing CCD %s on %s,%d" % (dataId, os.uname()[1], os.getpid())
 
 
-def globalWcs(instrument, matchLists):
+def globalWcs(instrument, cameraGeom, matchLists):
     import hsc.meas.tansip as tansip
-    import hsc.meas.tansip.doTansip as doTansip
-    import lsst.pex.policy as pexPolicy
-
-    if instrument == "hsc":
-        import lsst.obs.hscSim as hscSim
-        mapper = hscSim.HscSimMapper()
-        policyName = "hsc.paf"
-    else:
-        import lsst.obs.suprimecam as suprimecam
-        mapper = suprimecam.SuprimecamMapper()
-        policyName = "suprimecam.paf"
-
-    policy = pexPolicy.Policy(os.path.join(os.getenv("SOLVETANSIP_DIR"), "policy", policyName))
-    policy.set('NCCD', len(matchLists))
+    from hsc.meas.tansip.solvetansip import SolveTansipTask
+    config = SolveTansipTask.ConfigClass()
+    task = SolveTansipTask(config=config)
 
     matchLists = [[tansip.SourceMatch(m.id, afwCoord.IcrsCoord(afwGeom.Angle(m.ra, afwGeom.degrees),
                                                                afwGeom.Angle(m.dec, afwGeom.degrees)),
                                       afwGeom.Point2D(m.x, m.y), afwGeom.Point2D(m.xErr, m.yErr), m.flux)
                    for m in ml ] for ml in matchLists]
-    
-    wcs = doTansip.doTansip(matchLists, policy=policy, camera=mapper.camera)
-    return doTansip.getwcsList(wcs)
+
+    return task.solve(instrument, cameraGeom, matchLists)
 
 
 if __name__ == "__main__":
