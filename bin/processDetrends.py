@@ -6,6 +6,8 @@ import argparse
 import mpi4py.MPI as mpi
 import pbasf2 as pbasf
 
+import lsst.daf.base as dafBase
+import lsst.afw.image as afwImage
 from lsst.pipe.base import Struct
 import hsc.pipe.base.camera as hscCamera
 import hsc.pipe.tasks.processCcd as hscProcessCcd
@@ -13,7 +15,7 @@ import hsc.pipe.tasks.detrends as hscDetrends
 
 
 
-def processDetrends(instrument, rerun, detrend, frameList, outName=None):
+def processDetrends(instrument, rerun, detrend, frameList, outRoot=None, outName=None):
     comm = mpi.COMM_WORLD
 
     if outName is None:
@@ -46,12 +48,13 @@ def processDetrends(instrument, rerun, detrend, frameList, outName=None):
 
 
 class Worker(object):
-    def __init__(self, butler, config, detrend, frameList, outName):
+    def __init__(self, butler, config, detrend, frameList, outName, version="000"):
         self.butler = butler
         self.task = hscDetrends.DetrendTask(config=config)
         self.detrend = detrend.lower()
         self.frameList = frameList
         self.outName = outName
+        self.version = version
         self.maskData = []
 
     def _getDataRef(self, frame, ccd):
@@ -109,14 +112,36 @@ class Worker(object):
     def combine(self, ccd, expScales=None, ccdScale=None):
         dataRefList = [self._getDataRef(frame, ccd) for frame in self.frameList]
         combined = self.task.combine.run(dataRefList, expScales=expScales, finalScale=ccdScale)
-        combined.writeFits(self.outName % ccd)
+        self.write(ccd, combined)
 
     def mask(self, ccd, processResults):
         footprints = [data.footprintSets for data in processResults]
         dimensions = [data.dim for data in processResults]
         combined = self.task.mask.run(footprints, dimensions)
-        combined.writeFits(self.outName % ccd)
+        self.write(ccd, combined)
 
+    def write(self, ccd, image):
+        filterName = None
+        midTime = 0
+        for frame in self.frameList:
+            dataId = {'visit': frame, 'ccd': ccd}
+            md = self.butler.get("calexp_md", dataId)
+
+            calib = afwImage.Calib(md)
+            midTime += calib.getMidTime().mjd()
+
+            if self.detrend in ("flat", "fringe"):
+                thisFilter = self.butler.queryMetadata("raw", "filter", format="filter", dataId=dataId)[0]
+                if filterName is None:
+                    filterName = thisFilter
+                elif filterName != thisFilter:
+                    print "WARNING: Filter mismatch for %s: %s vs %s" % (dataId, thisFilter, filterName)
+
+        midTime /= len(self.frameList)
+        date = str(dafBase.DateTime(midTime, dafBase.DateTime.MJD).toPython().date())
+
+        self.butler.put(image, self.detrend, filter=filterName, mystery=self.version, num=0,
+                        calibDate=date, ccd=ccd)
 
 
 if __name__ == "__main__":
