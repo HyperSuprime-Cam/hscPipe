@@ -25,7 +25,6 @@ import numpy
 #class QaWriteFits(pexConfig):
 class QaConfig(pexConfig.Config):
     seeing = pexConfig.ConfigField(dtype=qaSeeing.QaSeeingConfig, doc="Qa.measSeeing")
-    camera = pexConfig.Field(dtype=str, doc="camera type [hsc] or [suprimecam]", default='hsc') # would be better to have another way to get camera
 
 class SubaruProcessCcdConfig(ptProcessCcd.ProcessCcdConfig):
     calibrate = pexConfig.ConfigField(dtype=qaHscCalibrate.HscCalibrateConfig, doc="Calibration")
@@ -220,7 +219,7 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
         if True:
             ##== FH added this part for QA output to use the reduced exposure and (bright) sources in calibration
             butler = sensorRef.butlerSubset.butler
-            fwhmRobust, ellRobust, ellPaRobust, catalogPsfLike, catalogPsfLikeRobust = qaSeeing.measureSeeingQa(exposure, calib.sources, self.config, debugFlag=False, plotFlag=True, plotbasedir=None, butler=butler, log=self.log)
+            fwhmRobust, ellRobust, ellPaRobust, catalogPsfLike, catalogPsfLikeRobust = qaSeeing.measureSeeingQa(exposure, calib.sources, self.config, sensorRef.dataId, debugFlag=False, plotFlag=True, plotbasedir=None, butler=butler, log=self.log)
 
             self.log.log(self.log.INFO, "QA seeing: fwhm: %f (pix)" % fwhmRobust)
             self.log.log(self.log.INFO, "QA seeing: ell (based on 2nd moments): %f" % ellRobust)
@@ -254,7 +253,7 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
             ##== QA output is now to use (bright) sources in calibration rather than
             ## final sources by deep detection. So, commented measSeeing here in the meantime.
             butler = sensorRef.butlerSubset.butler
-            fwhmRobust, ellRobust, ellPaRobust, catalogPsfLike, catalogPsfLikeRobust = qaSeeing.measureSeeingQa(exposure, sources, self.config, debugFlag=False, plotFlag=True, plotbasedir=None, butler=butler, log=self.log)
+            fwhmRobust, ellRobust, ellPaRobust, catalogPsfLike, catalogPsfLikeRobust = qaSeeing.measureSeeingQa(exposure, sources, self.config, sensorRef.dataId, debugFlag=False, plotFlag=True, plotbasedir=None, butler=butler, log=self.log)
 
             self.log.log(self.log.INFO, "QA seeing: fwhm: %f (pix)" % fwhmRobust)
             self.log.log(self.log.INFO, "QA seeing: ell (based on 2nd moments): %f" % ellRobust)
