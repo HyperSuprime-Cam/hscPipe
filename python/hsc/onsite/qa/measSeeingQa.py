@@ -88,7 +88,7 @@ def measureSeeingQaTest(exposure, config):
     print '**** config all:'
     print config
     
-def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, plotbasedir=None, butler=None, log=None):
+def measureSeeingQa(exposure, catalog, config, dataId, debugFlag=False, plotFlag=True, plotbasedir=None, butler=None, log=None):
     """
     This function measures seeing (mode) and ellipticity (median) representative of the input frame
     by using the input source set.
@@ -306,20 +306,8 @@ def measureSeeingQa(exposure, catalog, config, debugFlag=False, plotFlag=True, p
     # making seeing-debug1 plots
     if plotFlag is True: 
         log.log(log.INFO, "QaSeeing: Entered plotting")
-        # getting visitId and ccdId. here, we reconstruct those two values from FrameId.
-        # maybe we should consider a better way.
         frameId = exposure.getMetadata().get('FRAMEID')
-        #print 'XXXXXXX QaSeeing instrument = ', instrument
-        visitId, ccdId = getVisitIdAndCcdIdFromFrameId(frameId, config)
 
-        if False:
-            det = exposure.getDetector()
-            ccd = cameraGeom.cast_Ccd(det)
-            ccdId = int(ccd.getId().getSerial())
-
-        log.log(log.INFO, "QaSeeing: After getting ccdId")
-
-        dataId = { 'visit': visitId, 'ccd': ccdId }
         qaOutputDirName = os.path.dirname(butler.get('src_filename', dataId)[0])
         #if os.path.exists(plotbasedir):
         #    qaOutputDirName = plotbasedir
