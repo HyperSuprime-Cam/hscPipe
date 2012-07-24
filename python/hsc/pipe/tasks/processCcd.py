@@ -103,6 +103,60 @@ class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
             sources = sources,
         )
 
+    def writeCalib(self, sensorRef, calib):
+        """Write calibration products
+       
+        @param sensorRef   Data reference for sensor
+        @param calib       Results of calibration
+        """
+        sensorRef.put(calib.sources, 'icSrc')
+        if calib.psf is not None:
+            sensorRef.put(calib.psf, 'psf')
+        if calib.apCorr is not None:
+            sensorRef.put(calib.apCorr, 'apCorr')
+        if calib.matches is not None:
+            self.writeMatches(sensorRef, calib.matches, calib.matchMeta)
+
+    def writeMatches(self, dataRef, matches, matchMeta):
+        # First write normalised matches
+        normalizedMatches = afwTable.packMatches(calib.matches)
+        normalizedMatches.table.setMetadata(calib.matchMeta)
+        dataRef.put(normalizedMatches, 'icMatch')
+
+        # Now write unpacked matches
+        refSchema = matchlist[0].first.getSchema()
+        srcSchema = matchlist[0].second.getSchema()
+
+        mergedSchema = afwTable.Schema()
+        def merge(schema, key, merged, name):
+            field = schema.find(key).field
+            typeStr = field.getTypeString()
+            fieldDoc = field.getDoc()
+            fieldUnits = field.getUnits()
+            mergedSchema.addField(name + '.' + key, type=typeStr, doc=fieldDoc, units=fieldUnits)
+
+        for keyName in refSchema.getNames():
+            merge(refSchema, keyName, mergedSchema, "ref")
+
+        for keyName in srcSchema.getNames():
+            merge(srcSchema, keyName, mergedSchema, "src")
+
+        mergedCatalog = afwTable.BaseCatalog(mergedSchema)
+
+        refKeys = []
+        for keyName in refSchema.getNames():
+            refKeys.append((refSchema.find(keyName).key, mergedSchema.find('ref.' + keyName).key))
+        srcKeys = []
+        for keyName in srcSchema.getNames():
+            srcKeys.append((srcSchema.find(keyName).key, mergedSchema.find('src.' + keyName).key))
+
+        # obtaining reference catalog name
+        catalogName = os.path.basename(os.getenv("ASTROMETRY_NET_DATA_DIR").rstrip('/'))
+        matchMeta.add('REFCAT', catalogName)
+        mergedCatalog.getTable().setMetadata(matchMeta)
+
+        dataRef.put(mergedCatalog, "matchedList")
+
 
     def write(self, butler, dataId, struct, wcs=None):
         if wcs is None:
@@ -119,8 +173,7 @@ class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
             for s in sources:
                 s.updateCoord(wcs)
 
-        normalizedMatches = afwTable.packMatches(struct.calib.matches)
-        normalizedMatches.table.setMetadata(struct.calib.matchMeta)
+        self.writeMatches(struct.calib.matches, struct.calib.matchMeta)
 
         butler.put(struct.exposure, 'calexp', dataId)
         butler.put(struct.sources, 'src', dataId)
@@ -162,3 +215,4 @@ class HscProcessCcdTask(SubaruProcessCcdTask):
        if self.config.doMeasurement:
            self.makeSubtask("measurement", measAlg.SourceMeasurementTask,
                             schema=self.schema, algMetadata=self.algMetadata)
+
