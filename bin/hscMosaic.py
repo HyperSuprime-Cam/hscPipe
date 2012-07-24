@@ -27,7 +27,7 @@ from hsc.meas.mosaic.task import MosaicTask as TaskClass
 
 if __name__ == "__main__":
     coaddName = "deep"
-    parser = HscArgumentParser(datasetType=None)
+    parser = HscArgumentParser(datasetType="calexp")
     parser.add_argument("--filter", type=str)
     parser.add_argument("--tract", type=int)
 
@@ -39,15 +39,13 @@ if __name__ == "__main__":
 
     task = TaskClass(config=namespace.config)
     butler = namespace.butler
-    dataId = {}
+    tractId = {}
     if namespace.tract is not None:
-        dataId['tract'] = namespace.tract
-    if namespace.filter is not None:
-        dataId['filter'] = namespace.filter
+        tractId['tract'] = namespace.tract
     if namespace.doRaise:
-        task.run(butler, dataId, coaddName)
+        task.run(butler, namespace.dataRefList, tractId, coaddName)
     else:
         try:
-            task.run(butler, dataId, coaddName)
+            task.run(butler, namespace.dataRefList, tractId, coaddName)
         except Exception, e:
             task.log.log(task.log.FATAL, "Failed on dataId=%s: %s" % (dataId, e))
