@@ -15,6 +15,8 @@ import lsst.pex.config as pexConfig
 import lsst.pex.logging as pexLog
 import lsst.afw.table as afwTable
 
+from lsst.pipe.base import Task
+
 import numpy
 
 # this order is necessary to avoid X connection from this script
@@ -353,8 +355,6 @@ class MeasureSeeingTask(Task):
         self.metadata.add("fwhmRough", fwhmRough)
 
         if self.config.doPlot:
-    
-        if plotFlag: 
             fig = plt.figure()
             pltMagFwhm = fig.add_subplot(1,1,1)
             pltMagFwhm.set_xlim(-20,-5)
@@ -837,46 +837,4 @@ class MeasureSeeingTask(Task):
 
         del fig
         del pltEll
-
-
-    #================================================================================================
-    
-    #print '*** fwhmRobust: %f (pix) SC: %f (arcsec) HSC: %f (arcsec)  ellRobust: %f' % (fwhmRobust, fwhmRobust*0.202, fwhmRobust*0.168, ellRobust)
-
-    # preparing sourceSet which has been used for rough FWHM estimation
-    #sourceSetPsfLike = afwDetection.SourceSet()
-    #sourceSetPsfLikeRobust = afwDetection.SourceSet()
-
-    # catalogPsfLike = afwTable.Catalog.Catalog(catalogSchema)
-    ##### It would be nice if I can add measured fwhm, ellipticity, pa of each source entry here 
-    catalogPsfLike = afwTable.SourceCatalog(catalogSchema)
-    catalogPsfLikeRobust = afwTable.SourceCatalog(catalogSchema)
-    #for i, record in enumerate(catalog):
-    #    print i, record
-    #sys.exit(0)
-
-    ## note by FH: SourceCatalog object seems to not accept STL vector-like functions
-    ## e.g., push_back, reserve etc, though those are listed in doxygen member functions. my misunderstanding?
-    ## Instead, I use here addNew() and copy record reference to the new one.
-    if False:
-        catalogPsfLike.reserve(len(indicesSourcePsfLike))
-        catalogPsfLikeRobust.reserve(len(indicesSourcePsfLikeRobust))        
-
-        for i, j in enumerate(indicesSourcesPsfLike):
-            catalogPsfLike[i] = catalog.table.copyRecord(catalog[j])
-        for i, j in enumerate(indicesSourcesPsfLikeRobust):
-            catalogPsfLikeRobust[i] = catalog.table.copyRecord(catalog[j])
-    elif True:
-        for i, record in enumerate(catalog):
-            if i in indicesSourcesPsfLike:
-                #catalogPsfLike.push_back(record)
-                recordNew = catalogPsfLike.addNew()
-                recordNew = record  # do we need catalog.table.copyRecord(record) here?
-            if i in indicesSourcesPsfLikeRobust:
-                #catalogPsfLikeRobust.push_back(record)
-                recordNew = catalogPsfLikeRobust.addNew()
-                recordNew = record
-
-
-    return fwhmRobust, ellRobust, ellPaRobust, catalogPsfLike, catalogPsfLikeRobust
 

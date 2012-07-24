@@ -13,7 +13,7 @@ import hsc.pipe.tasks.calibrate as hscCalibrate
 
 # HSC-DC2 has very round galaxies that look much like stars, so we need to change the order of operations a
 # bit to use the astrometry catalogue to select stars for the PSF determination.
-class HscDc2CalibrateTask(hscCalibrate.HscCalibrateTask):
+class HscDc2CalibrateTask(hscCalibrate.SubaruCalibrateTask):
     def run(self, exposure, defects=None, background=None):
         """Calibrate an exposure: PSF, astrometry and photometry
 

@@ -15,9 +15,9 @@ import hsc.pipe.tasks.qa as hscQa
 
 
 class SubaruProcessCcdConfig(ptProcessCcd.ProcessCcdConfig):
-    calibrate = pexConfig.ConfigField(dtype=hscCalibrate.HscCalibrateConfig, doc="Calibration")
+    calibrate = pexConfig.ConfigField(dtype=hscCalibrate.SubaruCalibrateConfig, doc="Calibration")
     isr = pexConfig.ConfigField(dtype=hscIsr.SubaruIsrConfig, doc="Instrument signature removal")
-    qa = pexConfig.ConfigField(dtype=QaConfig, doc="Quality assessment")
+    qa = pexConfig.ConfigField(dtype=hscQa.QaConfig, doc="Quality assessment")
 
 
 class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
@@ -30,7 +30,7 @@ class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
     def __init__(self, *args, **kwargs):
         super(SubaruProcessCcdTask, self).__init__(*args, **kwargs)
         self.makeSubtask("isr", hscIsr.SubaruIsrTask)
-        self.makeSubtask("calibrate", hscCalibrate.HscCalibrateTask)
+        self.makeSubtask("calibrate", hscCalibrate.SubaruCalibrateTask)
         self.makeSubtask("qa", hscQa.QaTask)
 
     # The 'run' method is copied wholesale from lsst.pipe.tasks.processCcd.ProcessCcdTask.run, with minor
@@ -42,7 +42,7 @@ class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
             butler = sensorRef.butlerSubset.butler
             calibSet = self.isr.makeCalibDict(butler, sensorRef.dataId)
             exposure = sensorRef.get("raw")
-            isrRes = self.isr.run(exposure, calibSet)
+            isrRes = self.isr.run(sensorRef, exposure, calibSet)
             exposure = isrRes.postIsrExposure
             self.display("isr", exposure=exposure, pause=True)
             if self.config.doWriteIsr:
@@ -193,7 +193,7 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
     def __init__(self, **kwargs):
         pipeBase.Task.__init__(self, **kwargs)
         self.makeSubtask("isr", hscSuprimeCam.SuprimeCamIsrTask)
-        self.makeSubtask("calibrate", hscCalibrate.HscCalibrateTask)
+        self.makeSubtask("calibrate", hscCalibrate.SubaruCalibrateTask)
         self.schema = afwTable.SourceTable.makeMinimalSchema()
         self.algMetadata = dafBase.PropertyList()
         if self.config.doDetection:
@@ -206,8 +206,8 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
 class HscProcessCcdTask(SubaruProcessCcdTask):
    def __init__(self, **kwargs):
        pipeBase.Task.__init__(self, **kwargs)
-       self.makeSubtask("isr", hscIsr.HscIsrTask)
-       self.makeSubtask("calibrate", hscCalibrate.HscCalibrateTask)
+       self.makeSubtask("isr", hscIsr.SubaruIsrTask)
+       self.makeSubtask("calibrate", hscCalibrate.SubaruCalibrateTask)
        self.schema = afwTable.SourceTable.makeMinimalSchema()
        self.algMetadata = dafBase.PropertyList()
        if self.config.doDetection:

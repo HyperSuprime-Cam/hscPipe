@@ -1,5 +1,6 @@
 from lsst.pex.config import Config, ConfigField
 from lsst.pipe.base import Task
+import hsc.pipe.tasks.measSeeingQa as hscSeeing
 
 class QaConfig(Config):
     measureSeeing = ConfigField(dtype=hscSeeing.MeasureSeeingConfig, doc="Measure seeing")
@@ -8,8 +9,8 @@ class QaConfig(Config):
 class QaTask(Task):
     ConfigClass = QaConfig
     def __init__(self, *args, **kwargs):
-    super(QaTask, self).__init(*args, **kwargs)
-    self.makeSubtask("measureSeeing", hscSeeing.MeasureSeeingTask)
+        super(QaTask, self).__init(*args, **kwargs)
+        self.makeSubtask("measureSeeing", hscSeeing.MeasureSeeingTask)
 
     def run(self, dataRef, exposure, sources):
         self.measureSeeing.run(dataRef, sources, exposure)

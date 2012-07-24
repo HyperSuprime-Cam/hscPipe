@@ -11,7 +11,7 @@ import hsc.pipe.tasks.calibrate as hscCalibrate
 import hsc.pipe.tasks.isr as hscIsr
 import lsst.meas.algorithms.crosstalk as maCrosstalk
 
-class HamamatsuIsrTaskConfig(hscIsr.HscIsrTask.ConfigClass):
+class HamamatsuIsrTaskConfig(hscIsr.SubaruIsrConfig):
     doCrosstalk = pexConfig.Field(
         dtype = bool,
         doc = "Correct for crosstalk",
@@ -53,7 +53,7 @@ class HamamatsuIsrTaskConfig(hscIsr.HscIsrTask.ConfigClass):
 class SuprimeCamIsrTaskConfig(HamamatsuIsrTaskConfig):
     pass
 
-class SuprimeCamIsrTask(hscIsr.HscIsrTask):
+class SuprimeCamIsrTask(hscIsr.SubaruIsrTask):
     ConfigClass = SuprimeCamIsrTaskConfig
 
     def run(self, *args, **kwargs):

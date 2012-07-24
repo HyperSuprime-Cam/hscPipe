@@ -13,10 +13,10 @@ import hsc.pipe.tasks.astrometry as hscAstrom
 
 
 class SubaruCalibrateConfig(ptCalibrate.CalibrateConfig):
-    astrometry = pexConfig.ConfigField(dtype = hscAstrom.HscAstrometryConfig, doc = "HSC calibration")
+    astrometry = pexConfig.ConfigField(dtype = hscAstrom.SubaruAstrometryConfig, doc = "HSC calibration")
 
 class SubaruCalibrateTask(ptCalibrate.CalibrateTask):
-    ConfigClass = HscCalibrateConfig
+    ConfigClass = SubaruCalibrateConfig
 
     def __init__(self, **kwargs):
         pipeBase.Task.__init__(self, **kwargs)
@@ -29,11 +29,11 @@ class SubaruCalibrateTask(ptCalibrate.CalibrateTask):
         self.makeSubtask("measurePsf", MeasurePsfTask, schema=self.schema)
         self.makeSubtask("measurement", measAlg.SourceMeasurementTask,
                          schema=self.schema, algMetadata=self.algMetadata)
-        self.makeSubtask("astrometry", hscAstrom.HscAstrometryTask, schema=self.schema)
+        self.makeSubtask("astrometry", hscAstrom.SubaruAstrometryTask, schema=self.schema)
         self.makeSubtask("photocal", photocal.PhotoCalTask, schema=self.schema)
 
     def run(self, exposure, *args, **kwargs):
-        results = super(SubaruCalibrateTask, self).run(exposure, *args, **kwargs):
+        results = super(SubaruCalibrateTask, self).run(exposure, *args, **kwargs)
 
         photocal = results.photocal
         magZero = photocal.zp - 2.5 * math.log10(exposure.getCalib().getExptime()) # convert to (mag/sec/adu)

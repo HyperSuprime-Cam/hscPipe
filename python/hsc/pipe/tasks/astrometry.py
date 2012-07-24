@@ -9,9 +9,10 @@ import hsc.meas.astrom.astrom as hscAstrom
 
 
 class SubaruAstrometry(measAstrom.Astrometry):
-   def getReferenceSourcesForWcs(self, *args, allFluxes=True, **kwargs):
+   def getReferenceSourcesForWcs(self, *args, **kwargs):
        """Always get all available fluxes"""
-       return super(SubaruAstrometry, self).getReferenceSourcesForWcs(*args, **kwargs, allFluxes=True)
+       kwargs.pop('allFluxes', None)
+       return super(SubaruAstrometry, self).getReferenceSourcesForWcs(*args, allFluxes=True, **kwargs)
 
 
 
@@ -25,7 +26,7 @@ class SubaruAstrometryConfig(ptAstrometry.AstrometryConfig):
 
 # Use hsc.meas.astrom, failing over to lsst.meas.astrom
 class SubaruAstrometryTask(ptAstrometry.AstrometryTask):
-    ConfigClass = HscAstrometryConfig
+    ConfigClass = SubaruAstrometryConfig
 
     @pipeBase.timeMethod
     def astrometry(self, exposure, sources, llc=(0,0), size=None):

@@ -2,7 +2,10 @@
 
 from lsst.pex.config import Field
 from lsst.ip.isr.isrTask import IsrTaskConfig, IsrTask
+from lsst.ip.isr.isr import Isr
 from lsst.pipe.base import Struct
+
+import lsst.afw.math as afwMath
 import hsc.onsite.qa.fitsthumb as qaFitsthumb
 
 class SubaruIsrConfig(IsrTaskConfig):
@@ -16,37 +19,15 @@ class SubaruIsrConfig(IsrTaskConfig):
     doThumbnailOss = Field(doc="Write OverScan-Subtracted thumbnail?", dtype=bool, default=True)
     doWriteFlattened = Field(doc="Write flattened image?", dtype=bool, default=False)
     doThumbnailFlattened = Field(doc="Write flattened thumbnail?", dtype=bool, default=True)
-    meshX = pexConfig.Field(
-        dtype = int,
-        doc = 'Mesh size in X (pix) to calculate count statistics',
-        default = 256,
-        )
-    meshY = pexConfig.Field(
-        dtype = int,
-        doc = 'Mesh size in Y (pix) to calculate count statistics',
-        default = 256,
-        )
-    doClip = pexConfig.Field(
-        dtype = bool,
-        doc = 'Do we clip outliers in calculate count statistics?',
-        default = True,
-        )
-    clipSigma = pexConfig.Field(
-        dtype = float,
-        doc = 'How many sigma is used to clip outliers in calculate count statistics?',
-        default = 3.0,
-        )
-    nIter = pexConfig.Field(
-        dtype = int,
-        doc = 'How many times do we iterate clipping outliers in calculate count statistics?',
-        default = 3,
-        )
-
+    meshX = Field(dtype=int, doc='Mesh size in X (pix) to calculate count statistics', default=256)
+    meshY = Field(dtype=int, doc='Mesh size in Y (pix) to calculate count statistics', default=256)
+    doClip = Field(dtype=bool, doc='Do we clip outliers in calculate count statistics?', default=True)
+    clipSigma = Field(dtype=float, doc='Clipping threshold (sigma)', default=3.0)
+    nIter = Field(dtype=int, doc='Clipping iterations', default=3)
 
 class SubaruIsr(Isr):
     def overscanCorrection(self, maskedImage, overscanData, *args, **kwargs):
-        sctrl = afwMath.StatisticsControl(clipSigma, nIter)
-        stats = afwMath.makeStatistics(overscanData, afwMath.MEDIAN|afwMath.STDEVCLIP, sctrl)
+        stats = afwMath.makeStatistics(overscanData, afwMath.MEDIAN|afwMath.STDEVCLIP)
         osLevel = stats.getValue(afwMath.MEDIAN)
         osSigma = stats.getValue(afwMath.STDEVCLIP)
 
@@ -55,7 +36,11 @@ class SubaruIsr(Isr):
 
 
 class SubaruIsrTask(IsrTask):
-    ConfigClass = HscIsrConfig
+    ConfigClass = SubaruIsrConfig
+    def __init__(self, *args, **kwargs):
+        super(SubaruIsrTask, self).__init__(*args, **kwargs)
+        self.isr = SubaruIsr()
+
     def run(self, dataRef, exposure, calibSet):
         exposure = self.doConversionForIsr(exposure, calibSet)
 
@@ -128,7 +113,7 @@ class SubaruIsrTask(IsrTask):
             expImage = exposure.getMaskedImage().getImage()
             overscan = expImage.Factory(expImage, amp.getDiskBiasSec())
             stats = afwMath.makeStatistics(overscan, levelStat | sigmaStat, sctrl)
-            ampNum = amp.getSerial().getId()
+            ampNum = amp.getId().getSerial()
             self.metadata.set("OSLEVEL%d" % ampNum, stats.getValue(levelStat))
             self.metadata.set("OSSIGMA%d" % ampNum, stats.getValue(sigmaStat))
 
