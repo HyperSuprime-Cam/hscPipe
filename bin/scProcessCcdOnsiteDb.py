@@ -27,7 +27,9 @@ from hsc.pipe.tasks.processCcd import SuprimeCamProcessCcdTask as TaskClass
 # FH added for QA output
 # import hsc.onsite.qa.fitsthumb as QaFitsthumb
 # import hsc.onsite.qa.measSeeingQa as QaSeeing
-
+#import hsc.onsite.qa.onsiteDbUtils as onsiteDbUtils
+#import onsiteDbUtils as onsiteDbUtils
+#import hsc.hscDb.frame_regist_CorrSuprime  as registCorrSup
 
 if __name__ == "__main__":
     parser = HscArgumentParser(conflict_handler='resolve') # old style
@@ -45,18 +47,50 @@ if __name__ == "__main__":
         namespace.config._save(sys.stdout)
         sys.exit(0)
 
+    ## === update onsite Db status
+    # !!! it is better to db update for frame_analysis_start just before execution of this script
+    #     but, to get 'id' on time when this analysis process is invoked, I'm temporarily 
+    #     doing this here. 
+    def getDataId(namespace):
+        dataId = (namespace.dataIdList)[0]
+        ccd = int(dataId['ccd'])
+        visit = int(dataId['visit'])
+        if namespace.camera in ['suprimecam', 'sc', 'suprimecam-mit', 'mit']:
+            id = int(visit)*10 + int(ccd)
+        elif namespace.camera in ['hsc', 'hscsim']:
+            #### !!! TBD how to assign visit for HSC data
+            id = int(visit)*1000 + int(ccd)
+            #id = int(visit)*100 + int(ccd)
+        else:
+            print >> sys.stderr, "Given instrument name is not valid: %s" % namespace.camera
+            sys.exit(1)
+
+        return id, visit, ccd
+
+    try:
+        if namespace.camera in ['suprimecam', 'sc', 'suprimecam-mit', 'mit']:
+            import onsiteDbUtilsSuprime as onsiteDbUtils
+        elif namespace.camera in ['hsc', 'hscsim']:
+            import onsiteDbUtilsHsc as onsiteDbUtils
+        else:
+            print >> sys.stderr, "Given instrument name is not valid: %s" % namespace.camera
+            sys.exit(1)
+    except Exception, e:
+        print >> sys.stderr, e
+        sys.exit(1)
+
+    id, visit, ccd =  getDataId(namespace)
+    onsiteDbUtils.updateStatusFrameAnalysisStart(id)
+
+    ## === create task objects and run tasks 
     task = TaskClass(config=namespace.config)
-    if False: ## debugging
+    if False: ### debugging
         print '************ Here, config start **************'
         print namespace.config
         print '************ Here, config end **************'
 
-        print '*** len(namespace.dataRefList)', len(namespace.dataRefList)
 
     for sensorRef in namespace.dataRefList:
-
-        filename = sensorRef.get("calexp_filename")
-        print '*** filename:', filename
 
         if namespace.doRaise:
             task.run(sensorRef)
@@ -70,4 +104,17 @@ if __name__ == "__main__":
                 print '* * '*40
                 print sensorRef
                 print '* * '*40
-                task.run(sensorRef) 
+                task.run(sensorRef)
+
+    ## === update onsite Db status
+    onsiteDbUtils.updateStatusFrameAnalysisEnd(id)
+
+    ## === register CORR data QA values
+    filenameList = []
+    for sensorRef in namespace.dataRefList:
+        filenameList.append(sensorRef.get('calexp_filename')[0])
+    ## for onsite Qa, only 1 file is input, so n of element should be 1
+    filename = filenameList[0]
+    print '**** CORR filename:', filename
+    #registCorrSup.registCorrFrameMetaInfo(filename)
+    onsiteDbUtils.registFrameQaMetaInfo(id, filename)

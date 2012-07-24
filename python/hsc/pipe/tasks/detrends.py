@@ -25,7 +25,7 @@ class DetrendStatsConfig(Config):
                    default=afwMath.MEANCLIP)
     clip = Field(doc="Clipping threshold for background", dtype=float, default=3.0)
     iter = Field(doc="Clipping iterations for background", dtype=int, default=3)
-    
+
 
 class DetrendProcessConfig(Config):
     isr = ConfigField(dtype=hscIsr.HscIsrConfig, doc="ISR configuration")
@@ -63,7 +63,7 @@ class DetrendStatsTask(Task):
     ConfigClass = DetrendStatsConfig
 
     def run(self, exposureOrImage):
-        
+
         stats = afwMath.StatisticsControl(self.config.clip, self.config.iter,
                                           afwImage.MaskU.getPlaneBitMask("DETECTED"))
         try:
@@ -131,7 +131,7 @@ class DetrendProcessTask(Task):
 
 class DetrendScaleTask(Task):
     ConfigClass = DetrendScaleConfig
-    
+
     def run(self, bgMatrix):
         """Determine scaling for flat-fields
 
@@ -164,7 +164,7 @@ class DetrendScaleTask(Task):
 
         if numpy.any(numpy.isnan(expScales)):
             raise RuntimeError("Bad exposure scales: %s --> %s" % (bgMatrix, expScales))
-        
+
         self.log.log(self.log.INFO, "Exposure scales: %s" % (numpy.exp(expScales)))
         self.log.log(self.log.INFO, "Component relative scaling: %s" % (numpy.exp(compScales)))
 
@@ -243,7 +243,7 @@ class MaskCombineTask(Task):
             afwImage.setMaskFromFootprintList(mask, footprintSets.positive, 1)
             afwImage.setMaskFromFootprintList(mask, footprintSets.negative, 1)
             combined += mask
-        
+
         threshold = afwDet.createThreshold(int(self.config.maskFraction * len(footprintSetsList)))
         footprints = afwDet.FootprintSet(combined, threshold)
         mask = combined.addMaskPlane(self.config.maskPlane)

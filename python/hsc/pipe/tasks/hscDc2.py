@@ -122,7 +122,7 @@ class HscDc2CalibrateTask(hscCalibrate.HscCalibrateTask):
                 if False:
                     print mySource.getXAstrom(), source.getXAstrom() - mySource.getXAstrom(), \
                           mySource.getYAstrom(), source.getYAstrom() - mySource.getYAstrom()
-            
+
 
         psfCandidateList = self.select(exposure, matches, algPolicy)
 
@@ -159,7 +159,7 @@ class HscDc2CalibrateTask(hscCalibrate.HscCalibrateTask):
                 continue
             if source.getPsfFlux() <= 0.0:
                 continue
-            
+
             try:
                 cand = measAlg.makePsfCandidate(source, mi)
                 #
