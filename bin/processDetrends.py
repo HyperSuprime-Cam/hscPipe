@@ -60,13 +60,18 @@ class Worker(object):
     def _getDataRef(self, frame, ccd):
         dataId = {'visit': frame, 'ccd': ccd}
         dataRefList = [ref for ref in self.butler.subset(datasetType='raw', **dataId)]
-        assert len(dataRefList) == 1
+        if len(dataRefList) != 1:
+            raise RuntimeError("Unable to get data reference for dataId=%s" % dataId)
         return dataRefList[0]
 
     def process(self, ccd):
         results = []
         for frame in self.frameList:
-            result = self.processSingle(frame, ccd)
+            try:
+                result = self.processSingle(frame, ccd)
+            except:
+                sys.stderr.write("Failed to process frame %d ccd %d: %s\n" % (frame, ccd, e))
+                continue
             if self.detrend == "mask":
                 results.append(result)
             elif self.detrend == "flat":
@@ -84,12 +89,7 @@ class Worker(object):
 
     def processSingle(self, frame, ccd):
         dataRef = self._getDataRef(frame, ccd)
-
-        try:
-            result = self.task.process.run(self.detrend, dataRef)
-        except Exception, e:
-            sys.stderr.write("Failed to process frame %d ccd %d: %s\n" % (frame, ccd, e))
-            raise
+        result = self.task.process.run(self.detrend, dataRef)
 
         if self.detrend != "mask":
             # Save exposure for combination
@@ -110,7 +110,12 @@ class Worker(object):
         self.combine(work.ccd, expScales=work.expScales, ccdScale=work.ccdScale)
 
     def combine(self, ccd, expScales=None, ccdScale=None):
-        dataRefList = [self._getDataRef(frame, ccd) for frame in self.frameList]
+        dataRefList = []
+        for frame in self.frameList:
+            try:
+                dataRefList.append(self._getDataRef(frame, ccd))
+            except:
+                pass
         combined = self.task.combine.run(dataRefList, expScales=expScales, finalScale=ccdScale)
         self.write(ccd, combined)
 
