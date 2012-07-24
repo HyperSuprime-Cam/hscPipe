@@ -8,22 +8,16 @@ root.isr.methodList=["doConversionForIsr", "doSaturationDetection",
 
 root.calibrate.repair.doCosmicRay = True
 root.calibrate.repair.cosmicray.nCrPixelMax = 1000000
-root.calibrate.repair.cosmicray.cond3_fac2 = 0.4
 root.calibrate.background.binSize = 1024
-root.calibrate.detection.background.binSize = 1024
 
 # PSF determination
-##root.calibrate.measurePsf.starSelector.name = "secondMoment"
-import lsst.meas.astrom.catalogStarSelector
-root.calibrate.measurePsf.starSelector.name = "catalog"
+root.calibrate.measurePsf.starSelector.name = "secondMoment"
 root.calibrate.measurePsf.psfDeterminer.name = "pca"
-root.calibrate.measurePsf.starSelector["secondMoment"].fluxLim = 60000.0
 root.calibrate.measurePsf.starSelector["secondMoment"].clumpNSigma = 2.0
-root.calibrate.measurePsf.psfDeterminer["pca"].nEigenComponents = 6
-root.calibrate.measurePsf.psfDeterminer["pca"].kernelScaling = 10
-root.calibrate.measurePsf.psfDeterminer["pca"].spatialOrder = 4
+root.calibrate.measurePsf.psfDeterminer["pca"].nEigenComponents = 4
+root.calibrate.measurePsf.psfDeterminer["pca"].kernelSize = 10
+root.calibrate.measurePsf.psfDeterminer["pca"].spatialOrder = 2
 root.calibrate.measurePsf.psfDeterminer["pca"].kernelSizeMin = 25
-root.calibrate.measurePsf.psfDeterminer["pca"].constantWeight = False
 
 # Final photometry
 root.measurement.slots.apFlux = "flux.sinc"
@@ -45,9 +39,8 @@ root.calibrate.astrometry.solver.filterMap = { 'B': 'g',
                                                }
 
 # FH below for QA stuff
-root.qa.seeing.fracSrcIni = 0.15
-#root.qa.seeing.fwhmIni = 3.465      #pix
-#root.qa.seeing.fwhmIni = 4.12      #pix hsc
+##root.qa.seeing.fwhmIni = 3.465      #pix
+root.qa.seeing.fwhmIni = 4.12      #pix hsc
 root.qa.seeing.fwhmMin = 1.5        #pix
 root.qa.seeing.fwhmMax = 12.0       #pix
 root.qa.seeing.nbinMagHist = 80
@@ -65,6 +58,9 @@ root.isr.qa.doWriteImage.doWriteOssImage = False # "Do we write out overscan-sub
 root.isr.qa.doWriteImage.doWriteFltImage = False # "Do we write out flatfielded image?"
 #root.isr.qa.doWriteImage.doWriteSsbImage = True # "Do we write out flatfielded & sky-subtracted image?"
 root.isr.qa.doWriteImage.doDumpSnapshot = True  # "Do we dump snapshot figures of images?"
-root.qa.camera = 'suprimecam'
-root.isr.qa.camera = 'suprimecam'
-root.qa.seeing.camera = 'suprimecam'
+root.qa.camera = 'hsc'
+root.isr.qa.camera = 'hsc'
+root.qa.seeing.camera = 'hsc'
+#root.qa.camera = 'suprimecam'
+#root.isr.qa.camera = 'suprimecam'
+#root.qa.seeing.camera = 'suprimecam'
