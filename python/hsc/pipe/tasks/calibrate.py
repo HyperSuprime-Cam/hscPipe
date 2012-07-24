@@ -12,10 +12,10 @@ from lsst.pipe.tasks.measurePsf import MeasurePsfTask
 import hsc.pipe.tasks.astrometry as hscAstrom
 
 
-class HscCalibrateConfig(ptCalibrate.CalibrateConfig):
+class SubaruCalibrateConfig(ptCalibrate.CalibrateConfig):
     astrometry = pexConfig.ConfigField(dtype = hscAstrom.HscAstrometryConfig, doc = "HSC calibration")
 
-class HscCalibrateTask(ptCalibrate.CalibrateTask):
+class SubaruCalibrateTask(ptCalibrate.CalibrateTask):
     ConfigClass = HscCalibrateConfig
 
     def __init__(self, **kwargs):
@@ -31,3 +31,17 @@ class HscCalibrateTask(ptCalibrate.CalibrateTask):
                          schema=self.schema, algMetadata=self.algMetadata)
         self.makeSubtask("astrometry", hscAstrom.HscAstrometryTask, schema=self.schema)
         self.makeSubtask("photocal", photocal.PhotoCalTask, schema=self.schema)
+
+    def run(self, exposure, *args, **kwargs):
+        results = super(SubaruCalibrateTask, self).run(exposure, *args, **kwargs):
+
+        photocal = results.photocal
+        magZero = photocal.zp - 2.5 * math.log10(exposure.getCalib().getExptime()) # convert to (mag/sec/adu)
+        self.metadata.set('MAGZERO', magZero)
+        self.metadata.set('MAGZERO_RMS', photocal.sigma)
+        self.metadata.set('MAGZERO_NOBJ', photocal.ngood)
+        self.metadata.set('COLORTERM1', 0.0)
+        self.metadata.set('COLORTERM2', 0.0)
+        self.metadata.set('COLORTERM3', 0.0)
+
+        return results

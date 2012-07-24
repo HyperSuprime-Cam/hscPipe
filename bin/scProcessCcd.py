@@ -24,11 +24,6 @@ import argparse, os, sys
 from hsc.pipe.base import HscArgumentParser
 from hsc.pipe.tasks.processCcd import SuprimeCamProcessCcdTask as TaskClass
 
-# FH added for QA output
-# import hsc.onsite.qa.fitsthumb as QaFitsthumb
-# import hsc.onsite.qa.measSeeingQa as QaSeeing
-
-
 if __name__ == "__main__":
     parser = HscArgumentParser(conflict_handler='resolve') # old style
     parser.add_argument('--dumpconfig', action="store_true", help="Dump the configuration to stdout and exit")
@@ -46,28 +41,14 @@ if __name__ == "__main__":
         sys.exit(0)
 
     task = TaskClass(config=namespace.config)
-    if False: ## debugging
-        print '************ Here, config start **************'
-        print namespace.config
-        print '************ Here, config end **************'
-
-        print '*** len(namespace.dataRefList)', len(namespace.dataRefList)
-
     for sensorRef in namespace.dataRefList:
-
-        filename = sensorRef.get("calexp_filename")
-        print '*** filename:', filename
-
         if namespace.doRaise:
             task.run(sensorRef)
         else:
-            if False:
-                try:
-                    task.run(sensorRef)
-                except Exception, e:
-                    task.log.log(task.log.FATAL, "Failed on dataId=%s: %s" % (sensorRef.dataId, e))
-            else:
+            try:
                 print '* * '*40
-                print sensorRef
+                print sensorRef.dataId
                 print '* * '*40
-                task.run(sensorRef) 
+                task.run(sensorRef)
+            except Exception, e:
+                task.log.log(task.log.FATAL, "Failed on dataId=%s: %s" % (sensorRef.dataId, e))
