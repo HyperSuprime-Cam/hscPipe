@@ -8,24 +8,19 @@ TODO:
   Implemented for onsite QA output
 """
 
-import sys
-import os, re
+import os, os.path
 import math
 import lsst.pex.config as pexConfig
 import lsst.pex.logging as pexLog
 import lsst.afw.table as afwTable
 
-from lsst.pipe.base import Task
+from lsst.pipe.base import Task, Struct
 
 import numpy
 
-# this order is necessary to avoid X connection from this script
-import matplotlib
-matplotlib.use('Agg') 
 import matplotlib.pyplot as plt
+plt.switch_backend('Agg')
 from matplotlib import patches as patches
-### Be sure that other python modules do not call matplotlib.pyplot with TkAgg
-### or non-Agg backend before this module!
 
 
 class MeasureSeeingConfig(pexConfig.Config):
@@ -110,10 +105,12 @@ class MeasureSeeingTask(Task):
         magLim = self.magLimit(dataRef, data)
         if magLim is None:
             return
-        data = self.getFwhmRough(dataRef, data, magLim)
+        fwhmRough = self.getFwhmRough(dataRef, data, magLim)
+        data = self.getFwhmRobust(dataRef, data, fwhmRough)
+
         self.setMetadata(exposure)
 
-        if self.doPlots:
+        if self.config.doPlots:
             self.plotSeeingMap(dataRef, data, exposure)
             self.plotEllipseMap(dataRef, data, exposure)
             self.plotEllipticityMap(dataRef, data, exposure)
@@ -147,7 +144,7 @@ class MeasureSeeingTask(Task):
         objFlagListAll = []
         indicesSourcesFwhmRange = [] # indices of sources in acceptable fwhm range 
 
-        catalogSchema = catalog.table.getSchema()
+        catalogSchema = sources.table.getSchema()
         nameSaturationFlag = 'flags.pixel.saturated.any'
         nameSaturationCenterFlag = 'flags.pixel.saturated.center'
         keySaturationFlag = catalogSchema.find(nameSaturationFlag).key
@@ -240,7 +237,7 @@ class MeasureSeeingTask(Task):
             BEllListAll.append( bb ) # sigma in short axis
             #objFlagListAll.append(objFlag)
 
-            if fwhm > self.config.fwhmMin and fwhm < fwhmMax:
+            if fwhm > self.config.fwhmMin and fwhm < self.config.fwhmMax:
                 indicesSourcesFwhmRange.append(iGoodId)
 
             # this sample is added to the good sample
@@ -257,7 +254,7 @@ class MeasureSeeingTask(Task):
                       IxxListAll = numpy.array(IxxListAll),
                       IyyListAll = numpy.array(IyyListAll),
                       IxyListAll = numpy.array(IxyListAll),
-                      indicesSourcesFwhmRange = indicesSourceFwhmRange,
+                      indicesSourcesFwhmRange = indicesSourcesFwhmRange,
                       )
 
     def magLimit(self, dataRef, data):
@@ -265,11 +262,12 @@ class MeasureSeeingTask(Task):
         #indicesSourcesFwhmRange = numpy.array(indicesSourcesFwhmRange)
         magListFwhmRange = data.magListAll[data.indicesSourcesFwhmRange]
         # n.b. magHist[1] is sorted so index=0 is brightest
-        magHist = numpy.histogram(magListFwhmRange, range=(magMinHist,magMaxHist), bins=nbinMagHist)
+        magHist = numpy.histogram(magListFwhmRange, range=(self.config.magMinHist, self.config.magMaxHist),
+                                  bins=self.config.nbinMagHist)
 
         sumAll = magHist[0].sum()
         #print '*** sumAll: ', sumAll
-        log.info("QaSeeing: total number of objects in the first dataset (sumAll): %d" % sumAll)
+        self.log.info("QaSeeing: total number of objects in the first dataset (sumAll): %d" % sumAll)
 
         magCumHist = list(magHist)
         magCumHist[0] = (magCumHist[0].cumsum())
@@ -282,21 +280,21 @@ class MeasureSeeingTask(Task):
         # -- Estimating mag limit based no the cumlative mag histogram
         magLim = None
         for i, cumFraction in enumerate(magCumHist[0]):
-            if cumFraction >= fracSrcIni:
+            if cumFraction >= self.config.fracSrcIni:
                 magLim = magCumHist[1][i] # magLim is the mag which exceeds the cumulative n(m) of 0.15
                 break
         if not magLim:
-            log.log(log.WARN, "QaSeeing: Error: cumulative magnitude histogram does not exceed 0.15.")
+            self.log.log(self.log.WARN, "Error: cumulative magnitude histogram does not exceed 0.15.")
             return None
 
         #print '*** magLim: ', magLim
-        log.info("QaSeeing: mag limit auto-dertermined: %5.2f or %f (ADU)" %
+        self.log.info("Mag limit auto-determined: %5.2f or %f (ADU)" %
                  (magLim, numpy.power(10, -0.4*magLim)))
         self.metadata.add("magLim", numpy.power(10, -0.4*magLim))
 
-        if debugFlag:
-            log.log(log.DEBUG, "QaSeeing: magHist: %s" % magHist)
-            log.log(log.DEBUG, "QaSeeing: cummurative magHist: %s" % magCumHist)
+        if self.debugFlag:
+            self.log.logdebug("QaSeeing: magHist: %s" % magHist)
+            self.log.logdebug("QaSeeing: cummurative magHist: %s" % magCumHist)
 
         if self.config.doPlots:
             fig = plt.figure()
@@ -317,7 +315,8 @@ class MeasureSeeingTask(Task):
             pltCumHist.set_xlabel('magnitude instrumental')
             pltCumHist.set_ylabel('Nsample scaled to unity')
             pltCumHist.legend()
-            fname = dataRef.get("plotMagHist_filename")
+
+            fname = getFilename(dataRef, "plotMagHist")
             plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
                         format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
             del fig
@@ -326,9 +325,9 @@ class MeasureSeeingTask(Task):
 
         return magLim
 
-    def getFwhmRough(dataRef, data, magLim):
+    def getFwhmRough(self, dataRef, data, magLim):
         """Estimating roughly-estimated FWHM for sources with mag < magLim"""
-        indicesSourcesPsfLike = [i for i in indicesSourcesFwhmRange if magListAll[i]<magLim ]        
+        indicesSourcesPsfLike = [i for i in data.indicesSourcesFwhmRange if data.magListAll[i] < magLim ]
 
         magListPsfLike = data.magListAll[indicesSourcesPsfLike]
         fwhmListPsfLike = data.fwhmListAll[indicesSourcesPsfLike]
@@ -342,7 +341,10 @@ class MeasureSeeingTask(Task):
         IyyListPsfLike = data.IyyListAll[indicesSourcesPsfLike]
         IxyListPsfLike = data.IxyListAll[indicesSourcesPsfLike]
 
-        log.debug("nSampleRoughFwhm: %d" % self.config.nSampleRoughFwhm)
+        data.magListPsfLike = magListPsfLike
+        data.fwhmListPsfLike = fwhmListPsfLike
+
+        self.log.logdebug("nSampleRoughFwhm: %d" % self.config.nSampleRoughFwhm)
 
         fwhmListForRoughFwhm = numpy.sort(fwhmListPsfLike)[:self.config.nSampleRoughFwhm]
         fwhmRough = numpy.median(fwhmListForRoughFwhm)
@@ -351,10 +353,10 @@ class MeasureSeeingTask(Task):
             print '*** fwhmListPsfLike:', fwhmListPsfLike
             print '*** fwhmListForRoughFwhm:', fwhmListForRoughFwhm
             print '*** fwhmRough:', fwhmRough
-        log.info("fwhmRough: %f" % fwhmRough)
+        self.log.info("fwhmRough: %f" % fwhmRough)
         self.metadata.add("fwhmRough", fwhmRough)
 
-        if self.config.doPlot:
+        if self.config.doPlots:
             fig = plt.figure()
             pltMagFwhm = fig.add_subplot(1,1,1)
             pltMagFwhm.set_xlim(-20,-5)
@@ -367,7 +369,7 @@ class MeasureSeeingTask(Task):
             pltMagFwhm.set_ylabel('FWHM (pix)')
 
             pltMagFwhm.legend()
-            fname = dataRef.get("plotSeeingRough_filename")
+            fname = getFilename(dataRef, "plotSeeingRough")
             plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait',
                         papertype=None, format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
 
@@ -387,7 +389,7 @@ class MeasureSeeingTask(Task):
                                         ] 
         
         if len(indicesSourcesPsfLikeRobust) < 1:
-            log.warn("No sources selected in robust seeing estimation")
+            self.log.warn("No sources selected in robust seeing estimation")
             return None
 
         magListPsfLikeRobust = data.magListAll[indicesSourcesPsfLikeRobust]
@@ -420,13 +422,13 @@ class MeasureSeeingTask(Task):
         self.metadata.add("ellRobust", ellRobust)
         self.metadata.add("ellPaRobust", ellPaRobust)
 
-        if self.doPlots:
+        if self.config.doPlots:
             fig = plt.figure()
             pltMagFwhm = fig.add_subplot(1,2,1)
             pltMagFwhm.set_xlim(-20,-5)
             pltMagFwhm.set_ylim(0,20)
-            pltMagFwhm.plot(magListAll, fwhmListAll, '+', label='all sample')
-            pltMagFwhm.plot(magListPsfLike, fwhmListPsfLike, 'bx', label='coarse PSF-like sample')
+            pltMagFwhm.plot(data.magListAll, data.fwhmListAll, '+', label='all sample')
+            pltMagFwhm.plot(data.magListPsfLike, data.fwhmListPsfLike, 'bx', label='coarse PSF-like sample')
             pltMagFwhm.plot(magListPsfLikeRobust, fwhmListPsfLikeRobust, 'mo',
                             label='best-effort PSF-like sample')        
             xx = [-20,-5]; yy = [fwhmRobust, fwhmRobust]
@@ -443,7 +445,7 @@ class MeasureSeeingTask(Task):
             pltHistFwhm.set_xlabel('number of sources')
             pltHistFwhm.legend()
 
-            fname = dataRef.get("plotSeeingRobust_filename")
+            fname = getFilename(dataRef, "plotSeeingRobust")
             plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait',
                         papertype=None, format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
 
@@ -494,7 +496,7 @@ class MeasureSeeingTask(Task):
         pltFwhmMap.set_xlabel('X (pix)')
         pltFwhmMap.set_ylabel('Y (pix)')
 
-        fname = dataRef.get("plotSeeingMap_filename")
+        fname = getFilename(dataRef, "plotSeeingMap")
         plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
                     format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
 
@@ -533,7 +535,7 @@ class MeasureSeeingTask(Task):
         pltEllipseMap.set_xlabel('X (pix)')
         pltEllipseMap.set_ylabel('Y (pix)')
 
-        fname = dataRef.get("plotEllipseMap_filename")
+        fname = getFilename(dataRef, "plotEllipseMap")
         plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
                     format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
 
@@ -559,7 +561,7 @@ class MeasureSeeingTask(Task):
                             zip(data.ellListPsfLikeRobust, data.ellPaListPsfLikeRobust) if all([ell, ellPa])])
         
         Q = pltEllMap.quiver(
-            xListPsfLikeRobust, yListPsfLikeRobust,
+            data.xListPsfLikeRobust, data.yListPsfLikeRobust,
             #data.ellListPsfLikeRobust*numpy.cos(ellPaRadianListPsfLikeRobust),
             #data.ellListPsfLikeRobust*numpy.sin(ellPaRadianListPsfLikeRobust),
             ellX, ellY,
@@ -583,7 +585,7 @@ class MeasureSeeingTask(Task):
         pltEllMap.set_ylabel('Y (pix)')
         pltEllMap.legend()
 
-        fname = dataRef.get("plotEllipticityMap_filename")
+        fname = getFilename(dataRef, "plotEllipticityMap")
         plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
                     format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
 
@@ -605,6 +607,9 @@ class MeasureSeeingTask(Task):
         pltFwhm.set_xlim(0, xSize)
         pltFwhm.set_ylim(0, ySize)
 
+        xGridSize = self.config.gridSize
+        yGridSize = self.config.gridSize
+        
         # making grids
         nx = int(numpy.floor(xSize/xGridSize))
         ny = int(numpy.floor(ySize/yGridSize))
@@ -659,7 +664,7 @@ class MeasureSeeingTask(Task):
         plt.yticks([ yc+yGridSize/2. for yc in yGridList ])
         pltFwhm.grid()
 
-        fname = dataRef.get("plotFwhmGrid_filename")
+        fname = getFilename(dataRef, "plotFwhmGrid")
         plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait',
                     papertype=None, format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
 
@@ -677,6 +682,9 @@ class MeasureSeeingTask(Task):
 
         pltEllipse.set_xlim(0, xSize)
         pltEllipse.set_ylim(0, ySize)
+
+        xGridSize = self.config.gridSize
+        yGridSize = self.config.gridSize
 
         # making grids
         nx = int(numpy.floor(xSize/xGridSize))
@@ -739,7 +747,7 @@ class MeasureSeeingTask(Task):
         plt.yticks([ yc+yGridSize/2. for yc in yGridList ])
         pltEllipse.grid()
 
-        fname = dataRef.get("plotEllipseGrid_filename")
+        fname = getFilename(dataRef, "plotEllipseGrid")
         plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
                     format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
 
@@ -831,10 +839,18 @@ class MeasureSeeingTask(Task):
         pltEll.set_ylabel('Y (pix)')
 
 
-        fname = dataRef.get("plotEllipticityGrid_filename")
+        fname = getFilename(dataRef, "plotEllipticityGrid")
         plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
                     format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
 
         del fig
         del pltEll
 
+
+def getFilename(dataRef, dataset):
+    fname = dataRef.get(dataset + "_filename")[0]
+    directory = os.path.dirname(fname)
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+    return fname
+            

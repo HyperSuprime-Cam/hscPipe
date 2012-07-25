@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+import hsc.pipe.tasks.plotSetup
+
 import lsst.pex.config as pexConfig
 import lsst.afw.detection as afwDet
 import lsst.afw.table as afwTable
@@ -90,6 +92,8 @@ class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
             else:
                 apCorr = calib.apCorr
             self.measurement.run(exposure, sources, apCorr)
+
+        self.qa.run(sensorRef, exposure, sources)
 
         if self.config.doWriteSources:
             sensorRef.put(sources, 'src')
@@ -201,6 +205,7 @@ class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
         if self.config.doMeasurement:
             self.makeSubtask("measurement", measAlg.SourceMeasurementTask,
                              schema=self.schema, algMetadata=self.algMetadata)
+        self.makeSubtask("qa", hscQa.QaTask)
 
 
 class HscProcessCcdTask(SubaruProcessCcdTask):
@@ -215,4 +220,5 @@ class HscProcessCcdTask(SubaruProcessCcdTask):
        if self.config.doMeasurement:
            self.makeSubtask("measurement", measAlg.SourceMeasurementTask,
                             schema=self.schema, algMetadata=self.algMetadata)
+       self.makeSubtask("qa", hscQa.QaTask)
 

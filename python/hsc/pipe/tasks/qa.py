@@ -9,7 +9,7 @@ class QaConfig(Config):
 class QaTask(Task):
     ConfigClass = QaConfig
     def __init__(self, *args, **kwargs):
-        super(QaTask, self).__init(*args, **kwargs)
+        super(QaTask, self).__init__(*args, **kwargs)
         self.makeSubtask("measureSeeing", hscSeeing.MeasureSeeingTask)
 
     def run(self, dataRef, exposure, sources):
@@ -30,5 +30,8 @@ class QaTask(Task):
         metadata.set('RERUN', rerunName)
 
     def getRerunName(self, sensorRef):
-        return sensorRef.getButler().mapper.rerun
+        # rerun: assuming directory tree has the fixed form where 'rerun/' is just followed by '$rerun_name/'
+        corrPath = sensorRef.get('calexp_filename')[0]
+        return corrPath[corrPath.find('rerun'):].split('/')[1]
+        
 
