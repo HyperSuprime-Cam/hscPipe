@@ -85,13 +85,10 @@ class SubaruAstrometryTask(ptAstrometry.AstrometryTask):
 
         self.display('astrometry', exposure=exposure, sources=sources, matches=matches)
 
-        self.metadata.set('NOBJ_BRIGHT', len(sources))
-        self.metadata.set('NOBJ_MATCHED', len(matches))
-        self.metadata.set('WCS_NOBJ', len(matches))
-
         metadata = exposure.getMetadata()
-        for key in self.metadata.names():
-            metadata.set(key, self.metadata.get(key))
+        metadata.set('NOBJ_BRIGHT', len(sources))
+        metadata.set('NOBJ_MATCHED', len(matches))
+        metadata.set('WCS_NOBJ', len(matches))
 
         return matches, matchMeta
 
@@ -101,8 +98,8 @@ class SubaruAstrometryTask(ptAstrometry.AstrometryTask):
         rms = sip.getScatterOnSky().asArcseconds() if sip else -1
 
         metadata = exposure.getMetadata()
-        metadata.set('WCS_SIPORDER', 0)
-        metadata.set('WCS_RMS', -1)
+        metadata.set('WCS_SIPORDER', order)
+        metadata.set('WCS_RMS', rms)
 
         return sip
 
