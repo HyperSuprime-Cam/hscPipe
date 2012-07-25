@@ -367,7 +367,7 @@ class MeasureSeeingTask(Task):
             pltMagFwhm.set_ylabel('FWHM (pix)')
 
             pltMagFwhm.legend()
-            fname = dataRef.get("plotSeeing_filename")
+            fname = dataRef.get("plotSeeingRough_filename")
             plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait',
                         papertype=None, format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
 

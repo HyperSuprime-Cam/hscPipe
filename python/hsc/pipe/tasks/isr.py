@@ -1,12 +1,17 @@
 #!/usr/bin/env python
 
+import os, os.path
 from lsst.pex.config import Field
 from lsst.ip.isr.isrTask import IsrTaskConfig, IsrTask
 from lsst.ip.isr.isr import Isr
 from lsst.pipe.base import Struct
 
 import lsst.afw.math as afwMath
+import lsst.afw.geom as afwGeom
+import lsst.afw.image as afwImage
 import hsc.onsite.qa.fitsthumb as qaFitsthumb
+
+import numpy
 
 class SubaruIsrConfig(IsrTaskConfig):
     doSaturation = Field(doc="Mask saturated pixels?", dtype=bool, default=True)
@@ -76,8 +81,8 @@ class SubaruIsrTask(IsrTask):
 
         self.measureBackground(exposure)
 
-        metadata = self.exposure.getMetadata()
-        for key in self.metadata:
+        metadata = exposure.getMetadata()
+        for key in self.metadata.names():
             metadata.set(key, self.metadata.get(key))
 
         return Struct(postIsrExposure=exposure)
@@ -98,7 +103,10 @@ class SubaruIsrTask(IsrTask):
     def writeThumbnail(self, dataRef, dataset, exposure, format='png', width=500, height=0):
         """Write out exposure to a snapshot file named outfile in the given image format and size.
         """
-        filename = dataRef.get(dataset + "_filename")
+        filename = dataRef.get(dataset + "_filename")[0]
+        directory = os.path.dirname(filename)
+        if not os.path.exists(directory):
+            os.makedirs(directory)
         image = exposure.getMaskedImage().getImage()
         qaFitsthumb.createFitsThumb(image, filename, format, width, height, True)
 
@@ -120,7 +128,8 @@ class SubaruIsrTask(IsrTask):
 
     def measureBackground(self, exposure):
         statsControl = afwMath.StatisticsControl(self.config.clipSigma, self.config.nIter)
-        stats = afwMath.makeStatistics(exposure, afwMath.MEDIAN | afwMath.STDEVCLIP, statsControl)
+        maskedImage = exposure.getMaskedImage()
+        stats = afwMath.makeStatistics(maskedImage, afwMath.MEDIAN | afwMath.STDEVCLIP, statsControl)
         skyLevel = stats.getValue(afwMath.MEDIAN)
         skySigma = stats.getValue(afwMath.STDEVCLIP)
         self.log.info("Flattened sky level: %f +/- %f" % (skyLevel, skySigma))
@@ -163,6 +172,6 @@ class SubaruIsrTask(IsrTask):
         self.metadata.set('FLATNESS_PP', flatness_pp)
         self.metadata.set('FLATNESS_RMS', flatness_rms)
         self.metadata.set('FLATNESS_NGRIDS', '%dx%d' % (nX, nY))
-        self.metadata.set('FLATNESS_MESHX', meshX)
-        self.metadata.set('FLATNESS_MESHY', meshY)
+        self.metadata.set('FLATNESS_MESHX', self.config.meshX)
+        self.metadata.set('FLATNESS_MESHY', self.config.meshY)
 

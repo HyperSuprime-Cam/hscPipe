@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import math
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.pipe.tasks.calibrate as ptCalibrate

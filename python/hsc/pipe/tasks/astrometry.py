@@ -90,7 +90,7 @@ class SubaruAstrometryTask(ptAstrometry.AstrometryTask):
         self.metadata.set('WCS_NOBJ', len(matches))
 
         metadata = exposure.getMetadata()
-        for key in self.metadata:
+        for key in self.metadata.names():
             metadata.set(key, self.metadata.get(key))
 
         return matches, matchMeta
@@ -111,4 +111,4 @@ class SubaruAstrometryTask(ptAstrometry.AstrometryTask):
             for s in sources:
                 s.set(self.centroidKey, s.getCentroid())
             return (0,0), (exposure.getWidth(), exposure.getHeight())
-        return super(HscAstrometryTask, self).distort(exposure, sources)
+        return super(SubaruAstrometryTask, self).distort(exposure, sources)
