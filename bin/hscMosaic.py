@@ -21,7 +21,6 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 import sys
-import hsc.pipe.tasks.monkeypatch
 from hsc.pipe.base import HscArgumentParser
 from hsc.meas.mosaic.task import MosaicTask as TaskClass
 
