@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import os, os.path
 import hsc.pipe.tasks.plotSetup
 
 import lsst.pex.config as pexConfig
@@ -58,16 +59,7 @@ class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
             calib = self.calibrate.run(exposure)
             exposure = calib.exposure
             if self.config.doWriteCalibrate:
-                sensorRef.put(exposure, 'calexp')
-                sensorRef.put(calib.sources, 'icSrc')
-                if calib.psf is not None:
-                    sensorRef.put(calib.psf, 'psf')
-                if calib.apCorr is not None:
-                    sensorRef.put(calib.apCorr, 'apCorr')
-                if calib.matches is not None:
-                    normalizedMatches = afwTable.packMatches(calib.matches)
-                    normalizedMatches.table.setMetadata(calib.matchMeta)
-                    sensorRef.put(normalizedMatches, 'icMatch')
+                self.writeCalib(sensorRef, calib)
         else:
             calib = None
 
@@ -123,13 +115,13 @@ class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
 
     def writeMatches(self, dataRef, matches, matchMeta):
         # First write normalised matches
-        normalizedMatches = afwTable.packMatches(calib.matches)
-        normalizedMatches.table.setMetadata(calib.matchMeta)
+        normalizedMatches = afwTable.packMatches(matches)
+        normalizedMatches.table.setMetadata(matchMeta)
         dataRef.put(normalizedMatches, 'icMatch')
 
         # Now write unpacked matches
-        refSchema = matchlist[0].first.getSchema()
-        srcSchema = matchlist[0].second.getSchema()
+        refSchema = matches[0].first.getSchema()
+        srcSchema = matches[0].second.getSchema()
 
         mergedSchema = afwTable.Schema()
         def merge(schema, key, merged, name):
@@ -154,12 +146,23 @@ class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
         for keyName in srcSchema.getNames():
             srcKeys.append((srcSchema.find(keyName).key, mergedSchema.find('src.' + keyName).key))
 
+        for match in matches:
+            record = mergedCatalog.addNew()
+            for key in refKeys:
+                keyIn = key[0]
+                keyOut = key[1]
+                record.set(keyOut, match.first.get(keyIn))
+            for key in srcKeys:
+                keyIn = key[0]
+                keyOut = key[1]
+                record.set(keyOut, match.second.get(keyIn))
+
         # obtaining reference catalog name
         catalogName = os.path.basename(os.getenv("ASTROMETRY_NET_DATA_DIR").rstrip('/'))
         matchMeta.add('REFCAT', catalogName)
         mergedCatalog.getTable().setMetadata(matchMeta)
 
-        dataRef.put(mergedCatalog, "matchedList")
+        dataRef.put(mergedCatalog, "matchList")
 
 
     def write(self, butler, dataId, struct, wcs=None):
