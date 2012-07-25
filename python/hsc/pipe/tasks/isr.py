@@ -63,7 +63,7 @@ class SubaruIsrTask(IsrTask):
         exposure = self.doCcdAssembly([exposure])
 
         if self.config.doWriteOss:
-            dataRef.put("ossImage", exposure)
+            dataRef.put(exposure, "ossImage")
         if self.config.doThumbnailOss:
             self.writeThumbnail(dataRef, "ossThumb", exposure)
 
@@ -75,7 +75,7 @@ class SubaruIsrTask(IsrTask):
             exposure = self.doFlatCorrection(exposure, calibSet)
 
         if self.config.doWriteFlattened:
-            dataRef.put("flattenedImage", exposure)
+            dataRef.put(exposure, "flattenedImage")
         if self.config.doThumbnailFlattened:
             self.writeThumbnail(dataRef, "flattenedThumb", exposure)
 
