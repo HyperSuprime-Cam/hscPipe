@@ -1,6 +1,7 @@
 setupRequired(hscPipeBase)
 setupRequired(pipe_tasks)
 setupRequired(hscAstrom)
+setupRequired(fitsthumb)
 
 setupOptional(pbasf2)
 setupOptional(hscMosaic)
