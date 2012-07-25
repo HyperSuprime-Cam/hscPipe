@@ -28,7 +28,7 @@ class DetrendStatsConfig(Config):
 
 
 class DetrendProcessConfig(Config):
-    isr = ConfigField(dtype=hscIsr.HscIsrConfig, doc="ISR configuration")
+    isr = ConfigField(dtype=hscIsr.SubaruIsrConfig, doc="ISR configuration")
     detection = ConfigField(dtype=measAlg.SourceDetectionConfig, doc="Detection configuration")
     background = ConfigField(dtype=measAlg.BackgroundConfig, doc="Background configuration")
     stats = ConfigField(dtype=DetrendStatsConfig, doc="Background statistics configuration")
@@ -81,7 +81,7 @@ class DetrendProcessTask(Task):
     ConfigClass = DetrendProcessConfig
     def __init__(self, **kwargs):
         super(DetrendProcessTask, self).__init__(**kwargs)
-        self.makeSubtask("isr", hscIsr.HscIsrTask)
+        self.makeSubtask("isr", hscIsr.SubaruIsrTask)
         self.makeSubtask("detection", measAlg.SourceDetectionTask)
         self.makeSubtask("stats", DetrendStatsTask)
 
@@ -110,7 +110,7 @@ class DetrendProcessTask(Task):
         butler = sensorRef.butlerSubset.butler
         calibSet = self.isr.makeCalibDict(butler, sensorRef.dataId)
         exposure = sensorRef.get("raw")
-        isrRes = self.isr.run(exposure, calibSet)
+        isrRes = self.isr.run(sensorRef, exposure, calibSet)
         exposure = isrRes.postIsrExposure
         self.display("isr", exposure=exposure, pause=True)
         return exposure

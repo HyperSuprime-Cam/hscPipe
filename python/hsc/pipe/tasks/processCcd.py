@@ -165,7 +165,7 @@ class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
         dataRef.put(mergedCatalog, "matchList")
 
 
-    def write(self, butler, dataId, struct, wcs=None):
+    def write(self, dataRef, struct, wcs=None):
         if wcs is None:
             wcs = struct.exposure.getWcs()
             self.log.log(self.log.WARN, "WARNING: No new WCS provided")
@@ -180,14 +180,13 @@ class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
             for s in sources:
                 s.updateCoord(wcs)
 
-        self.writeMatches(struct.calib.matches, struct.calib.matchMeta)
+        self.writeMatches(dataRef, struct.calib.matches, struct.calib.matchMeta)
 
-        butler.put(struct.exposure, 'calexp', dataId)
-        butler.put(struct.sources, 'src', dataId)
-        butler.put(normalizedMatches, 'icMatch', dataId)
-        butler.put(struct.calib.psf, 'psf', dataId)
-        butler.put(struct.calib.apCorr, 'apCorr', dataId)
-        butler.put(struct.calib.sources, 'icSrc', dataId)
+        dataRef.put(struct.exposure, 'calexp')
+        dataRef.put(struct.sources, 'src')
+        dataRef.put(struct.calib.psf, 'psf')
+        dataRef.put(struct.calib.apCorr, 'apCorr')
+        dataRef.put(struct.calib.sources, 'icSrc')
 
 
 class SuprimeCamProcessCcdConfig(SubaruProcessCcdConfig):
