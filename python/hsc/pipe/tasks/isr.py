@@ -9,7 +9,7 @@ from lsst.pipe.base import Struct
 import lsst.afw.math as afwMath
 import lsst.afw.geom as afwGeom
 import lsst.afw.image as afwImage
-import hsc.onsite.qa.fitsthumb as qaFitsthumb
+import hsc.fitsthumb as fitsthumb
 
 import numpy
 
@@ -108,7 +108,7 @@ class SubaruIsrTask(IsrTask):
         if not os.path.exists(directory):
             os.makedirs(directory)
         image = exposure.getMaskedImage().getImage()
-        qaFitsthumb.createFitsThumb(image, filename, format, width, height, True)
+        fitsthumb.createFitsThumb(image, filename, format, width, height, True)
 
     def measureOverscan(self, exposure):
         clipSigma = 3.0
