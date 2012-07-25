@@ -5,9 +5,8 @@ root.calibrate.background.binSize = 1024
 root.calibrate.detection.background.binSize = 1024
 
 # PSF determination
-##root.calibrate.measurePsf.starSelector.name = "secondMoment"
-import lsst.meas.astrom.catalogStarSelector
-root.calibrate.measurePsf.starSelector.name = "catalog"
+#import lsst.meas.algorithms.objectSizeStarSelector
+#root.calibrate.measurePsf.starSelector.name = "objectSize"
 root.calibrate.measurePsf.psfDeterminer.name = "pca"
 root.calibrate.measurePsf.starSelector["secondMoment"].fluxLim = 60000.0
 root.calibrate.measurePsf.starSelector["secondMoment"].clumpNSigma = 2.0
