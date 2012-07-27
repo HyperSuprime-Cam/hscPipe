@@ -522,7 +522,7 @@ class MeasureSeeingTask(Task):
             if all([aa, bb, ellPa]):
                 ell = patches.Ellipse((xEllipse, yEllipse), 2.*aa*scaleFactor, 2.*bb*scaleFactor,
                                       angle=ellPa, linewidth=2., fill=False, zorder=2)
-            pltEllipseMap.add_patch(ell)
+                pltEllipseMap.add_patch(ell)
 
         # reference sample point
         fwhmPix = aa = bb = 2.5 # pixel in A, B (in half width)
@@ -730,7 +730,7 @@ class MeasureSeeingTask(Task):
             if all([aa, bb, ellPa]):
                 ell = patches.Ellipse((xEllipse, yEllipse), 2.*aa*scaleFactor, 2.*bb*scaleFactor,
                                       angle=ellPa, linewidth=2., fill=False, zorder=2)
-            pltEllipse.add_patch(ell)
+                pltEllipse.add_patch(ell)
         pltEllipse.set_title('Size and Ellongation of PSF sources')
         pltEllipse.set_xlabel('X (pix)')
         pltEllipse.set_ylabel('Y (pix)')
