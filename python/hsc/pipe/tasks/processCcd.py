@@ -11,7 +11,8 @@ from lsst.pipe.tasks.processCcd import ProcessCcdTask
 class SubaruProcessCcdConfig(ProcessCcdTask.ConfigClass):
     doWriteUnpackedMatches = pexConfig.Field(
         dtype=bool, default=True,
-        doc="Write the denormalized match table as well as the normalized match table"
+        doc=("Write the denormalized match table as well as the normalized match table; "
+             "ignored if doWriteCalibrate=False")
     )
 
 class SubaruProcessCcdTask(ProcessCcdTask):
@@ -23,7 +24,7 @@ class SubaruProcessCcdTask(ProcessCcdTask):
 
     def run(self, sensorRef):
         result = ProcessCcdTask.run(self, sensorRef)
-        if self.config.doWriteUnpackedMatches:
+        if self.config.doWriteCalibrate and self.config.doWriteUnpackedMatches:
             self.writeUnpackedMatches(sensorRef, result.calib.matches, result.calib.matchMeta)
         return result
 
@@ -95,11 +96,12 @@ class SubaruProcessCcdTask(ProcessCcdTask):
             for s in sources:
                 s.updateCoord(wcs)
 
-        self.writeMatches(dataRef, struct.calib.matches, struct.calib.matchMeta)
-
-        butler.put(struct.exposure, 'calexp', dataId)
-        butler.put(struct.sources, 'src', dataId)
-        butler.put(normalizedMatches, 'icMatch', dataId)
-        butler.put(struct.calib.psf, 'psf', dataId)
-        butler.put(struct.calib.apCorr, 'apCorr', dataId)
-        butler.put(struct.calib.sources, 'icSrc', dataId)
+        normalizedMatches = afwTable.packMatches(struct.calib.matches)
+        normalizedMatches.table.setMetadata(struct.calib.matchMeta)
+        self.writeUnpackedMatches(dataRef, struct.calib.matches, struct.calib.matchMeta)
+        dataRef.put(struct.exposure, 'calexp')
+        dataRef.put(struct.sources, 'src')
+        dataRef.put(normalizedMatches, "icMatch")
+        dataRef.put(struct.calib.psf, 'psf')
+        dataRef.put(struct.calib.apCorr, 'apCorr')
+        dataRef.put(struct.calib.sources, 'icSrc')

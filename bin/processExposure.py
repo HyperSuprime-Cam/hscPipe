@@ -11,7 +11,7 @@ import lsst.afw.geom as afwGeom
 import lsst.afw.coord as afwCoord
 import hsc.pipe.base.camera as hscCamera
 import hsc.pipe.base.butler as hscButler
-import hsc.pipe.tasks.processCcd as hscProcessCcd
+from hsc.pipe.tasks.processCcd import SubaruProcessCcdTask
 
 def sigalrm_handler(signum, frame):
     sys.stderr.write('Signal handler called with signal %s\n' % (signum))
@@ -35,20 +35,21 @@ def main(instrument, rerun, frameList):
 def ProcessExposure(instrument, rerun, frame):
     comm = mpi.COMM_WORLD
 
-    if instrument.lower() in ("hsc"):
-        ProcessCcdTask = hscProcessCcd.HscProcessCcdTask
-        overrides = "hsc.py"
-    elif instrument == "suprimecam":
-        ProcessCcdTask = hscProcessCcd.SuprimeCamProcessCcdTask
-        overrides = "suprimecam.py"
-    else:
-        raise RuntimeError("Unknown instrument: %s" % (instrument))
+    # We don't need camera-specific ProcessCcdTasks anymore.  But we may want to use
+    # one of the onsite variants; in that case we should try to pass an extra argument
+    # and switching which task we're using here, rather than by making a new processExposure
+    # script specifically for that purpose.
+    ProcessCcdTask = SubaruProcessCcdTask
 
     butler = hscCamera.getButler(instrument, rerun=rerun)
     dataIdList = [{'visit': frame, 'ccd': ccd} for ccd in range(hscCamera.getNumCcds(instrument))]
 
+    # FIXME: should really rely on pipe_base to do this.
     config = ProcessCcdTask.ConfigClass()
-    config.load(os.path.join(os.environ['HSCPIPE_DIR'], 'config', overrides))
+    config.load(os.path.join(os.environ['OBS_SUBARU_DIR'], 'config',
+                             ProcessCcdTask._DefaultName + ".py"))
+    config.load(os.path.join(os.environ['OBS_SUBARU_DIR'], 'config', 
+                             instrument, ProcessCcdTask._DefaultName + ".py"))
     processor = ProcessCcdTask(config=config)
 
     # Scatter: process CCDs independently
@@ -79,7 +80,7 @@ class Worker(object):
         print "Started processing %s on %s,%d" % (dataId, os.uname()[1], os.getpid())
 
         # We will do persistence ourselves
-        self.processor.config.doWriteIsr = False
+        self.processor.config.isr.doWrite = False
         self.processor.config.doWriteCalibrate = False
         self.processor.config.doWriteSources = False
 
@@ -117,7 +118,7 @@ def globalWcs(instrument, cameraGeom, matchLists):
     import hsc.meas.tansip as tansip
     from hsc.meas.tansip.solvetansip import SolveTansipTask
     config = SolveTansipTask.ConfigClass()
-    task = SolveTansipTask(config=config)
+    task = SolveTansipTask(name="solvetansip", config=config)
 
     matchLists = [[tansip.SourceMatch(m.id, afwCoord.IcrsCoord(afwGeom.Angle(m.ra, afwGeom.degrees),
                                                                afwGeom.Angle(m.dec, afwGeom.degrees)),
