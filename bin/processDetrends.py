@@ -69,7 +69,7 @@ class Worker(object):
         for frame in self.frameList:
             try:
                 result = self.processSingle(frame, ccd)
-            except:
+            except Exception, e:
                 sys.stderr.write("Failed to process frame %d ccd %d: %s\n" % (frame, ccd, e))
                 continue
             if self.detrend == "mask":

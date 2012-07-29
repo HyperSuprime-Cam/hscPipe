@@ -62,6 +62,17 @@ class SubaruProcessCcdTask(ProcessCcdTask):
         for keyName in srcSchema.getNames():
             srcKeys.append((srcSchema.find(keyName).key, mergedSchema.find('src.' + keyName).key))
 
+        for match in matches:
+            record = mergedCatalog.addNew()
+            for key in refKeys:
+                keyIn = key[0]
+                keyOut = key[1]
+                record.set(keyOut, match.first.get(keyIn))
+            for key in srcKeys:
+                keyIn = key[0]
+                keyOut = key[1]
+                record.set(keyOut, match.second.get(keyIn))
+
         # obtaining reference catalog name
         catalogName = os.path.basename(os.getenv("ASTROMETRY_NET_DATA_DIR").rstrip('/'))
         matchMeta.add('REFCAT', catalogName)
@@ -69,7 +80,7 @@ class SubaruProcessCcdTask(ProcessCcdTask):
 
         dataRef.put(mergedCatalog, "matchList")
 
-    def write(self, butler, dataId, struct, wcs=None):
+    def write(self, dataRef, struct, wcs=None):
         if wcs is None:
             wcs = struct.exposure.getWcs()
             self.log.log(self.log.WARN, "WARNING: No new WCS provided")
@@ -84,7 +95,7 @@ class SubaruProcessCcdTask(ProcessCcdTask):
             for s in sources:
                 s.updateCoord(wcs)
 
-        self.writeMatches(struct.calib.matches, struct.calib.matchMeta)
+        self.writeMatches(dataRef, struct.calib.matches, struct.calib.matchMeta)
 
         butler.put(struct.exposure, 'calexp', dataId)
         butler.put(struct.sources, 'src', dataId)

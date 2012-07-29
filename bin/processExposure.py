@@ -10,6 +10,7 @@ import collections
 import lsst.afw.geom as afwGeom
 import lsst.afw.coord as afwCoord
 import hsc.pipe.base.camera as hscCamera
+import hsc.pipe.base.butler as hscButler
 import hsc.pipe.tasks.processCcd as hscProcessCcd
 
 def sigalrm_handler(signum, frame):
@@ -77,18 +78,13 @@ class Worker(object):
     def process(self, dataId):
         print "Started processing %s on %s,%d" % (dataId, os.uname()[1], os.getpid())
 
-        # ProcessCcdTask wants a dataRef, but they don't pickle so we need to reconstruct it from the dataId
-        dataRefList = [ref for ref in self.butler.subset(datasetType='raw', **dataId)]
-        assert len(dataRefList) == 1
-        dataRef = dataRefList[0]
-
         # We will do persistence ourselves
         self.processor.config.doWriteIsr = False
         self.processor.config.doWriteCalibrate = False
         self.processor.config.doWriteSources = False
-            
 
         try:
+            dataRef = hscButler.getDataRef(self.butler, dataId)
             self.resultCache[dataId['ccd']] = self.processor.run(dataRef)
         except Exception, e:
             sys.stderr.write("Failed to process %s: %s\n" % (dataId, e))
@@ -108,7 +104,8 @@ class Worker(object):
 
         try:
             result = self.resultCache[dataId['ccd']]
-            self.processor.write(self.butler, dataId, result, wcs)
+            dataRef = hscButler.getDataRef(self.butler, dataId)
+            self.processor.write(dataRef, result, wcs)
             del self.resultCache[dataId['ccd']]
         except Exception, e:
             sys.stderr.write('ERROR: Failed to write %s: %s\n' % (dataId, e))
@@ -128,7 +125,6 @@ def globalWcs(instrument, cameraGeom, matchLists):
                    for m in ml ] for ml in matchLists]
 
     return task.solve(instrument, cameraGeom, matchLists)
-
 
 if __name__ == "__main__":
     print "argv=", sys.argv
