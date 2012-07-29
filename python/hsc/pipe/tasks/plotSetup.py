@@ -18,6 +18,7 @@ import matplotlib.pyplot as pyplot
 pyplot.switch_backend('newbackend')
 
 """
-
+import os
 import matplotlib
-matplotlib.use('Agg')
+if not os.environ.get("DISPLAY"):
+    matplotlib.use('Agg')

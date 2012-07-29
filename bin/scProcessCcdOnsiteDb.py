@@ -20,101 +20,16 @@
 # the GNU General Public License along with this program.  If not,
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
-import argparse, os, sys
-from hsc.pipe.base import HscArgumentParser
-from hsc.pipe.tasks.processCcd import SuprimeCamProcessCcdTask as TaskClass
+from hsc.pipe.tasks import plotSetup # needed to enable non-gui matplotlib when DISPLAY is not set
 
-# FH added for QA output
-# import hsc.onsite.qa.fitsthumb as QaFitsthumb
-# import hsc.onsite.qa.measSeeingQa as QaSeeing
-#import hsc.onsite.qa.onsiteDbUtils as onsiteDbUtils
-#import onsiteDbUtils as onsiteDbUtils
-#import hsc.hscDb.frame_regist_CorrSuprime  as registCorrSup
+from hsc.pipe.tasks.onsiteDb import SubaruProcessCcdOnsiteDbTask
 
-if __name__ == "__main__":
-    parser = HscArgumentParser(conflict_handler='resolve') # old style
-    parser.add_argument('--dumpconfig', action="store_true", help="Dump the configuration to stdout and exit")
+# Note from Jim: the code that was previously here has been moved
+# into the task class in python/hsc/pipe/tasks/onsiteDb.py, so we
+# don't have to duplicate the parse-and-run code in pipe_base.
+# This means the database is notified and filled each time a new
+# CCD is processed, rather than once for all CCDs.  But a comment
+# in the original code said that this script is only run on one
+# CCD at a time, so I think it doesn't matter.
 
-    try:
-        namespace = parser.parse_args(config=TaskClass.ConfigClass())
-    except Exception, e:
-        if "--doraise" in sys.argv:
-            raise
-        print >> sys.stderr, e
-        sys.exit(1)
-
-    if namespace.dumpconfig:
-        namespace.config._save(sys.stdout)
-        sys.exit(0)
-
-    ## === update onsite Db status
-    # !!! it is better to db update for frame_analysis_start just before execution of this script
-    #     but, to get 'id' on time when this analysis process is invoked, I'm temporarily 
-    #     doing this here. 
-    def getDataId(namespace):
-        dataId = (namespace.dataIdList)[0]
-        ccd = int(dataId['ccd'])
-        visit = int(dataId['visit'])
-        if namespace.camera in ['suprimecam', 'sc', 'suprimecam-mit', 'mit']:
-            id = int(visit)*10 + int(ccd)
-        elif namespace.camera in ['hsc', 'hscsim']:
-            #### !!! TBD how to assign visit for HSC data
-            id = int(visit)*1000 + int(ccd)
-            #id = int(visit)*100 + int(ccd)
-        else:
-            print >> sys.stderr, "Given instrument name is not valid: %s" % namespace.camera
-            sys.exit(1)
-
-        return id, visit, ccd
-
-    try:
-        if namespace.camera in ['suprimecam', 'sc', 'suprimecam-mit', 'mit']:
-            import onsiteDbUtilsSuprime as onsiteDbUtils
-        elif namespace.camera in ['hsc', 'hscsim']:
-            import onsiteDbUtilsHsc as onsiteDbUtils
-        else:
-            print >> sys.stderr, "Given instrument name is not valid: %s" % namespace.camera
-            sys.exit(1)
-    except Exception, e:
-        print >> sys.stderr, e
-        sys.exit(1)
-
-    id, visit, ccd =  getDataId(namespace)
-    onsiteDbUtils.updateStatusFrameAnalysisStart(id)
-
-    ## === create task objects and run tasks 
-    task = TaskClass(config=namespace.config)
-    if False: ### debugging
-        print '************ Here, config start **************'
-        print namespace.config
-        print '************ Here, config end **************'
-
-
-    for sensorRef in namespace.dataRefList:
-
-        if namespace.doRaise:
-            task.run(sensorRef)
-        else:
-            if False:
-                try:
-                    task.run(sensorRef)
-                except Exception, e:
-                    task.log.log(task.log.FATAL, "Failed on dataId=%s: %s" % (sensorRef.dataId, e))
-            else:
-                print '* * '*40
-                print sensorRef
-                print '* * '*40
-                task.run(sensorRef)
-
-    ## === update onsite Db status
-    onsiteDbUtils.updateStatusFrameAnalysisEnd(id)
-
-    ## === register CORR data QA values
-    filenameList = []
-    for sensorRef in namespace.dataRefList:
-        filenameList.append(sensorRef.get('calexp_filename')[0])
-    ## for onsite Qa, only 1 file is input, so n of element should be 1
-    filename = filenameList[0]
-    print '**** CORR filename:', filename
-    #registCorrSup.registCorrFrameMetaInfo(filename)
-    onsiteDbUtils.registFrameQaMetaInfo(id, filename)
+SubaruProcessCcdOnsiteDbTask.parseAndRun()
