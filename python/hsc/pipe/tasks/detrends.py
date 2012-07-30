@@ -10,7 +10,7 @@ import lsst.afw.detection as afwDet
 import lsst.afw.image as afwImage
 import lsst.meas.algorithms as measAlg
 
-import hsc.pipe.tasks.isr as hscIsr
+import lsst.obs.subaru.isr as hscIsr
 
 #    detrend = ChoiceField(doc="Type of detrend", dtype=str, default="BIAS",
 #                          allowed={"BIAS": "Zero second exposure to measure electronic pedestal",
