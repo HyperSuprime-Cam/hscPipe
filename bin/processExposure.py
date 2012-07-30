@@ -86,7 +86,7 @@ class Worker(object):
 
         try:
             dataRef = hscButler.getDataRef(self.butler, dataId)
-            self.resultCache[dataId['ccd']] = self.processor.run(dataRef)
+            self.resultCache[dataId['ccd']] = self.processor.runDataRefList([dataRef])[0]
         except Exception, e:
             sys.stderr.write("Failed to process %s: %s\n" % (dataId, e))
             raise
