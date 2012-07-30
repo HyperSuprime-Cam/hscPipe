@@ -25,7 +25,8 @@ class SubaruProcessCcdTask(ProcessCcdTask):
     def run(self, sensorRef):
         result = ProcessCcdTask.run(self, sensorRef)
         if self.config.doWriteCalibrate and self.config.doWriteUnpackedMatches:
-            self.writeUnpackedMatches(sensorRef, result.calib.matches, result.calib.matchMeta)
+            sensorRef.put(self.unpackMatches(result.calib.matches, result.calib.matchMeta), "matchList")
+
         return result
 
     @classmethod
@@ -34,9 +35,9 @@ class SubaruProcessCcdTask(ProcessCcdTask):
         """
         return SubaruArgumentParser(name=cls._DefaultName)
 
-    def writeUnpackedMatches(self, dataRef, matches, matchMeta):
+    def unpackMatches(self, matches, matchMeta):
+        """Denormalise matches into "unpacked matches" """
 
-        # Now write unpacked matches
         refSchema = matches[0].first.getSchema()
         srcSchema = matches[0].second.getSchema()
 
@@ -79,7 +80,7 @@ class SubaruProcessCcdTask(ProcessCcdTask):
         matchMeta.add('REFCAT', catalogName)
         mergedCatalog.getTable().setMetadata(matchMeta)
 
-        dataRef.put(mergedCatalog, "matchList")
+        return mergedCatalog
 
     def write(self, dataRef, struct, wcs=None):
         if wcs is None:
@@ -98,7 +99,7 @@ class SubaruProcessCcdTask(ProcessCcdTask):
 
         normalizedMatches = afwTable.packMatches(struct.calib.matches)
         normalizedMatches.table.setMetadata(struct.calib.matchMeta)
-        self.writeUnpackedMatches(dataRef, struct.calib.matches, struct.calib.matchMeta)
+        dataRef.put(self.unpackMatches(struct.calib.matches, struct.calib.matchMeta), "matchList")
         dataRef.put(struct.exposure, 'calexp')
         dataRef.put(struct.sources, 'src')
         dataRef.put(normalizedMatches, "icMatch")
