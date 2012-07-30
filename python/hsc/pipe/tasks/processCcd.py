@@ -25,7 +25,9 @@ class SubaruProcessCcdTask(ProcessCcdTask):
     def run(self, sensorRef):
         result = ProcessCcdTask.run(self, sensorRef)
         if self.config.doWriteCalibrate and self.config.doWriteUnpackedMatches:
-            sensorRef.put(self.unpackMatches(result.calib.matches, result.calib.matchMeta), "matchList")
+            sensorRef.put(self.unpackMatches(result.calib.matches, result.calib.matchMeta), "icMatchList")
+        if self.config.doWriteSourceMatches and self.config.doWriteUnpackedMatches:
+            sensorRef.put(self.unpackMatches(result.matches, result.matchMeta), "srcMatchList")
 
         return result
 
@@ -99,7 +101,7 @@ class SubaruProcessCcdTask(ProcessCcdTask):
 
         normalizedMatches = afwTable.packMatches(struct.calib.matches)
         normalizedMatches.table.setMetadata(struct.calib.matchMeta)
-        dataRef.put(self.unpackMatches(struct.calib.matches, struct.calib.matchMeta), "matchList")
+        dataRef.put(self.unpackMatches(struct.calib.matches, struct.calib.matchMeta), "icMatchList")
         dataRef.put(struct.exposure, 'calexp')
         dataRef.put(struct.sources, 'src')
         dataRef.put(normalizedMatches, "icMatch")
