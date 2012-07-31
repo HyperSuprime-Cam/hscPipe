@@ -7,6 +7,8 @@ import lsst.pipe.base as pipeBase
 import lsst.afw.table as afwTable
 from hsc.pipe.base import SubaruArgumentParser
 from lsst.pipe.tasks.processCcd import ProcessCcdTask
+from .qa import QaTask
+
 
 class SubaruProcessCcdConfig(ProcessCcdTask.ConfigClass):
     doWriteUnpackedMatches = pexConfig.Field(
@@ -14,6 +16,12 @@ class SubaruProcessCcdConfig(ProcessCcdTask.ConfigClass):
         doc=("Write the denormalized match table as well as the normalized match table; "
              "ignored if doWriteCalibrate=False")
     )
+    qa = pexConfig.ConfigurableField(target = QaTask, doc = "QA analysis")
+
+
+def applyOverrides(root):
+    root.doWriteCalibrate = False # We will write it after getting QA metadata
+
 
 class SubaruProcessCcdTask(ProcessCcdTask):
     """Subaru version of ProcessCcdTask, with method to write outputs
@@ -21,9 +29,16 @@ class SubaruProcessCcdTask(ProcessCcdTask):
     matches, and --rerun support.
     """
     ConfigClass = SubaruProcessCcdConfig
+    overrides = (applyOverrides,)
+
+    def __init__(self, *args, **kwargs):
+        super(SubaruProcessCcdTask, self).__init__(*args, **kwargs)
+        self.makeSubtask("qa")
 
     def run(self, sensorRef):
         result = ProcessCcdTask.run(self, sensorRef)
+        self.qa.run(sensorRef, result.exposure, result.sources)
+        sensorRef.put(result.exposure, self.dataPrefix + 'calexp')
         if self.config.doWriteCalibrate and self.config.doWriteUnpackedMatches:
             sensorRef.put(self.unpackMatches(result.calib.matches, result.calib.matchMeta), "icMatchList")
         if self.config.doWriteSourceMatches and self.config.doWriteUnpackedMatches:
