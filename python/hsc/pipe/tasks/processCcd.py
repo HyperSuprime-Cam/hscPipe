@@ -49,7 +49,12 @@ class SubaruProcessCcdTask(ProcessCcdTask):
             typeStr = field.getTypeString()
             fieldDoc = field.getDoc()
             fieldUnits = field.getUnits()
-            mergedSchema.addField(name + '.' + key, type=typeStr, doc=fieldDoc, units=fieldUnits)
+            if typeStr in ("ArrayF", "ArrayD", "CovF", "CovD"):
+                fieldSize = field.getSize()
+            else:
+                fieldSize = None
+            mergedSchema.addField(name + '.' + key, type=typeStr, doc=fieldDoc, units=fieldUnits,
+                                  size=fieldSize)
 
         for keyName in refSchema.getNames():
             merge(refSchema, keyName, mergedSchema, "ref")
