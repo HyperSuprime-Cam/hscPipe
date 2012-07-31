@@ -20,5 +20,5 @@ pyplot.switch_backend('newbackend')
 """
 import os
 import matplotlib
-if not os.environ.get("DISPLAY"):
+if not os.environ.get("DISPLAY") or os.environ.get("PBS_JOBID"):
     matplotlib.use('Agg')

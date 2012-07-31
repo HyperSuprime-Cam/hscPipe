@@ -7,6 +7,7 @@ import os
 import signal
 import collections
 
+import hsc.pipe.tasks.plotSetup
 import lsst.afw.geom as afwGeom
 import lsst.afw.coord as afwCoord
 import hsc.pipe.base.camera as hscCamera
