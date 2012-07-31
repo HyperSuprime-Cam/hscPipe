@@ -11,6 +11,10 @@ from .qa import QaTask
 
 
 class SubaruProcessCcdConfig(ProcessCcdTask.ConfigClass):
+    delayWrite = pexConfig.Field(
+        dtype=bool, default=False,
+        doc="Delay writing outputs (e.g., for pbasf processing)?"
+        )
     doWriteUnpackedMatches = pexConfig.Field(
         dtype=bool, default=True,
         doc=("Write the denormalized match table as well as the normalized match table; "
@@ -39,7 +43,9 @@ class SubaruProcessCcdTask(ProcessCcdTask):
         result = ProcessCcdTask.run(self, sensorRef)
         self.qa.run(sensorRef, result.exposure, result.sources)
         sensorRef.put(result.exposure, self.dataPrefix + 'calexp')
-        if self.config.doWriteCalibrate and self.config.doWriteUnpackedMatches:
+        if not self.config.delayWrite:
+            self.write(sensorRef, result, wcs=result.exposure.getWcs())
+        if self.config.doWriteUnpackedMatches:
             sensorRef.put(self.unpackMatches(result.calib.matches, result.calib.matchMeta), "icMatchList")
         if self.config.doWriteSourceMatches and self.config.doWriteUnpackedMatches:
             sensorRef.put(self.unpackMatches(result.matches, result.matchMeta), "srcMatchList")
