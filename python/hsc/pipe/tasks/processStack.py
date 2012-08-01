@@ -21,10 +21,13 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 
+import numpy
+
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import hsc.pipe.base as hscPipeBase
 import lsst.daf.base as dafBase
+import lsst.afw.image as afwImage
 import lsst.afw.table as afwTable
 import lsst.afw.math as afwMath
 from lsst.pipe.tasks.processImage import ProcessImageTask
@@ -62,6 +65,23 @@ class ProcessStackTask(ProcessImageTask):
         self.log.info("Renormalising variance by %f" % (vrat))
         var   *= vrat
 
+    @pipeBase.timeMethod
+    def fixEdgeNaNs(self, exposure):
+        """Replace NaN pixels that are also marked as EDGE with 0.
+
+        It might be more efficient to do this with C++ code, but NumPy makes it
+        really easy to write.
+        """
+        self.log.log(self.log.INFO, "Setting NaN EDGE pixels to zero.")
+        image = exposure.getMaskedImage().getImage().getArray()
+        mask = exposure.getMaskedImage().getMask().getArray()
+        edgeBitMask = afwImage.MaskU.getPlaneBitMask("EDGE")
+        toReplace = numpy.logical_and(
+            numpy.isnan(image),
+            mask & edgeBitMask
+            )
+        image[toReplace] = 0.0
+
     def makeIdFactory(self, dataRef):
         expBits = dataRef.get("stackExposureId_bits")
         expId = long(dataRef.get("stackExposureId"))
@@ -97,6 +117,7 @@ class ProcessStackTask(ProcessImageTask):
                 self.log.warn("Could not load initial PSF; dataset does not exist")
             if self.config.doScaleVariance:
                 self.scaleVariance(coadd)
+            self.fixEdgeNaNs(coadd)
         else:
             coadd = None
 
