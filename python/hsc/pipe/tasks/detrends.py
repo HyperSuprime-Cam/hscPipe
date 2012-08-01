@@ -2,7 +2,7 @@
 
 import numpy
 
-from lsst.pex.config import Config, ConfigField, Field
+from lsst.pex.config import Config, ConfigField, ConfigurableField, Field
 from lsst.pipe.base import Task, Struct
 import lsst.afw.math as afwMath
 import lsst.afw.geom as afwGeom
@@ -26,39 +26,6 @@ class DetrendStatsConfig(Config):
     clip = Field(doc="Clipping threshold for background", dtype=float, default=3.0)
     iter = Field(doc="Clipping iterations for background", dtype=int, default=3)
 
-
-class DetrendProcessConfig(Config):
-    isr = ConfigField(dtype=hscIsr.SubaruIsrConfig, doc="ISR configuration")
-    detection = ConfigField(dtype=measAlg.SourceDetectionConfig, doc="Detection configuration")
-    background = ConfigField(dtype=measAlg.BackgroundConfig, doc="Background configuration")
-    stats = ConfigField(dtype=DetrendStatsConfig, doc="Background statistics configuration")
-    doDetection = Field(doc="Do detection on image?", dtype=bool, default=False)
-
-class DetrendScaleConfig(Config):
-    iterations = Field(doc="Number of iterations", dtype=int, default=10)
-
-class DetrendCombineConfig(Config):
-    rows = Field(doc="Number of rows to read at a time", dtype=int, default=128)
-    maskDetected = Field(doc="Mask pixels about the detection threshold?", dtype=bool, default=True)
-    combine = Field(doc="Statistic to use for combination (from lsst.afw.math)", dtype=int,
-                 default=afwMath.MEANCLIP)
-    clip = Field(doc="Clipping threshold for combination", dtype=float, default=3.0)
-    iter = Field(doc="Clipping iterations for combination", dtype=int, default=3)
-    stats = ConfigField(dtype=DetrendStatsConfig, doc="Background statistics configuration")
-
-class MaskCombineConfig(Config):
-    maskFraction = Field(doc="Minimum fraction of images where bad pixels got flagged", dtype=float,
-                         default=0.5)
-    maskPlane = Field(doc="Name of mask plane to set", dtype=str, default="BAD")
-
-class DetrendConfig(Config):
-    process = ConfigField(dtype=DetrendProcessConfig, doc="Processing configuration")
-    scale = ConfigField(dtype=DetrendScaleConfig, doc="Scaling configuration")
-    combine = ConfigField(dtype=DetrendCombineConfig, doc="Detrend combination configuration")
-    mask = ConfigField(dtype=MaskCombineConfig, doc="Mask combination configuration")
-
-
-
 class DetrendStatsTask(Task):
     ConfigClass = DetrendStatsConfig
 
@@ -77,18 +44,26 @@ class DetrendStatsTask(Task):
         return afwMath.makeStatistics(image, self.config.stat, stats).getValue()
 
 
+class DetrendProcessConfig(Config):
+    isr = ConfigurableField(target=hscIsr.SubaruIsrTask, doc="ISR configuration")
+    detection = ConfigurableField(target=measAlg.SourceDetectionTask, doc="Detection configuration")
+    background = ConfigField(dtype=measAlg.BackgroundConfig, doc="Background configuration")
+    stats = ConfigurableField(target=DetrendStatsTask, doc="Background statistics configuration")
+    doDetection = Field(doc="Do detection on image?", dtype=bool, default=False)
+
 class DetrendProcessTask(Task):
     ConfigClass = DetrendProcessConfig
     def __init__(self, **kwargs):
         super(DetrendProcessTask, self).__init__(**kwargs)
-        self.makeSubtask("isr", hscIsr.SubaruIsrTask)
-        self.makeSubtask("detection", measAlg.SourceDetectionTask)
-        self.makeSubtask("stats", DetrendStatsTask)
+        self.makeSubtask("isr")
+        self.makeSubtask("detection")
+        self.makeSubtask("stats")
 
     def run(self, detrend, sensorRef):
         self.log.log(self.log.INFO, "Processing %s" % (sensorRef.dataId))
 
-        exposure = self.removeInstrumentSignature(sensorRef)
+        exposure = self.isr.run(sensorRef).exposure
+        self.display("isr", exposure=exposure, pause=True)
 
         background = None
         if detrend.lower() in ("flat", "fringe", "mask"):
@@ -106,15 +81,6 @@ class DetrendProcessTask(Task):
 
         return Struct(exposure=exposure, background=background)
 
-    def removeInstrumentSignature(self, sensorRef):
-        butler = sensorRef.butlerSubset.butler
-        calibSet = self.isr.makeCalibDict(butler, sensorRef.dataId)
-        exposure = sensorRef.get("raw")
-        isrRes = self.isr.run(sensorRef, exposure, calibSet)
-        exposure = isrRes.postIsrExposure
-        self.display("isr", exposure=exposure, pause=True)
-        return exposure
-
     def detect(self, exposure):
         background = self.subtractBackground(exposure)
         footprintSets = self.detection.detectFootprints(exposure)
@@ -128,6 +94,9 @@ class DetrendProcessTask(Task):
         mi -= background
         return background
 
+
+class DetrendScaleConfig(Config):
+    iterations = Field(doc="Number of iterations", dtype=int, default=10)
 
 class DetrendScaleTask(Task):
     ConfigClass = DetrendScaleConfig
@@ -180,13 +149,21 @@ def assertSizes(dimList):
             raise RuntimeError("Bad dimensions for input %d: %s vs %s" % (i+1, thisDim, dim))
     return dim
 
+class DetrendCombineConfig(Config):
+    rows = Field(doc="Number of rows to read at a time", dtype=int, default=128)
+    maskDetected = Field(doc="Mask pixels about the detection threshold?", dtype=bool, default=True)
+    combine = Field(doc="Statistic to use for combination (from lsst.afw.math)", dtype=int,
+                 default=afwMath.MEANCLIP)
+    clip = Field(doc="Clipping threshold for combination", dtype=float, default=3.0)
+    iter = Field(doc="Clipping iterations for combination", dtype=int, default=3)
+    stats = ConfigurableField(target=DetrendStatsTask, doc="Background statistics configuration")
 
 class DetrendCombineTask(Task):
     ConfigClass = DetrendCombineConfig
 
     def __init__(self, *args, **kwargs):
         super(DetrendCombineTask, self).__init__(*args, **kwargs)
-        self.makeSubtask("stats", DetrendStatsTask)
+        self.makeSubtask("stats")
 
     def run(self, sensorRefList, expScales=None, finalScale=None):
         # Get sizes
@@ -231,6 +208,11 @@ class DetrendCombineTask(Task):
         return combined
 
 
+class MaskCombineConfig(Config):
+    maskFraction = Field(doc="Minimum fraction of images where bad pixels got flagged", dtype=float,
+                         default=0.5)
+    maskPlane = Field(doc="Name of mask plane to set", dtype=str, default="BAD")
+
 class MaskCombineTask(Task):
     ConfigClass = MaskCombineConfig
 
@@ -252,15 +234,23 @@ class MaskCombineTask(Task):
 
         return combined
 
+
+class DetrendConfig(Config):
+    process = ConfigurableField(target=DetrendProcessTask, doc="Processing configuration")
+    scale = ConfigurableField(target=DetrendScaleTask, doc="Scaling configuration")
+    combine = ConfigurableField(target=DetrendCombineTask, doc="Detrend combination configuration")
+    mask = ConfigurableField(target=MaskCombineTask, doc="Mask combination configuration")
+
 class DetrendTask(Task):
     ConfigClass = DetrendConfig
+    _DefaultName = "detrend"
 
     def __init__(self, *args, **kwargs):
         super(DetrendTask, self).__init__(**kwargs)
-        self.makeSubtask("process", DetrendProcessTask)
-        self.makeSubtask("scale", DetrendScaleTask)
-        self.makeSubtask("combine", DetrendCombineTask)
-        self.makeSubtask("mask", MaskCombineTask)
+        self.makeSubtask("process")
+        self.makeSubtask("scale")
+        self.makeSubtask("combine")
+        self.makeSubtask("mask")
 
     def run(self):
         raise NotImplementedError("Not implemented yet.")

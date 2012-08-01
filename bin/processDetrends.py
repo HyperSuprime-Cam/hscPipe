@@ -50,7 +50,7 @@ def processDetrends(instrument, rerun, detrend, frameList, outRoot=None, outName
 class Worker(object):
     def __init__(self, butler, config, detrend, frameList, outName, version="000"):
         self.butler = butler
-        self.task = hscDetrends.DetrendTask(config=config)
+        self.task = hscDetrends.DetrendTask(name="detrend", config=config)
         self.detrend = detrend.lower()
         self.frameList = frameList
         self.outName = outName

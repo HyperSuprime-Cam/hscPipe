@@ -1,3 +1,5 @@
+from lsst.obs.subaru.isr import SuprimeCamIsrTask
+root.process.isr.retarget(SuprimeCamIsrTask)
 root.process.isr.doBias = False
 root.process.isr.doDark = False
 root.process.isr.doFlat = True
