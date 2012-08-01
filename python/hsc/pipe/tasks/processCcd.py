@@ -2,6 +2,7 @@
 
 import os
 
+import hsc.pipe.tasks.plotSetup
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.afw.table as afwTable
