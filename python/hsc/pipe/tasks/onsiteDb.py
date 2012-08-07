@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import os
+import sys
 
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
@@ -20,7 +21,7 @@ class SubaruProcessCcdOnsiteDbTask(SubaruProcessCcdOnsiteTask):
         id, visit, ccd =  self.getDataId()
         self.onsiteDbUtils.updateStatusFrameAnalysisStart(id)
         # Run main processing task and QA by calling base class
-        result = OnsiteSubaruProcessCcdTask.run(self, sensorRef)
+        result = SubaruProcessCcdOnsiteTask.run(self, sensorRef)
         ## === update onsite Db status
         self.onsiteDbUtils.updateStatusFrameAnalysisEnd(id)
         ## === register CORR data QA values
