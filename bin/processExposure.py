@@ -20,13 +20,13 @@ signal.signal(signal.SIGALRM, sigalrm_handler)
 
 
 
-def main(instrument, rerun, root, outputRoot, configFile, frameList):
+def main(instrument, rerun, root, outputRoot, calibRoot, configFile, frameList):
     #print "Processing inst=%s rerun=%s frames=%s" % (instrument, rerun, frameList)
-    print "Processing inst=%s root=%s rerun=%s outputRoot=%s userConfig=%s frames=%s" % (instrument, root, rerun, outputRoot, configFile, frameList)    
+    print "Processing inst=%s root=%s rerun=%s outputRoot=%s calibRoot=%s userConfig=%s frames=%s" % (instrument, root, rerun, outputRoot, calibRoot, configFile, frameList)    
     try:
         for frame in frameList:
             print "Processing frame %d" % frame
-            ProcessExposure(instrument, root, rerun, outputRoot, configFile, frame)
+            ProcessExposure(instrument, root, rerun, outputRoot, calibRoot, configFile, frame)
             print "Done processing frame %d" % frame
     except:
         pbasf.ReportError("Total catastrophic failure processing frame %s" % frame)
@@ -34,7 +34,7 @@ def main(instrument, rerun, root, outputRoot, configFile, frameList):
         mpi.COMM_WORLD.Abort(1)
         return 1
 
-def ProcessExposure(instrument, root, rerun, outputRoot, configFile, frame):
+def ProcessExposure(instrument, root, rerun, outputRoot, calibRoot, configFile, frame):
     comm = mpi.COMM_WORLD
 
     # We don't need camera-specific ProcessCcdTasks anymore.  But we may want to use
@@ -46,7 +46,7 @@ def ProcessExposure(instrument, root, rerun, outputRoot, configFile, frame):
     #butler = hscCamera.getButler(instrument, rerun=rerun)
     # FH note: We use the data root and outputRoot when given by command line, 
     # which override rerun and envar SUPRIME_DATA_DIR for root.
-    butler = hscCamera.getButler(instrument, rerun=rerun, root=root, outputRoot=outputRoot)
+    butler = hscCamera.getButler(instrument, rerun=rerun, root=root, outputRoot=outputRoot, calibRoot=calibRoot)
     dataIdList = [{'visit': frame, 'ccd': ccd} for ccd in range(hscCamera.getNumCcds(instrument))]
 
     # FIXME: should really rely on pipe_base to do this.
@@ -141,6 +141,7 @@ if __name__ == "__main__":
     rerun = sys.argv[2]
     root = sys.argv[3]
     outputRoot = sys.argv[4]
-    configFile = sys.argv[5]
-    frames = [int(f) for f in sys.argv[6:]]
-    main(instrument, rerun, root, outputRoot, configFile, frames)
+    calibRoot = sys.argv[5]    
+    configFile = sys.argv[6]
+    frames = [int(f) for f in sys.argv[7:]]
+    main(instrument, rerun, root, outputRoot, calibRoot, configFile, frames)
