@@ -1,9 +1,11 @@
 from lsst.pex.config import Config, ConfigurableField
 from lsst.pipe.base import Task
 from . import measSeeingQa
+from . import sizeMagnitudeMitakaStarSelector as starSel
 
 class QaConfig(Config):
-    seeing = ConfigurableField(target=measSeeingQa.MeasureSeeingTask, doc="Measure seeing")
+    ##seeing = ConfigurableField(target=measSeeingQa.MeasureSeeingTask, doc="Measure seeing")
+    seeing = ConfigurableField(target=measSeeingQa.MeasureSeeingMitakaTask, doc="Measure seeing ver. Mitaka")
 
 class QaTask(Task):
     ConfigClass = QaConfig

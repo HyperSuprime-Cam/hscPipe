@@ -1,0 +1,730 @@
+#!/usr/bin/env python
+"""
+TODO:
+ This module is to select stars (PSF-like sources) based on a sequence
+ which comprises PSF sources seen in the 'mag vs fwhm' 2-d space.
+  Application of the same strategy in seeing measurement in the SC-RCM running
+  for Suprime-Cam observation (publised in Furusawa+2011,PASJ,63,S581).
+  The advantage is to determine a decent limiting magnitude range for
+   extraction of PSF sequence in the 'mag vs fwhm' space, to avoid
+  contaminations from too many faint galaxies or cosmic rays.
+  Initially implemented for onsite QA output, and now being ported for
+  general use.
+"""
+
+import os, os.path
+import math
+import lsst.pex.config as pexConfig
+import lsst.pex.logging as pexLog
+import lsst.daf.base as dafBase
+import lsst.afw.table as afwTable
+import lsst.afw.math as afwMath
+import lsst.meas.algorithms as measAlg
+
+from lsst.pipe.base import Task, Struct
+import lsst.afw.display.ds9 as ds9
+
+import numpy
+
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+#plt.switch_backend('Agg')
+
+import matplotlib.figure as figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigCanvas
+from matplotlib import patches as patches
+
+
+class SizeMagnitudeMitakaStarSelectorConfig(pexConfig.Config):
+    fracSrcIni = pexConfig.Field(
+        dtype = float,
+        doc = 'What fraction of sources from the brightest is to be included for initial guess of seeing to avoid cosmic rays which dominate faint magnitudes', 
+        default = 0.15, # is good for SC with 5-sigma detection
+        )
+    fwhmMin  = pexConfig.Field(
+        dtype = float,
+        doc = 'Minimum fwhm allowed in estimation of seeing (pix)',
+        default = 1.5,
+        )
+    fwhmMax  = pexConfig.Field(
+        dtype = float,
+        doc = 'Maxmum fwhm allowed in estimation of seeing (pix)',
+        default = 12.0,
+        )
+    nbinMagHist = pexConfig.Field(
+        dtype = int,
+        doc = 'Number of bins for number counting as a fn of instrumnetal mag',
+        default = 80,
+        )
+    magMinHist = pexConfig.Field(
+        dtype = float,
+        doc = 'Brightest mag for number counting as a fn of instrumnetal mag',
+        default = -20.0,
+        )
+    magMaxHist = pexConfig.Field(
+        dtype = float,
+        doc = 'Faintest mag for number counting as a fn of instrumnetal mag',
+        default = 0.0,
+        )
+    nSampleRoughFwhm = pexConfig.Field(
+        dtype = int,
+        doc = 'Number of smallest objects which are used to determine rough-interim seeing',
+        default = 30,
+        )
+    fwhmMarginFinal = pexConfig.Field(
+        dtype = float,
+        doc = 'How many pixels around the peak are used for final seeing estimation as mode',
+        default = 0.5,
+        )
+    fwhmMarginNsigma = pexConfig.Field(
+        dtype = float,
+        doc = 'How many sigmas around the peak fwhm are used for extracting final PSF sources',
+        #default = 1.0,
+        default = 1.2,
+        )
+    magLimitFaintExtension = pexConfig.Field(
+        dtype = float,
+        doc = 'How many magnitudes to extend the faint-end limit for extracting PSF sources, from the base magnitude determined by fracSrcIni.',
+        default = 0.0, # 0.0 would make clean sample
+        )
+    fwhmBinSize = pexConfig.Field(
+        dtype = float,
+        doc = "Bin size of FWHM histogram",
+        default = 0.2,
+        )
+    doPlots = pexConfig.Field(
+        dtype = bool,
+        doc = "Make plots?",
+        default = True
+        )
+    gridSize = pexConfig.Field(
+        dtype = float,
+        doc = "Size of grid (pixels)",
+        default = 1024
+        )
+    kernelSize = pexConfig.Field(
+        doc = "size of the kernel to create",
+        dtype = int,
+        default = 21,
+    )
+    borderWidth = pexConfig.Field(
+        doc = "number of pixels to ignore around the edge of PSF candidate postage stamps",
+        dtype = int,
+        default = 0,
+    )
+
+class SizeMagnitudeMitakaStarSelector(object):
+    """
+    """
+    ConfigClass = SizeMagnitudeMitakaStarSelectorConfig
+
+    def __init__(self, config, schema=None, **kwrgs):
+        """
+        Construct a star selector that uses second moments and instrumental magnitude
+        This is a naive algorithm and should be used with caution.
+
+        @param[in] config: An instance of SizeMagnitudeMitakaStarSelectorConfig
+        @param[in,out] schema: An afw.table.Schema to register the selector's flag field.
+        If None, the sources will not be modified.
+        """
+        if not config:
+            config = SizeMagnitudeMitakaStarSelector.ConfigClass()
+        self.config = config
+
+        self._kernelSize  = config.kernelSize
+        self._borderWidth = config.borderWidth
+
+        if schema is not None:
+            starflagName = "classification.mitakastar"
+            if starflagName in schema.getNames():
+                self._key = schema.find("classification.mitakastar").key
+            else:
+                self._key = schema.addField("classification.mitakastar", type="Flag",
+                                            doc="selected as a star by sizeMagnitudeMitakaStarSelector")
+
+        #self.config.doPlots = False
+        self.debugFlag = False
+
+        # In the case of Task-based class, these two are created in the parent class' __init__
+        self.log = pexLog.Log.getDefaultLog()
+        self.metadata = dafBase.PropertySet()
+
+    def selectStars(self, exposure, catalog, dataRef=None, outputStruct=False):
+        """
+        Return a list of PSF candidates that represent likely stars
+
+        A list of PSF candidates may be used by a PSF fitter to construct a PSF
+
+        @param[in] dataRef: dataRef passed by the pipeline including reference to a butler instance
+        @param[in] exposure: the exposure containing the sources
+        @param[in] catalog: a source list containing sources that may be stars
+        @return psfCandidateList: a list of PSF candidates.
+        """
+
+        self.log.info("Mitaka StarSelector has been called.")
+
+        import lsstDebug
+        display = lsstDebug.Info(__name__).display
+        displayExposure = lsstDebug.Info(__name__).displayExposure     # display the Exposure + spatialCells
+        pauseAtEnd = lsstDebug.Info(__name__).pauseAtEnd               # pause when done
+
+        #display=True
+        #displayExposure= True
+
+        mi = exposure.getMaskedImage()
+
+        if display:
+            frames = {}
+            if displayExposure:
+                frames["displayExposure"] = 1
+                ds9.mtv(mi, frame=frames["displayExposure"], title="PSF candidates")
+
+        # screening sources
+        goodData = self.getGoodSources(catalog, exposure)
+
+        if display and displayExposure:
+            with ds9.Buffering():
+                for i in range(len(goodData.xListAll)):
+                    if i in goodData.indicesSourcesFwhmRange:
+                        ctype = ds9.GREEN # good
+                    elif i in goodData.indicesGoodSources:
+                        ctype = ds9.MAGENTA # rejected by fwhm search range
+                    else:
+                        ctype = ds9.RED # bad; saturation etc.
+                    xc = goodData.xListAll[i]
+                    yc = goodData.yListAll[i]
+                    ds9.dot("o", xc, yc, frame=frames["displayExposure"], ctype=ctype)
+
+        # determine mag limit for clean psf candidates, dynamically based on the image
+        magLimPsfSeq = self.getMagLimit(dataRef, goodData)
+        if magLimPsfSeq is None:
+            return
+
+        # getting a decent median fwhm
+        fwhmRough = self.getFwhmRough(dataRef, goodData, magLimPsfSeq)
+
+        # extract a list of psf-like sources
+        # goodData is updated as same as dataPsfLike in getStarCandidateList()
+        dataPsfLike = self.getStarCandidateList(dataRef, goodData, fwhmRough, magLimPsfSeq)
+
+        exposure.getMetadata().combine(self.metadata)
+
+        if len(catalog) != len(dataPsfLike.xListAll):
+            print "Number of catalog sources %d mismatch with gooddata list %d" % (len(catalog), len(dataPsfLike.xListAll))
+            return
+
+        psfCandidateList = []
+
+        with ds9.Buffering():
+            for i in dataPsfLike.indicesSourcesPsfLikeRobust:
+                source = catalog[i]
+                try:
+                    psfCandidate = measAlg.makePsfCandidate(source, exposure)
+
+                    # The setXXX methods are class static, but it's convenient to call them on
+                    # an instance as we don't know Exposure's pixel type
+                    # (and hence psfCandidate's exact type)
+                    if psfCandidate.getWidth() == 0:
+                        psfCandidate.setBorderWidth(self._borderWidth)
+                        psfCandidate.setWidth(self._kernelSize + 2*self._borderWidth)
+                        psfCandidate.setHeight(self._kernelSize + 2*self._borderWidth)
+
+                    im = psfCandidate.getMaskedImage().getImage()
+                    maxVal = afwMath.makeStatistics(im, afwMath.MAX).getValue()
+                    if not numpy.isfinite(maxVal):
+                        continue
+                    if self._key is not None:
+                        source.set(self._key, True)
+                    psfCandidateList.append(psfCandidate)
+
+                    symb, ctype = "+", ds9.GREEN
+                except Exception as err:
+                    symb, ctype = "o", ds9.RED
+                    print "FH", err
+                    pass # FIXME: should log this!
+
+                if display and displayExposure:
+                    ds9.dot(symb, source.getX() - mi.getX0(), source.getY() - mi.getY0(),
+                            size=4, frame=frames["displayExposure"], ctype=ctype)
+
+        if display and pauseAtEnd:
+            raw_input("Continue? y[es] p[db] ")
+
+        if outputStruct:
+            return psfCandidateList, dataPsfLike
+        else:
+            return psfCandidateList
+
+        if self.config.doPlots and dataRef is not None:
+            self.plotSeeingMap(dataRef, dataPsfLike, exposure)
+            self.plotEllipseMap(dataRef, dataPsfLike, exposure)
+            self.plotEllipticityMap(dataRef, dataPsfLike, exposure)
+            self.plotFwhmGrid(dataRef, dataPsfLike, exposure)
+            self.plotEllipseGrid(dataRef, dataPsfLike, exposure)
+            self.plotEllipticityGrid(dataRef, dataPsfLike, exposure)
+
+
+    def isGoodSource(self, source, keySaturationCenterFlag, keySaturationFlag):
+        Ixx = source.getIxx()
+        Iyy = source.getIyy()
+        Ixy = source.getIxy()
+        sigma = math.sqrt(0.5*(Ixx+Iyy))
+        fwhm = 2.*math.sqrt(2.*math.log(2.)) * sigma # (pix) assuming Gaussian
+        saturationFlag = source.get(keySaturationFlag)
+        saturationCenterFlag = source.get(keySaturationCenterFlag)
+        isSaturated = (saturationFlag | saturationCenterFlag)
+        if self.debugFlag:
+            print ('objFlag SatAny %x  SatCenter %x  isSaturated %x' %
+                   (saturationFlag, saturationCenterFlag, isSaturated))
+
+        fluxAperture = source.getApFlux()
+        fluxGauss = source.getModelFlux()
+        fluxPsf = source.getPsfFlux()
+        fluxForSeeing = fluxAperture
+
+        if  isSaturated or math.isnan(fwhm) or math.isnan(Ixx) or math.isnan(fluxForSeeing) or \
+           fwhm <= 0 or fluxForSeeing <= 0 or (Ixx*Iyy*Ixy == 0):
+            return False
+        else:
+            return True
+
+    def getEllipticityFromSecondmoments(self, Ixx, Iyy, Ixy):
+        if True: # definition by SExtractor
+            Val1 = 0.5*(Ixx+Iyy)
+            Ixx_Iyy = Ixx-Iyy
+            Val2 = 0.25*Ixx_Iyy*Ixx_Iyy + Ixy*Ixy
+            if Val2 >= 0 and (Val1-math.sqrt(Val2)) > 0:
+                aa = math.sqrt( Val1 + math.sqrt(Val2) )
+                bb = math.sqrt( Val1 - math.sqrt(Val2) )
+                ell =  1. - bb/aa
+                if math.fabs(Ixx_Iyy) > 1.0e-10:
+                    ellPa = 0.5 * math.degrees(math.atan(2*Ixy / math.fabs(Ixx_Iyy)))
+                else:
+                    ellPa = 0.0
+            else:
+                ell = None
+                ellPa = None
+                aa = None
+                bb = None
+        else: # definition by Kaiser
+            # e=sqrt(e1^2+e2^2) where e1=(Ixx-Iyy)/(Ixx+Iyy), e2=2Ixy/(Ixx+Iy)
+            # SExtractor's B/A=sqrt((1-e)/(1+e)), ell=1-B/A
+            e1 = (Ixx-Iyy)/(Ixx+Iyy)
+            if e1 > 0: 
+                e2 = 2.0*Ixy/(Ixx+Iyy)
+                ell = math.sqrt(e1*e1 + e2*e2)
+                fabs_Ixx_Iyy = math.fabs(Ixx-Iyy)
+                if fabs_Ixx_Iyy > 1.0e-10:
+                    ellPa = 0.5 * math.degrees(math.atan(2*Ixy / fabs_Ixx_Iyy))
+                else:
+                    ellPa = 0.0
+            else:
+                ell = None
+                ellPa = None
+
+            if ellPa is not None:
+                ellPa = 90. - ellPa ## definition of PA to be confirmed
+
+        return Struct(
+            ell = ell,
+            aa = aa,
+            bb = bb,
+            ellPa = ellPa,
+            )
+
+    def getGoodSources(self, catalog, exposure):
+        """screening sources to get not-dirty sources from catalog"""
+
+        # -- Filtering sources with rough min-max fwhm
+        xListAll = []
+        yListAll = []
+        magListAll = []
+        fwhmListAll = []
+        IxxListAll = []
+        IyyListAll = []
+        IxyListAll = []
+
+        indicesGoodSources = [] # indices of sources which are not dirty
+        indicesSourcesFwhmRange = [] # indices of sources in acceptable fwhm range
+
+        # below not relevant to star selector but required for QA
+        ellListAll = []
+        ellPaListAll = []
+        AEllListAll = []
+        BEllListAll = []
+
+        catalogSchema = catalog.table.getSchema()
+        nameSaturationFlag = 'flags.pixel.saturated.any'
+        nameSaturationCenterFlag = 'flags.pixel.saturated.center'
+        keySaturationFlag = catalogSchema.find(nameSaturationFlag).key
+        keySaturationCenterFlag = catalogSchema.find(nameSaturationCenterFlag).key
+
+        for iseq, source in enumerate(catalog):
+
+            xc = source.getX()
+            yc = source.getY()
+            Ixx = source.getIxx() # luminosity-weighted 2nd moment of pixels
+            Iyy = source.getIyy()
+            Ixy = source.getIxy()
+            sigma = math.sqrt(0.5*(Ixx+Iyy))
+            fwhm = 2.*math.sqrt(2.*math.log(2.)) * sigma # (pix) assuming Gaussian
+
+            fluxAper = source.getApFlux()
+            fluxErrAper =  source.getApFluxErr()
+            fluxGauss = source.getModelFlux()
+            fluxErrGauss =  source.getModelFluxErr()
+            fluxPsf = source.getPsfFlux()
+            fluxErrPsf = source.getPsfFluxErr()
+
+            # which flux do you use:
+            fluxForSeeing = fluxAper
+            mag = -2.5*numpy.log10(fluxForSeeing)
+
+            xListAll.append(xc)
+            yListAll.append(yc)
+            IxxListAll.append(Ixx)
+            IyyListAll.append(Iyy)
+            IxyListAll.append(Ixy)
+            magListAll.append(mag)
+            fwhmListAll.append(fwhm)
+
+            # these for QA
+            ellRet = self.getEllipticityFromSecondmoments(Ixx, Iyy, Ixy)
+            ellListAll.append(ellRet.ell)
+            ellPaListAll.append(ellRet.ellPa)
+            AEllListAll.append(ellRet.aa)
+            BEllListAll.append(ellRet.bb)
+
+            # checking if this source has valid measurements
+            if not self.isGoodSource(source, keySaturationCenterFlag, keySaturationFlag):
+                continue
+            else:
+                indicesGoodSources.append(iseq)
+
+                # checking if this source is sitting within the search range of Fwhm?
+                if self.config.fwhmMin < fwhm and fwhm < self.config.fwhmMax:
+                    indicesSourcesFwhmRange.append(iseq)
+                else:
+                    continue
+
+        return Struct(
+            magListAll = numpy.array(magListAll),
+            fwhmListAll = numpy.array(fwhmListAll),
+            xListAll = numpy.array(xListAll),
+            yListAll = numpy.array(yListAll),
+            IxxListAll = numpy.array(IxxListAll),
+            IyyListAll = numpy.array(IyyListAll),
+            IxyListAll = numpy.array(IxyListAll),
+            ellListAll = numpy.array(ellListAll),
+            ellPaListAll = numpy.array(ellPaListAll),
+            AEllListAll = numpy.array(AEllListAll),
+            BEllListAll = numpy.array(BEllListAll),
+            indicesGoodSources = indicesGoodSources,
+            indicesSourcesFwhmRange = indicesSourcesFwhmRange,
+            )
+
+    def getMagLimit(self, dataRef, data):
+        """
+        Derive the normalized cumulative magnitude histogram and estimate good limit mag
+        for extracting psf-like candidates based on the histogram
+        """
+        magListFwhmRange = data.magListAll[data.indicesSourcesFwhmRange]
+        # n.b. below magHist[1] is sorted so index=0 is brightest
+        magHist = numpy.histogram(magListFwhmRange, range=(self.config.magMinHist, self.config.magMaxHist),
+                                  bins=self.config.nbinMagHist)
+
+        sumAll = magHist[0].sum()
+        #print '*** sumAll: ', sumAll
+        self.log.info("QaSeeing: total number of objects in the first dataset (sumAll): %d" % sumAll)
+
+        magCumHist = list(magHist)
+        magCumHist[0] = (magCumHist[0].cumsum())
+        #print '------ mag cum hist ------'
+        #print magCumHist
+        magCumHist[0] = magCumHist[0] / float(sumAll)
+        #print '------ normalized mag cum hist ------'
+        #print magCumHist
+
+        # -- Estimating mag limit based no the cumlative mag histogram
+        magLim = None
+        for i, cumFraction in enumerate(magCumHist[0]):
+            if cumFraction >= self.config.fracSrcIni:
+                magLim = magCumHist[1][i] # magLim is the mag which exceeds the cumulative n(m) of 0.15
+                break
+        if not magLim:
+            self.log.log(self.log.WARN, "Error: cumulative magnitude histogram does not exceed 0.15.")
+            return None
+
+        #print '*** magLim: ', magLim
+        self.log.info("Mag limit auto-determined: %5.2f or %f (ADU)" %
+                 (magLim, numpy.power(10, -0.4*magLim)))
+        self.metadata.add("magLim", numpy.power(10, -0.4*magLim))
+
+        if self.debugFlag:
+            self.log.logdebug("QaSeeing: magHist: %s" % magHist)
+            self.log.logdebug("QaSeeing: cummurative magHist: %s" % magCumHist)
+
+        if self.config.doPlots and dataRef is not None:
+            fig = plt.figure()
+            pltMagHist = fig.add_subplot(2,1,1)
+            pltMagHist.hist(magListFwhmRange, bins=magHist[1], orientation='vertical')
+            pltMagHist.set_title('histogram of magnitudes')
+            #        pltMagHist.set_xlabel('magnitude instrumental')
+            pltMagHist.set_ylabel('number of samples')
+            pltMagHist.legend()
+
+            pltCumHist = fig.add_subplot(2,1,2)
+            # histtype=bar,barstacked,step,stepfilled
+            pltCumHist.hist(magListFwhmRange, bins=magCumHist[1], normed=True, cumulative=True,
+                            orientation='vertical', histtype='step')
+            xx = [magLim, magLim]; yy = [0, 1]
+            pltCumHist.plot(xx, yy, linestyle='dashed', label='mag limit') # solid,dashed,dashdot,dotted
+            pltCumHist.set_title('cumulative histogram of magnitudes')
+            pltCumHist.set_xlabel('magnitude instrumental')
+            pltCumHist.set_ylabel('Nsample scaled to unity')
+            pltCumHist.legend()
+
+            fname = getFilename(dataRef, "plotMagHist")
+            plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
+                        format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
+            del fig
+            del pltMagHist
+            del pltCumHist
+
+        return magLim
+
+    def getFwhmRough(self, dataRef, data, magLimSeq):
+#    def getFwhmRough(self, magListAll, fwhmListAll, indicesSourcesFwhmRange, magLim):
+
+        """Estimating roughly-estimated FWHM for sources with mag < magLim"""
+        indicesSourcesForRoughFwhm = [i for i in data.indicesSourcesFwhmRange if data.magListAll[i] < magLimSeq ]
+
+        magListForRoughFwhm = data.magListAll[indicesSourcesForRoughFwhm]
+        fwhmListForRoughFwhm = data.fwhmListAll[indicesSourcesForRoughFwhm]
+
+        # below for the QA plots
+        xListForRoughFwhm = data.xListAll[indicesSourcesForRoughFwhm]
+        yListForRoughFwhm = data.yListAll[indicesSourcesForRoughFwhm]
+        IxxListForRoughFwhm = data.IxxListAll[indicesSourcesForRoughFwhm]
+        IyyListForRoughFwhm = data.IyyListAll[indicesSourcesForRoughFwhm]
+        IxyListForRoughFwhm = data.IxyListAll[indicesSourcesForRoughFwhm]
+
+        data.indicesSourcesForRoughFwhm = indicesSourcesForRoughFwhm
+        data.magListForRoughFwhm = magListForRoughFwhm
+        data.fwhmListForRoughFwhm = fwhmListForRoughFwhm
+
+        self.log.logdebug("nSampleRoughFwhm: %d" % self.config.nSampleRoughFwhm)
+
+        # extracting the given number of most compact sources
+        indicesSourcesPsfLike = numpy.argsort(fwhmListForRoughFwhm)[:self.config.nSampleRoughFwhm]
+        magListPsfLike = magListForRoughFwhm[indicesSourcesPsfLike]
+        fwhmListPsfLike = fwhmListForRoughFwhm[indicesSourcesPsfLike]
+        fwhmRough = numpy.median(fwhmListPsfLike)
+
+        data.magListPsfLike = magListPsfLike
+        data.fwhmListPsfLike = fwhmListPsfLike
+        data.fwhmRough = fwhmRough
+
+        if self.debugFlag:
+            print '*** fwhmListForRoughFwhm:', fwhmListForRoughFwhm
+            print '*** fwhmRough:', fwhmRough
+        self.log.info("fwhmRough: %f" % fwhmRough)
+        self.metadata.add("fwhmRough", fwhmRough)
+
+        if self.config.doPlots and dataRef is not None:
+            fig = plt.figure()
+            pltMagFwhm = fig.add_subplot(1,1,1)
+            pltMagFwhm.set_xlim(-20,-5)
+            pltMagFwhm.set_ylim(0,20)
+            pltMagFwhm.plot(data.magListAll, data.fwhmListAll, 'c+', label='all sample')
+            pltMagFwhm.plot(magListForRoughFwhm, fwhmListForRoughFwhm, 'bx', label='sample for rough FWHM')
+            pltMagFwhm.plot(magListPsfLike, fwhmListPsfLike, 'ko', label='coarse PSF-like sample')
+            xx = [-20,-5]
+            yy = [fwhmRough, fwhmRough]
+            pltMagFwhm.plot(xx, yy, linestyle='dashed', label='tentative FWHM')
+            pltMagFwhm.set_title('FWHM vs magnitudes')
+            pltMagFwhm.set_xlabel('magnitude instrumental')
+            pltMagFwhm.set_ylabel('FWHM (pix)')
+
+            pltMagFwhm.legend()
+            fname = getFilename(dataRef, "plotSeeingRough")
+            plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait',
+                        papertype=None, format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
+
+            del fig
+            del pltMagFwhm
+
+        return fwhmRough
+
+    def getFwhmRobust(self, dataRef, data, fwhmRough):
+        """Good Estimation of Final PSF"""
+
+        # deriving final representative values of seeing, ellipticity and pa of elongation
+
+        fwhmMin = fwhmRough - self.config.fwhmMarginFinal
+        fwhmMax = fwhmRough + self.config.fwhmMarginFinal
+        nbin = (fwhmMax-fwhmMin) / self.config.fwhmBinSize
+        # finding the mode
+        histFwhm = numpy.histogram(data.fwhmListForPsfSeq, range=(fwhmMin, fwhmMax), bins=nbin)
+        minval=0
+        for i, num in enumerate(histFwhm[0]):
+            if num > minval:
+                icand = i
+                minval = num
+
+        numFwhmRobust = histFwhm[0][icand]
+        fwhmRobust = histFwhm[1][icand] + 0.5*self.config.fwhmBinSize
+        ellRobust = numpy.median(data.ellListPsfLikeRobust)
+        ellPaRobust = numpy.median(data.ellPaListPsfLikeRobust)
+
+        self.log.info("Robust quantities: %f %f %f" % (fwhmRobust, ellRobust, ellPaRobust))
+        self.metadata.add("fwhmRobust", fwhmRobust)
+        self.metadata.add("ellRobust", ellRobust)
+        self.metadata.add("ellPaRobust", ellPaRobust)
+
+        if self.config.doPlots and dataRef is not None:
+            fig = plt.figure()
+            pltMagFwhm = fig.add_subplot(1,2,1)
+            pltMagFwhm.set_xlim(-20,-5)
+            pltMagFwhm.set_ylim(0,20)
+            pltMagFwhm.plot(data.magListAll, data.fwhmListAll, 'c+', label='all sample')
+            #pltMagFwhm.plot(data.magListPsfLike, data.fwhmListPsfLike, 'bx', label='coarse PSF-like sample')
+            pltMagFwhm.plot(data.magListForRoughFwhm, data.fwhmListForRoughFwhm, 'bx', label='sample for rough FWHM')
+            #pltMagFwhm.plot(data.magListPsfLike, data.fwhmListPsfLike, 'bx', label='sample for rough fwhm')
+            pltMagFwhm.plot(data.magListPsfLikeRobust, data.fwhmListPsfLikeRobust, 'mo',
+                            label='best-effort PSF-like sample')
+            xx = [-20,-5]; yy = [fwhmRobust, fwhmRobust]
+            yy_median = [data.medianFwhmPsfSeq, data.medianFwhmPsfSeq]
+            yy_sigma_h = [data.fwhmPsfSeqMax, data.fwhmPsfSeqMax]
+            yy_sigma_l = [data.fwhmPsfSeqMin, data.fwhmPsfSeqMin]
+            pltMagFwhm.plot(xx, yy, linestyle='dashed', color='blue', label='resultant FWHM: %4.2f' % fwhmRobust)
+            pltMagFwhm.plot(xx, yy_median, linestyle='dashed', color='red', label='median FHWM of sequence')
+            pltMagFwhm.plot(xx, yy_sigma_l, linestyle='-.', color='blue', label='sigma range')
+            pltMagFwhm.plot(xx, yy_sigma_h, linestyle='-.', color='blue', label=None)
+            pltMagFwhm.set_title('FWHM vs magnitudes')
+            pltMagFwhm.set_xlabel('magnitude instrumental')
+            pltMagFwhm.set_ylabel('FWHM (pix)')
+            pltMagFwhm.legend()
+
+            pltHistFwhm = fig.add_subplot(1,2,2)
+            pltHistFwhm.hist(data.fwhmListForPsfSeq, range=(fwhmMin, fwhmMax), bins=nbin, orientation='horizontal', histtype='bar')
+            pltHistFwhm.plot([0, numFwhmRobust*1.2], [fwhmRobust, fwhmRobust], linestyle='dashed', color='black', label=None)
+            pltHistFwhm.set_title('histogram of FWHM')
+            pltHistFwhm.set_ylabel('FWHM of best-effort PSF-like sources')
+            pltHistFwhm.set_xlabel('number of sources')
+            pltHistFwhm.legend()
+
+            fname = getFilename(dataRef, "plotSeeingRobust")
+            plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait',
+                        papertype=None, format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
+
+            del fig
+            del pltHistFwhm
+
+        data.fwhmRobust = fwhmRobust
+        data.ellRobust = ellRobust
+        data.ellPaRobust = ellPaRobust
+
+        return data
+
+    def getStarCandidateList(self, dataRef, data, fwhmRough, magLimPsfSeq):
+        """Good Estimation of Final PSF sample"""
+
+        # deriving sigma of scatter of the psf-like sequence around the fwhmRough in the 'mag vs fwhm' space
+        # sample around the fwhmRough is limited by the given config fwhmMarginFinal [pix]
+
+        fwhmMin = fwhmRough - self.config.fwhmMarginFinal
+        fwhmMax = fwhmRough + self.config.fwhmMarginFinal
+
+        indicesSourcesForPsfSeq = [ i for i in data.indicesSourcesFwhmRange if
+                                    data.fwhmListAll[i] > fwhmMin and data.fwhmListAll[i] < fwhmMax and data.magListAll[i] < magLimPsfSeq
+                                    ]
+        magListForPsfSeq = data.magListAll[indicesSourcesForPsfSeq]
+        fwhmListForPsfSeq = data.fwhmListAll[indicesSourcesForPsfSeq]
+
+        #data.indicesForPsfSeq = indicesSourcesForPsfSeq
+        #data.magListForPsfSeq = magListForPsfSeq
+        #data.fwhmListForPsfSeq = fwhmListForPsfSeq
+
+        # deriving fwhwRobust and sigma
+        clipSigma = 3.0
+        nIter = 3
+        fwhmStat = afwMath.MEDIAN
+        sigmaStat = afwMath.STDEVCLIP
+        sctrl = afwMath.StatisticsControl(clipSigma, nIter)
+        stats = afwMath.makeStatistics(fwhmListForPsfSeq, fwhmStat | sigmaStat, sctrl)
+        medianFwhmPsfSeq = stats.getValue(fwhmStat)
+        sigmaFwhmPsfSeq = stats.getValue(sigmaStat)
+
+        # extracting psf candidates by limting given number of sigma around the psf sequence
+        # maglim is extended toward the faint end if desired
+        magLimPsfCand = magLimPsfSeq + self.config.magLimitFaintExtension
+
+        fwhmPsfSeqMin = medianFwhmPsfSeq - self.config.fwhmMarginNsigma*sigmaFwhmPsfSeq
+        fwhmPsfSeqMax = medianFwhmPsfSeq + self.config.fwhmMarginNsigma*sigmaFwhmPsfSeq
+        indicesSourcesPsfLikeRobust = [ i for i in data.indicesSourcesFwhmRange if
+                                        data.fwhmListAll[i] > fwhmPsfSeqMin and data.fwhmListAll[i] < fwhmPsfSeqMax
+                                        and data.magListAll[i] < magLimPsfCand  ]
+
+        numFwhmPsfLikeRobust = len(indicesSourcesPsfLikeRobust)
+        if numFwhmPsfLikeRobust < 1:
+            self.log.warn("No sources selected in robust seeing estimation")
+            return None
+
+        print '*** medianFwhmPsfSeq:', medianFwhmPsfSeq
+        self.metadata.add("medianFwhmPsfSeq", medianFwhmPsfSeq)
+        print '*** sigmaFwhmPsfSeq:', sigmaFwhmPsfSeq
+        self.metadata.add("sigmaFwhmPsfSeq", sigmaFwhmPsfSeq)
+        print '*** fwhmPsfSequence(min, max): (%5.3f %5.3f) (pix)' % (fwhmPsfSeqMin, fwhmPsfSeqMax)
+        self.metadata.add("minFwhmPsfSeq", fwhmPsfSeqMin)
+        self.metadata.add("maxFwhmPsfSeq", fwhmPsfSeqMax)
+        print '*** numFwhmPsfLikeRobust:', numFwhmPsfLikeRobust
+        self.metadata.add("numFwhmPsfLikeRobust", numFwhmPsfLikeRobust)
+
+        magListPsfLikeRobust = data.magListAll[indicesSourcesPsfLikeRobust]
+        fwhmListPsfLikeRobust = data.fwhmListAll[indicesSourcesPsfLikeRobust]
+        ellListPsfLikeRobust = data.ellListAll[indicesSourcesPsfLikeRobust]
+        ellPaListPsfLikeRobust = data.ellPaListAll[indicesSourcesPsfLikeRobust]
+        AEllListPsfLikeRobust = data.AEllListAll[indicesSourcesPsfLikeRobust]
+        BEllListPsfLikeRobust = data.BEllListAll[indicesSourcesPsfLikeRobust]
+        xListPsfLikeRobust = data.xListAll[indicesSourcesPsfLikeRobust]
+        yListPsfLikeRobust = data.yListAll[indicesSourcesPsfLikeRobust]
+        IxxListPsfLikeRobust = data.IxxListAll[indicesSourcesPsfLikeRobust]
+        IyyListPsfLikeRobust = data.IyyListAll[indicesSourcesPsfLikeRobust]
+        IxyListPsfLikeRobust = data.IxyListAll[indicesSourcesPsfLikeRobust]
+
+        data.indicesSourcesPsfLikeRobust = indicesSourcesPsfLikeRobust
+        data.magListPsfLikeRobust = magListPsfLikeRobust
+        data.fwhmListPsfLikeRobust = fwhmListPsfLikeRobust
+        data.ellListPsfLikeRobust = ellListPsfLikeRobust
+        data.ellPaListPsfLikeRobust = ellPaListPsfLikeRobust
+        data.AEllListPsfLikeRobust = AEllListPsfLikeRobust
+        data.BEllListPsfLikeRobust = BEllListPsfLikeRobust
+        data.xListPsfLikeRobust = xListPsfLikeRobust
+        data.yListPsfLikeRobust = yListPsfLikeRobust
+        data.IxxListPsfLikeRobust = IxxListPsfLikeRobust
+        data.IyyListPsfLikeRobust = IyyListPsfLikeRobust
+        data.IxyListPsfLikeRobust = IxyListPsfLikeRobust
+        data.indicesForPsfSeq = indicesSourcesForPsfSeq
+        data.magListForPsfSeq = magListForPsfSeq
+        data.fwhmListForPsfSeq = fwhmListForPsfSeq
+        data.magLimPsfSeq = magLimPsfSeq
+        data.magLimPsfCand = magLimPsfCand
+        data.medianFwhmPsfSeq = medianFwhmPsfSeq
+        data.sigmaFwhmPsfSeq = sigmaFwhmPsfSeq
+        data.fwhmPsfSeqMin = fwhmPsfSeqMin
+        data.fwhmPsfSeqMax = fwhmPsfSeqMax
+
+        return data
+
+#measAlg.starSelectorRegistry.register("mitaka", SizeMagnitudeMitakaStarSelector)
+
+def getFilename(dataRef, dataset):
+    fname = dataRef.get(dataset + "_filename")[0]
+    directory = os.path.dirname(fname)
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+    return fname
+
+measAlg.starSelectorRegistry.register("mitaka", SizeMagnitudeMitakaStarSelector)
