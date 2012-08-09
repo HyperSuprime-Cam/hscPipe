@@ -33,9 +33,9 @@ class SubaruProcessCcdOnsiteDbTask(SubaruProcessCcdOnsiteTask):
     def importDbUtils(self):
         namespace = self.parsedCmd
         try:
-            if namespace.camera in ['suprimecam', 'sc', 'suprimecam-mit', 'mit']:
+            if namespace.camera.lower() in ['suprimecam', 'sc', 'suprimecam-mit', 'mit']:
                 import onsiteDbUtilsSuprime as onsiteDbUtils
-            elif namespace.camera in ['hsc', 'hscsim']:
+            elif namespace.camera.lower() in ['hsc', 'hscsim']:
                 import onsiteDbUtilsHsc as onsiteDbUtils
             else:
                 print >> sys.stderr, "Given instrument name is not valid: %s" % namespace.camera
@@ -50,9 +50,9 @@ class SubaruProcessCcdOnsiteDbTask(SubaruProcessCcdOnsiteTask):
         dataId = (namespace.dataIdList)[0]
         ccd = int(dataId['ccd'])
         visit = int(dataId['visit'])
-        if namespace.camera in ['suprimecam', 'sc', 'suprimecam-mit', 'mit']:
+        if namespace.camera.lower() in ['suprimecam', 'sc', 'suprimecam-mit', 'mit']:
             id = int(visit)*10 + int(ccd)
-        elif namespace.camera in ['hsc', 'hscsim']:
+        elif namespace.camera.lower() in ['hsc', 'hscsim']:
             #### !!! TBD how to assign visit for HSC data
             id = int(visit)*1000 + int(ccd)
             #id = int(visit)*100 + int(ccd)
