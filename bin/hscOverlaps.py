@@ -21,7 +21,6 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 import sys
-import hsc.pipe.tasks.monkeypatch
 from lsst.pipe.base import ArgumentParser
 from hsc.meas.mosaic.task import HscOverlapsTask as TaskClass
 

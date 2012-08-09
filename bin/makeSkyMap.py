@@ -20,7 +20,6 @@
 # the GNU General Public License along with this program.  If not,
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
-import hsc.pipe.tasks.monkeypatch
 import sys
 from lsst.pipe.tasks.makeSkyMap import MakeSkyMapTask as TaskClass
 from hsc.pipe.base import HscArgumentParser

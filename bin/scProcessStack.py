@@ -21,6 +21,6 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 
-from hsc.pipe.tasks.processCcd import SubaruProcessCcdTask
+from hsc.pipe.tasks.processStack import ProcessStackTask
 
-SubaruProcessCcdTask.parseAndRun()
+ProcessStackTask.parseAndRun()

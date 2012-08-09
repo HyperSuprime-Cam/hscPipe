@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-import hsc.pipe.tasks.monkeypatch # For lsst.pex.config.ConfigurableField and lsst.pipe.base.CmdLineTask
-
 import lsst.daf.base as dafBase
 import lsst.daf.persistence as dafPersist
 import lsst.afw.table as afwTable

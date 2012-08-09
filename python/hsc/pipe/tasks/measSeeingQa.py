@@ -18,8 +18,8 @@ from lsst.pipe.base import Task, Struct
 
 import numpy
 
-import matplotlib.pyplot as plt
-plt.switch_backend('Agg')
+import matplotlib.figure as figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigCanvas
 from matplotlib import patches as patches
 
 
@@ -297,7 +297,8 @@ class MeasureSeeingTask(Task):
             self.log.logdebug("QaSeeing: cummurative magHist: %s" % magCumHist)
 
         if self.config.doPlots:
-            fig = plt.figure()
+            fig = figure.Figure()
+            canvas = FigCanvas(fig)
             pltMagHist = fig.add_subplot(2,1,1)
             pltMagHist.hist(magListFwhmRange, bins=magHist[1], orientation='vertical')
             pltMagHist.set_title('histogram of magnitudes')
@@ -317,7 +318,7 @@ class MeasureSeeingTask(Task):
             pltCumHist.legend()
 
             fname = getFilename(dataRef, "plotMagHist")
-            plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
+            fig.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
                         format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
             del fig
             del pltMagHist
@@ -357,7 +358,8 @@ class MeasureSeeingTask(Task):
         self.metadata.add("fwhmRough", fwhmRough)
 
         if self.config.doPlots:
-            fig = plt.figure()
+            fig = figure.Figure()
+            canvas = FigCanvas(fig)
             pltMagFwhm = fig.add_subplot(1,1,1)
             pltMagFwhm.set_xlim(-20,-5)
             pltMagFwhm.set_ylim(0,20)
@@ -370,7 +372,7 @@ class MeasureSeeingTask(Task):
 
             pltMagFwhm.legend()
             fname = getFilename(dataRef, "plotSeeingRough")
-            plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait',
+            fig.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait',
                         papertype=None, format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
 
             del fig
@@ -423,7 +425,8 @@ class MeasureSeeingTask(Task):
         self.metadata.add("ellPaRobust", ellPaRobust)
 
         if self.config.doPlots:
-            fig = plt.figure()
+            fig = figure.Figure()
+            canvas = FigCanvas(fig)
             pltMagFwhm = fig.add_subplot(1,2,1)
             pltMagFwhm.set_xlim(-20,-5)
             pltMagFwhm.set_ylim(0,20)
@@ -446,7 +449,7 @@ class MeasureSeeingTask(Task):
             pltHistFwhm.legend()
 
             fname = getFilename(dataRef, "plotSeeingRobust")
-            plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait',
+            fig.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait',
                         papertype=None, format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
 
             del fig
@@ -476,8 +479,9 @@ class MeasureSeeingTask(Task):
         facSize = 10.0 / max(xSize,ySize)  # targeting 10 inch in size
         wFig = xSize * facSize * 1.3
         hFig = ySize * facSize
-        fig = plt.figure(figsize=(wFig,hFig))
-        pltFwhmMap = plt.axes([0.2, 0.1, 0.7, 0.8]) # left,bottom,width,height
+        fig = figure.Figure(figsize=(wFig,hFig))
+        canvas = FigCanvas(fig)
+        pltFwhmMap = fig.add_axes([0.2, 0.1, 0.7, 0.8]) # left,bottom,width,height
         pltFwhmMap.set_xlim(0, xSize)
         pltFwhmMap.set_ylim(0, ySize)
         pointSize = math.pi*(10*data.fwhmListPsfLikeRobust/2)**2. # 10pix=2arcsec fwhm = 50 point radius
@@ -490,14 +494,14 @@ class MeasureSeeingTask(Task):
         pointSize = math.pi*(10*fwhmPix/2)**2.
         pltFwhmMap.scatter([0.1*xSize], [0.9*ySize], s=pointSize, marker='o', color='magenta',
                            facecolor=(1,1,1,0), label='PSF sample')        
-        plt.text(0.1 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
+        fig.text(0.1 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
 
         pltFwhmMap.set_title('FWHM of PSF sources')
         pltFwhmMap.set_xlabel('X (pix)')
         pltFwhmMap.set_ylabel('Y (pix)')
 
         fname = getFilename(dataRef, "plotSeeingMap")
-        plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
+        fig.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
                     format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
 
         del fig
@@ -510,8 +514,9 @@ class MeasureSeeingTask(Task):
         facSize = 10.0 / max(xSize,ySize)  # targeting 10 inch in size
         wFig = xSize * facSize * 1.2
         hFig = ySize * facSize
-        fig = plt.figure(figsize=(wFig,hFig))
-        pltEllipseMap = plt.axes([0.2, 0.1, 0.7, 0.8]) # left,bottom,width,height
+        fig = figure.Figure(figsize=(wFig,hFig))
+        canvas = FigCanvas(fig)
+        pltEllipseMap = fig.add_axes([0.2, 0.1, 0.7, 0.8]) # left,bottom,width,height
         
         pltEllipseMap.set_xlim(0, xSize)
         pltEllipseMap.set_ylim(0, ySize)
@@ -529,14 +534,14 @@ class MeasureSeeingTask(Task):
         ell = patches.Ellipse((0.1*xSize, 0.9*ySize), 2.*aa*scaleFactor, 2.*bb*scaleFactor, angle=0.,
                               linewidth=4., color='magenta', fill=False, zorder=2)
         pltEllipseMap.add_patch(ell)
-        plt.text(0.1 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
+        fig.text(0.1 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
 
         pltEllipseMap.set_title('Size and Ellongation of PSF sources')
         pltEllipseMap.set_xlabel('X (pix)')
         pltEllipseMap.set_ylabel('Y (pix)')
 
         fname = getFilename(dataRef, "plotEllipseMap")
-        plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
+        fig.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
                     format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
 
         del fig
@@ -549,9 +554,10 @@ class MeasureSeeingTask(Task):
         facSize = 10.0 / max(xSize,ySize)  # targeting 10 inch in size
         wFig = xSize * facSize * 1.3
         hFig = ySize * facSize
-        fig = plt.figure(figsize=(wFig,hFig))
+        fig = figure.Figure(figsize=(wFig,hFig))
+        canvas = FigCanvas(fig)
         
-        pltEllMap = plt.axes([0.2, 0.1, 0.7, 0.8]) # left,bottom,width,height
+        pltEllMap = fig.add_axes([0.2, 0.1, 0.7, 0.8]) # left,bottom,width,height
         pltEllMap.set_xlim(0, xSize)
         pltEllMap.set_ylim(0, ySize)
 
@@ -578,7 +584,7 @@ class MeasureSeeingTask(Task):
             label='PSF sample'
             )
 
-        plt.quiverkey(Q, 0.05, 1.05, 0.05, 'e=0.05', labelpos='W')
+        #plt.quiverkey(Q, 0.05, 1.05, 0.05, 'e=0.05', labelpos='W')
 
         pltEllMap.set_title('Ellipticity of PSF sources')
         pltEllMap.set_xlabel('X (pix)')
@@ -586,7 +592,7 @@ class MeasureSeeingTask(Task):
         pltEllMap.legend()
 
         fname = getFilename(dataRef, "plotEllipticityMap")
-        plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
+        fig.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
                     format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
 
         del fig
@@ -601,8 +607,9 @@ class MeasureSeeingTask(Task):
         facSize = 10.0 / max(xSize,ySize)  # targeting 10 inch in size
         wFig = xSize * facSize * 1.3
         hFig = ySize * facSize
-        fig = plt.figure(figsize=(wFig,hFig))
-        pltFwhm = plt.axes([0.2, 0.1, 0.7, 0.8]) # left,bottom,width,height
+        fig = figure.Figure(figsize=(wFig,hFig))
+        canvas = FigCanvas(fig)
+        pltFwhm = fig.add_axes([0.2, 0.1, 0.7, 0.8]) # left,bottom,width,height
 
         pltFwhm.set_xlim(0, xSize)
         pltFwhm.set_ylim(0, ySize)
@@ -654,18 +661,18 @@ class MeasureSeeingTask(Task):
         pointArea = math.pi*(pointRadius)**2.
         pltFwhm.scatter([0.1 * xSize], [0.9 * ySize], s=pointArea, marker='o', color='magenta',
                         facecolor=(1,1,1,0), linewidth=8.0, label='PSF sample')
-        plt.text(0.1 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
+        fig.text(0.1 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
 
         pltFwhm.set_title('FWHM of PSF sources')
         pltFwhm.set_xlabel('X (pix)')
         pltFwhm.set_ylabel('Y (pix)')
 
-        plt.xticks([ xc+xGridSize/2. for xc in xGridList ])
-        plt.yticks([ yc+yGridSize/2. for yc in yGridList ])
+        pltFwhm.set_xticks([ xc+xGridSize/2. for xc in xGridList ])
+        pltFwhm.set_yticks([ yc+yGridSize/2. for yc in yGridList ])
         pltFwhm.grid()
 
         fname = getFilename(dataRef, "plotFwhmGrid")
-        plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait',
+        fig.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait',
                     papertype=None, format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
 
         del fig
@@ -677,8 +684,9 @@ class MeasureSeeingTask(Task):
         facSize = 10.0 / max(xSize,ySize)  # targeting 10 inch in size
         wFig = xSize * facSize * 1.2
         hFig = ySize * facSize
-        fig = plt.figure(figsize=(wFig,hFig))
-        pltEllipse = plt.axes([0.2, 0.1, 0.7, 0.8]) # left,bottom,width,height
+        fig = figure.Figure(figsize=(wFig,hFig))
+        canvas = FigCanvas(fig)
+        pltEllipse = fig.add_axes([0.2, 0.1, 0.7, 0.8]) # left,bottom,width,height
 
         pltEllipse.set_xlim(0, xSize)
         pltEllipse.set_ylim(0, ySize)
@@ -741,14 +749,14 @@ class MeasureSeeingTask(Task):
         ell = patches.Ellipse((0.1*xSize, 0.9*ySize), 2.*aa*scaleFactor, 2.*bb*scaleFactor, angle=0.,
                               linewidth=4., color='magenta', fill=False, zorder=2)
         pltEllipse.add_patch(ell)
-        plt.text(0.1 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
+        fig.text(0.1 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
 
-        plt.xticks([ xc+xGridSize/2. for xc in xGridList ])
-        plt.yticks([ yc+yGridSize/2. for yc in yGridList ])
+        pltEllipse.set_xticks([ xc+xGridSize/2. for xc in xGridList ])
+        pltEllipse.set_yticks([ yc+yGridSize/2. for yc in yGridList ])
         pltEllipse.grid()
 
         fname = getFilename(dataRef, "plotEllipseGrid")
-        plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
+        fig.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
                     format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
 
         del fig
@@ -762,9 +770,10 @@ class MeasureSeeingTask(Task):
         facSize = 10.0 / max(xSize,ySize)  # targeting 10 inch in size
         wFig = xSize * facSize * 1.2
         hFig = ySize * facSize
-        fig = plt.figure(figsize=(wFig,hFig))
+        fig = figure.Figure(figsize=(wFig,hFig))
+        canvas = FigCanvas(fig)
 
-        pltEll = plt.axes([0.2, 0.1, 0.7, 0.8]) # left,bottom,width,height
+        pltEll = fig.add_axes([0.2, 0.1, 0.7, 0.8]) # left,bottom,width,height
         pltEll.set_xlim(0, xSize)
         pltEll.set_ylim(0, ySize)
 
@@ -828,10 +837,10 @@ class MeasureSeeingTask(Task):
             #angles = 'xy',
             pivot = 'middle',
             )
-        plt.quiverkey(Q, 0.05, 1.05, 0.05, 'e=0.05', labelpos='W')
+        #plt.quiverkey(Q, 0.05, 1.05, 0.05, 'e=0.05', labelpos='W')
 
-        plt.xticks([ xc+xGridSize/2. for xc in xGridList ])
-        plt.yticks([ yc+yGridSize/2. for yc in yGridList ])
+        pltEll.set_xticks([ xc+xGridSize/2. for xc in xGridList ])
+        pltEll.set_yticks([ yc+yGridSize/2. for yc in yGridList ])
         pltEll.grid()
 
         pltEll.set_title('Ellipticity of PSF sources')
@@ -840,7 +849,7 @@ class MeasureSeeingTask(Task):
 
 
         fname = getFilename(dataRef, "plotEllipticityGrid")
-        plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
+        fig.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
                     format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
 
         del fig

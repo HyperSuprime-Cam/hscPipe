@@ -1,19 +1,19 @@
-from lsst.pex.config import Config, ConfigField
+from lsst.pex.config import Config, ConfigurableField
 from lsst.pipe.base import Task
-import hsc.pipe.tasks.measSeeingQa as hscSeeing
+from . import measSeeingQa
 
 class QaConfig(Config):
-    measureSeeing = ConfigField(dtype=hscSeeing.MeasureSeeingConfig, doc="Measure seeing")
-
+    seeing = ConfigurableField(target=measSeeingQa.MeasureSeeingTask, doc="Measure seeing")
 
 class QaTask(Task):
     ConfigClass = QaConfig
+
     def __init__(self, *args, **kwargs):
         super(QaTask, self).__init__(*args, **kwargs)
-        self.makeSubtask("measureSeeing", hscSeeing.MeasureSeeingTask)
+        self.makeSubtask("seeing")
 
     def run(self, dataRef, exposure, sources):
-        self.measureSeeing.run(dataRef, sources, exposure)
+        self.seeing.run(dataRef, sources, exposure)
 
         metadata = exposure.getMetadata()
 
@@ -25,13 +25,13 @@ class QaTask(Task):
 
         # = info for data management
         # = rerun; assuming directory tree has the fixed form where 'rerun/' is just followed by '$rerun_name/'
-
-        rerunName = self.getRerunName(dataRef)
-        metadata.set('RERUN', rerunName)
+        try:
+            rerunName = self.getRerunName(dataRef)
+            metadata.set('RERUN', rerunName)
+        except:
+            self.log.warn("Could not determine rerun from output directory")
 
     def getRerunName(self, sensorRef):
         # rerun: assuming directory tree has the fixed form where 'rerun/' is just followed by '$rerun_name/'
         corrPath = sensorRef.get('calexp_filename')[0]
         return corrPath[corrPath.find('rerun'):].split('/')[1]
-        
-

@@ -21,6 +21,8 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 
-from hsc.pipe.tasks.processCcd import SubaruProcessCcdTask
+from hsc.pipe.tasks import plotSetup # needed to enable non-gui matplotlib when DISPLAY is not set
 
-SubaruProcessCcdTask.parseAndRun()
+from hsc.pipe.tasks.onsite import SubaruProcessCcdOnsiteTask
+
+SubaruProcessCcdOnsiteTask.parseAndRun()

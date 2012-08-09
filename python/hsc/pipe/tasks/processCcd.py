@@ -1,125 +1,67 @@
 #!/usr/bin/env python
 
-import os, os.path
+import os
+
 import hsc.pipe.tasks.plotSetup
-
 import lsst.pex.config as pexConfig
-import lsst.afw.detection as afwDet
-import lsst.afw.table as afwTable
-import lsst.daf.base as dafBase
-import lsst.meas.algorithms as measAlg
 import lsst.pipe.base as pipeBase
-import lsst.pipe.tasks.processCcd as ptProcessCcd
-import hsc.pipe.tasks.suprimecam as hscSuprimeCam
-import hsc.pipe.tasks.calibrate as hscCalibrate
-import hsc.pipe.tasks.isr as hscIsr
-import hsc.pipe.tasks.hscDc2 as hscDc2
-import hsc.pipe.tasks.qa as hscQa
+import lsst.afw.table as afwTable
+from hsc.pipe.base import SubaruArgumentParser
+from lsst.pipe.tasks.processCcd import ProcessCcdTask
+from .qa import QaTask
 
 
-class SubaruProcessCcdConfig(ptProcessCcd.ProcessCcdConfig):
-    calibrate = pexConfig.ConfigField(dtype=hscCalibrate.SubaruCalibrateConfig, doc="Calibration")
-    isr = pexConfig.ConfigField(dtype=hscIsr.SubaruIsrConfig, doc="Instrument signature removal")
-    qa = pexConfig.ConfigField(dtype=hscQa.QaConfig, doc="Quality assessment")
+class SubaruProcessCcdConfig(ProcessCcdTask.ConfigClass):
+    delayWrite = pexConfig.Field(
+        dtype=bool, default=False,
+        doc="Delay writing outputs (e.g., for pbasf processing)?"
+        )
+    doWriteUnpackedMatches = pexConfig.Field(
+        dtype=bool, default=True,
+        doc=("Write the denormalized match table as well as the normalized match table; "
+             "ignored if doWriteCalibrate=False")
+    )
+    qa = pexConfig.ConfigurableField(target = QaTask, doc = "QA analysis")
 
 
-class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
+def applyOverrides(root):
+    root.doWriteCalibrate = False # We will write it after getting QA metadata
+
+
+class SubaruProcessCcdTask(ProcessCcdTask):
     """Subaru version of ProcessCcdTask, with method to write outputs
-    after producing a new multi-frame WCS.
+    after producing a new multi-frame WCS, the ability to write denormalized
+    matches, and --rerun support.
     """
     ConfigClass = SubaruProcessCcdConfig
-    _DefaultName = "processCcd"
+    overrides = (applyOverrides,)
 
     def __init__(self, *args, **kwargs):
         super(SubaruProcessCcdTask, self).__init__(*args, **kwargs)
-        self.makeSubtask("isr", hscIsr.SubaruIsrTask)
-        self.makeSubtask("calibrate", hscCalibrate.SubaruCalibrateTask)
-        self.makeSubtask("qa", hscQa.QaTask)
+        self.makeSubtask("qa")
 
-    # The 'run' method is copied wholesale from lsst.pipe.tasks.processCcd.ProcessCcdTask.run, with minor
-    # modifications to change when the CCD assembly is performed.
-    @pipeBase.timeMethod
     def run(self, sensorRef):
-        self.log.log(self.log.INFO, "Processing %s" % (sensorRef.dataId))
-        if self.config.doIsr:
-            butler = sensorRef.butlerSubset.butler
-            calibSet = self.isr.makeCalibDict(butler, sensorRef.dataId)
-            exposure = sensorRef.get("raw")
-            isrRes = self.isr.run(sensorRef, exposure, calibSet)
-            exposure = isrRes.postIsrExposure
-            self.display("isr", exposure=exposure, pause=True)
-            if self.config.doWriteIsr:
-                sensorRef.put(exposure, 'postISRCCD')
-        else:
-            exposure = None
+        result = ProcessCcdTask.run(self, sensorRef)
+        self.qa.run(sensorRef, result.exposure, result.sources)
+        sensorRef.put(result.exposure, self.dataPrefix + 'calexp')
+        if not self.config.delayWrite:
+            self.write(sensorRef, result, wcs=result.exposure.getWcs())
+        if self.config.doWriteUnpackedMatches:
+            sensorRef.put(self.unpackMatches(result.calib.matches, result.calib.matchMeta), "icMatchList")
+        if self.config.doWriteSourceMatches and self.config.doWriteUnpackedMatches:
+            sensorRef.put(self.unpackMatches(result.matches, result.matchMeta), "srcMatchList")
 
-        if self.config.doCalibrate:
-            if exposure is None:
-                exposure = sensorRef.get('postISRCCD')
-            calib = self.calibrate.run(exposure)
-            exposure = calib.exposure
-            if self.config.doWriteCalibrate:
-                self.writeCalib(sensorRef, calib)
-        else:
-            calib = None
+        return result
 
-        if self.config.doDetection:
-            if exposure is None:
-                exposure = sensorRef.get('calexp')
-            if calib is None:
-                psf = sensorRef.get('psf')
-                exposure.setPsf(sensorRef.get('psf'))
-            table = afwTable.SourceTable.make(self.schema)
-            table.setMetadata(self.algMetadata)
-            detRet = self.detection.makeSourceCatalog(table, exposure)
-            sources = detRet.sources
-        else:
-            sources = None
-
-        if self.config.doMeasurement:
-            assert(sources)
-            assert(exposure)
-            if calib is None:
-                apCorr = sensorRef.get("apCorr")
-            else:
-                apCorr = calib.apCorr
-            self.measurement.run(exposure, sources, apCorr)
-
-        self.qa.run(sensorRef, exposure, sources)
-
-        if self.config.doWriteSources:
-            sensorRef.put(sources, 'src')
-
-        if self.config.doWriteCalibrate:
-            sensorRef.put(exposure, 'calexp')
-
-        return pipeBase.Struct(
-            exposure = exposure,
-            calib = calib,
-            sources = sources,
-        )
-
-    def writeCalib(self, sensorRef, calib):
-        """Write calibration products
-       
-        @param sensorRef   Data reference for sensor
-        @param calib       Results of calibration
+    @classmethod
+    def _makeArgumentParser(cls):
+        """Create an argument parser with --rerun support.
         """
-        sensorRef.put(calib.sources, 'icSrc')
-        if calib.psf is not None:
-            sensorRef.put(calib.psf, 'psf')
-        if calib.apCorr is not None:
-            sensorRef.put(calib.apCorr, 'apCorr')
-        if calib.matches is not None:
-            self.writeMatches(sensorRef, calib.matches, calib.matchMeta)
+        return SubaruArgumentParser(name=cls._DefaultName)
 
-    def writeMatches(self, dataRef, matches, matchMeta):
-        # First write normalised matches
-        normalizedMatches = afwTable.packMatches(matches)
-        normalizedMatches.table.setMetadata(matchMeta)
-        dataRef.put(normalizedMatches, 'icMatch')
+    def unpackMatches(self, matches, matchMeta):
+        """Denormalise matches into "unpacked matches" """
 
-        # Now write unpacked matches
         refSchema = matches[0].first.getSchema()
         srcSchema = matches[0].second.getSchema()
 
@@ -129,7 +71,12 @@ class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
             typeStr = field.getTypeString()
             fieldDoc = field.getDoc()
             fieldUnits = field.getUnits()
-            mergedSchema.addField(name + '.' + key, type=typeStr, doc=fieldDoc, units=fieldUnits)
+            if typeStr in ("ArrayF", "ArrayD", "CovF", "CovD"):
+                fieldSize = field.getSize()
+            else:
+                fieldSize = None
+            mergedSchema.addField(name + '.' + key, type=typeStr, doc=fieldDoc, units=fieldUnits,
+                                  size=fieldSize)
 
         for keyName in refSchema.getNames():
             merge(refSchema, keyName, mergedSchema, "ref")
@@ -162,8 +109,7 @@ class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
         matchMeta.add('REFCAT', catalogName)
         mergedCatalog.getTable().setMetadata(matchMeta)
 
-        dataRef.put(mergedCatalog, "matchList")
-
+        return mergedCatalog
 
     def write(self, dataRef, struct, wcs=None):
         if wcs is None:
@@ -180,47 +126,12 @@ class SubaruProcessCcdTask(ptProcessCcd.ProcessCcdTask):
             for s in sources:
                 s.updateCoord(wcs)
 
-        self.writeMatches(dataRef, struct.calib.matches, struct.calib.matchMeta)
-
+        normalizedMatches = afwTable.packMatches(struct.calib.matches)
+        normalizedMatches.table.setMetadata(struct.calib.matchMeta)
+        dataRef.put(self.unpackMatches(struct.calib.matches, struct.calib.matchMeta), "icMatchList")
         dataRef.put(struct.exposure, 'calexp')
         dataRef.put(struct.sources, 'src')
+        dataRef.put(normalizedMatches, "icMatch")
         dataRef.put(struct.calib.psf, 'psf')
         dataRef.put(struct.calib.apCorr, 'apCorr')
         dataRef.put(struct.calib.sources, 'icSrc')
-
-
-class SuprimeCamProcessCcdConfig(SubaruProcessCcdConfig):
-    isr = pexConfig.ConfigField(dtype=hscSuprimeCam.SuprimeCamIsrTask.ConfigClass,
-                                doc="Instrument signature removal")
-
-class SuprimeCamProcessCcdTask(SubaruProcessCcdTask):
-    ConfigClass = SuprimeCamProcessCcdConfig
-
-    def __init__(self, **kwargs):
-        pipeBase.Task.__init__(self, **kwargs)
-        self.makeSubtask("isr", hscSuprimeCam.SuprimeCamIsrTask)
-        self.makeSubtask("calibrate", hscCalibrate.SubaruCalibrateTask)
-        self.schema = afwTable.SourceTable.makeMinimalSchema()
-        self.algMetadata = dafBase.PropertyList()
-        if self.config.doDetection:
-            self.makeSubtask("detection", measAlg.SourceDetectionTask, schema=self.schema)
-        if self.config.doMeasurement:
-            self.makeSubtask("measurement", measAlg.SourceMeasurementTask,
-                             schema=self.schema, algMetadata=self.algMetadata)
-        self.makeSubtask("qa", hscQa.QaTask)
-
-
-class HscProcessCcdTask(SubaruProcessCcdTask):
-   def __init__(self, **kwargs):
-       pipeBase.Task.__init__(self, **kwargs)
-       self.makeSubtask("isr", hscIsr.SubaruIsrTask)
-       self.makeSubtask("calibrate", hscCalibrate.SubaruCalibrateTask)
-       self.schema = afwTable.SourceTable.makeMinimalSchema()
-       self.algMetadata = dafBase.PropertyList()
-       if self.config.doDetection:
-           self.makeSubtask("detection", measAlg.SourceDetectionTask, schema=self.schema)
-       if self.config.doMeasurement:
-           self.makeSubtask("measurement", measAlg.SourceMeasurementTask,
-                            schema=self.schema, algMetadata=self.algMetadata)
-       self.makeSubtask("qa", hscQa.QaTask)
-
