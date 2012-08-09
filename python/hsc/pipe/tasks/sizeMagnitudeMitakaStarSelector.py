@@ -26,9 +26,9 @@ import lsst.afw.display.ds9 as ds9
 
 import numpy
 
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
+#import matplotlib
+#matplotlib.use('Agg')
+#import matplotlib.pyplot as plt
 #plt.switch_backend('Agg')
 
 import matplotlib.figure as figure
@@ -466,7 +466,9 @@ class SizeMagnitudeMitakaStarSelector(object):
             self.log.logdebug("QaSeeing: cummurative magHist: %s" % magCumHist)
 
         if self.config.doPlots and dataRef is not None:
-            fig = plt.figure()
+            fig = figure.Figure()
+            canvas = FigCanvas(fig)
+            #fig = plt.figure()
             pltMagHist = fig.add_subplot(2,1,1)
             pltMagHist.hist(magListFwhmRange, bins=magHist[1], orientation='vertical')
             pltMagHist.set_title('histogram of magnitudes')
@@ -486,7 +488,7 @@ class SizeMagnitudeMitakaStarSelector(object):
             pltCumHist.legend()
 
             fname = getFilename(dataRef, "plotMagHist")
-            plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
+            fig.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
                         format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
             del fig
             del pltMagHist
@@ -533,7 +535,9 @@ class SizeMagnitudeMitakaStarSelector(object):
         self.metadata.add("fwhmRough", fwhmRough)
 
         if self.config.doPlots and dataRef is not None:
-            fig = plt.figure()
+            #fig = plt.figure()
+            fig = figure.Figure()
+            canvas = FigCanvas(fig)
             pltMagFwhm = fig.add_subplot(1,1,1)
             pltMagFwhm.set_xlim(-20,-5)
             pltMagFwhm.set_ylim(0,20)
@@ -549,7 +553,7 @@ class SizeMagnitudeMitakaStarSelector(object):
 
             pltMagFwhm.legend()
             fname = getFilename(dataRef, "plotSeeingRough")
-            plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait',
+            fig.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait',
                         papertype=None, format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
 
             del fig
@@ -584,7 +588,9 @@ class SizeMagnitudeMitakaStarSelector(object):
         self.metadata.add("ellPaRobust", ellPaRobust)
 
         if self.config.doPlots and dataRef is not None:
-            fig = plt.figure()
+            fig = figure.Figure()
+            canvas = FigCanvas(fig)
+            #fig = plt.figure()
             pltMagFwhm = fig.add_subplot(1,2,1)
             pltMagFwhm.set_xlim(-20,-5)
             pltMagFwhm.set_ylim(0,20)
@@ -616,7 +622,7 @@ class SizeMagnitudeMitakaStarSelector(object):
             pltHistFwhm.legend()
 
             fname = getFilename(dataRef, "plotSeeingRobust")
-            plt.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait',
+            fig.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait',
                         papertype=None, format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
 
             del fig
