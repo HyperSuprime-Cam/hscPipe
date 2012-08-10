@@ -141,6 +141,42 @@ class MeasureSeeingMitakaTask(Task):
             self.plotFwhmGrid(dataRef, dataPsfLike, exposure)
             self.plotEllipseGrid(dataRef, dataPsfLike, exposure)
             self.plotEllipticityGrid(dataRef, dataPsfLike, exposure)
+        if True:
+            self.writeSeeingMapList(dataRef, dataPsfLike, exposure)
+            self.writeSeeingGridList(dataRef, dataPsfLike, exposure)
+
+    def writeSeeingMapList(self, dataRef, data, exposure):
+        ccdId = int(exposure.getMetadata().get('DET-ID'))
+        xList = data.xListPsfLikeRobust
+        yList = data.yListPsfLikeRobust
+        fwhmList = data.fwhmListPsfLikeRobust
+        ellList = data.ellListPsfLikeRobust
+        ellPaList = data.ellPaListPsfLikeRobust
+        fname = getFilename(dataRef, "plotSeeingMap").replace('png','txt')
+        f = open(fname, 'w')
+        f.write('# 1:ccd 2:x 3:y 4:fwhm 5:ell\n')
+        for (x, y, fwhm, ell) in zip(xList, yList, fwhmList, ellList):
+            f.write('%3d %f %f %f %f' % (ccdId, x, y, fwhm, ell))
+            f.write('\n')
+        f.close()
+
+    def writeSeeingGridList(self, dataRef, data, exposure):
+        ccdId = int(exposure.getMetadata().get('DET-ID'))
+        xList = data.xGridList
+        yList = data.yGridList
+        fwhmList = data.fwhmGridList
+        ellList = data.ellGridList
+        ellPaList = data.ellPaGridList
+        AEllList = data.AEllGridList
+        BEllList = data.BEllGridList
+
+        fname = getFilename(dataRef, "plotFwhmGrid").replace('png','txt')
+        f = open(fname, 'w')
+        f.write('# 1:ccd 2:x 3:y 4:fwhm 5:ell 6:pa 7:a 8:b\n')
+        for (x, y, fwhm, ell, pa, a, b) in zip(xList, yList, fwhmList, ellList, ellPaList, AEllList, BEllList):
+            f.write('%3d %f %f %f %f %f %f %f' % (ccdId, x, y, fwhm, ell, pa, a, b))
+            f.write('\n')
+        f.close()
 
     def setMetadata(self, exposure):
         """Put processing results in header of exposure"""
@@ -216,7 +252,7 @@ class MeasureSeeingMitakaTask(Task):
         pltEllipseMap.add_patch(ell)
         fig.text(0.1 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
 
-        pltEllipseMap.set_title('Size and Ellongation of PSF sources')
+        pltEllipseMap.set_title('Size and Elongation of PSF sources')
         pltEllipseMap.set_xlabel('X (pix)')
         pltEllipseMap.set_ylabel('Y (pix)')
 
@@ -321,6 +357,10 @@ class MeasureSeeingMitakaTask(Task):
             # taking median to represent the value in a grid mesh
             fwhmList = numpy.append(fwhmList, numpy.median(fwhmsInGrid))
 
+        data.xGridList = xGridList
+        data.yGridList = yGridList
+        data.fwhmGridList = fwhmList
+
         # 10pix=2arcsec(fwhm)=500 point(radius) (to be ~0.6*min(xGridSize, yGridSize)?)
         pointRadius = 100*fwhmList/2.
         scaleFactor = min(xGridSize/xSize, yGridSize/ySize)
@@ -409,6 +449,9 @@ class MeasureSeeingMitakaTask(Task):
             BEllList = numpy.append(BEllList, numpy.median(BEllsInGrid))        
             ellPaList = numpy.append(ellPaList, numpy.median(ellPasInGrid))        
 
+        data.AEllGridList = AEllList
+        data.BEllGridList = BEllList
+
         # 10pix=2arcsec(fwhm)==>A=0.6*gridSize~1200pix(for whole_CCD)
         scaleFactor = (1/10.)*0.8*min(xGridSize, yGridSize)
         for xEllipse, yEllipse, aa, bb, ellPa in zip(xGridList, yGridList, AEllList, BEllList, ellPaList):
@@ -416,7 +459,7 @@ class MeasureSeeingMitakaTask(Task):
                 ell = patches.Ellipse((xEllipse, yEllipse), 2.*aa*scaleFactor, 2.*bb*scaleFactor,
                                       angle=ellPa, linewidth=2., fill=False, zorder=2)
                 pltEllipse.add_patch(ell)
-        pltEllipse.set_title('Size and Ellongation of PSF sources')
+        pltEllipse.set_title('Size and Elongation of PSF sources')
         pltEllipse.set_xlabel('X (pix)')
         pltEllipse.set_ylabel('Y (pix)')
 
@@ -493,6 +536,9 @@ class MeasureSeeingMitakaTask(Task):
 
             ellMed = numpy.append(ellMed, ellPerGrid)
             ellPaMed = numpy.append(ellPaMed, ellPaPerGrid)                
+
+        data.ellGridList = ellMed
+        data.ellPaGridList = ellPaMed
 
         scaleFactor = min(xGridSize/xSize, yGridSize/ySize)
 
@@ -988,7 +1034,7 @@ class MeasureSeeingTask(Task):
         pltEllipseMap.add_patch(ell)
         fig.text(0.1 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
 
-        pltEllipseMap.set_title('Size and Ellongation of PSF sources')
+        pltEllipseMap.set_title('Size and Elongation of PSF sources')
         pltEllipseMap.set_xlabel('X (pix)')
         pltEllipseMap.set_ylabel('Y (pix)')
 
@@ -1191,7 +1237,7 @@ class MeasureSeeingTask(Task):
                 ell = patches.Ellipse((xEllipse, yEllipse), 2.*aa*scaleFactor, 2.*bb*scaleFactor,
                                       angle=ellPa, linewidth=2., fill=False, zorder=2)
                 pltEllipse.add_patch(ell)
-        pltEllipse.set_title('Size and Ellongation of PSF sources')
+        pltEllipse.set_title('Size and Elongation of PSF sources')
         pltEllipse.set_xlabel('X (pix)')
         pltEllipse.set_ylabel('Y (pix)')
 
