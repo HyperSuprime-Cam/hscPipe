@@ -13,6 +13,8 @@ import math
 import lsst.pex.config as pexConfig
 import lsst.pex.logging as pexLog
 import lsst.afw.table as afwTable
+import lsst.afw.image as afwImage
+import lsst.afw.geom as afwGeom
 
 from lsst.pipe.base import Task, Struct
 
@@ -144,6 +146,8 @@ class MeasureSeeingMitakaTask(Task):
         if True:
             self.writeSeeingMapList(dataRef, dataPsfLike, exposure)
             self.writeSeeingGridList(dataRef, dataPsfLike, exposure)
+            self.writeSeeingGridFits(dataRef, dataPsfLike, exposure)
+
 
     def writeSeeingMapList(self, dataRef, data, exposure):
         ccdId = int(exposure.getMetadata().get('DET-ID'))
@@ -159,6 +163,7 @@ class MeasureSeeingMitakaTask(Task):
             f.write('%3d %f %f %f %f' % (ccdId, x, y, fwhm, ell))
             f.write('\n')
         f.close()
+
 
     def writeSeeingGridList(self, dataRef, data, exposure):
         ccdId = int(exposure.getMetadata().get('DET-ID'))
@@ -177,6 +182,46 @@ class MeasureSeeingMitakaTask(Task):
             f.write('%3d %f %f %f %f %f %f %f' % (ccdId, x, y, fwhm, ell, pa, a, b))
             f.write('\n')
         f.close()
+
+
+    def writeSeeingGridFits(self, dataRef, data, exposure):
+        """
+        writing out values of fwhm in grids per ccd into FITS
+        condition: current version assumes plotFwhmGrid() has run before this func is called.
+
+        """
+        #ccdId = int(exposure.getMetadata().get('DET-ID'))
+        xList = data.xGridList
+        yList = data.yGridList
+        fwhmList = data.fwhmGridList
+        ellList = data.ellGridList
+        ellPaList = data.ellPaGridList
+        AEllList = data.AEllGridList
+        BEllList = data.BEllGridList
+
+        xSize = data.nxGrid
+        ySize = data.nyGrid
+        print '** (xSize,ySize):(%d,%d)' % (xSize,ySize)
+        gridImageFwhm = afwImage.ImageF(afwGeom.ExtentI(xSize, ySize), 0.0)
+        gridImageEll = afwImage.ImageF(afwGeom.ExtentI(xSize, ySize), 0.0)
+        gridImageEllPa = afwImage.ImageF(afwGeom.ExtentI(xSize, ySize), 0.0)
+
+        if True:
+            index = 0
+            for j in range(ySize):
+                for i in range(xSize): # x/yGridLists sorted in the manner: x is incremented with fixed y
+                    gridImageFwhm.set(i, j, fwhmList[index])
+                    gridImageEll.set(i, j, ellList[index])
+                    gridImageEllPa.set(i, j, ellPaList[index])
+                    index += 1
+
+        fname = getFilename(dataRef, "plotFwhmGrid").replace('png','fits')
+        gridImageFwhm.writeFits(fname)
+        fname = getFilename(dataRef, "plotEllipticityGrid").replace('png','fits')
+        gridImageEll.writeFits(fname)
+        fname = getFilename(dataRef, "plotEllipticityGrid").replace('llipticity', 'llPa').replace('png','fits')
+        gridImageEllPa.writeFits(fname)
+
 
     def setMetadata(self, exposure):
         """Put processing results in header of exposure"""
@@ -331,14 +376,14 @@ class MeasureSeeingMitakaTask(Task):
         yGridSize = self.config.gridSize
         
         # making grids
-        nx = int(numpy.floor(xSize/xGridSize))
-        ny = int(numpy.floor(ySize/yGridSize))
+        nx = int(numpy.floor(float(xSize)/xGridSize))
+        ny = int(numpy.floor(float(ySize)/yGridSize))
 
         xGrids = numpy.array([ (i+0.5)*xGridSize for i in range(nx) ])
         yGrids = numpy.array([ (i+0.5)*yGridSize for i in range(ny) ])
         xMeshGrid, yMeshGrid = numpy.meshgrid(xGrids, yGrids)
         xGridList = numpy.reshape(xMeshGrid, (-1,))
-        yGridList = numpy.reshape(yMeshGrid, (-1,))    
+        yGridList = numpy.reshape(yMeshGrid, (-1,))
 
         # walking through all grid meshes
         fwhmList = numpy.array([])
@@ -357,6 +402,10 @@ class MeasureSeeingMitakaTask(Task):
             # taking median to represent the value in a grid mesh
             fwhmList = numpy.append(fwhmList, numpy.median(fwhmsInGrid))
 
+        # For latter use; this may be a bit entangled way.
+        data.nxGrid = nx
+        data.nyGrid = ny
+        data.yGridList = yGridList
         data.xGridList = xGridList
         data.yGridList = yGridList
         data.fwhmGridList = fwhmList
@@ -412,8 +461,8 @@ class MeasureSeeingMitakaTask(Task):
         yGridSize = self.config.gridSize
 
         # making grids
-        nx = int(numpy.floor(xSize/xGridSize))
-        ny = int(numpy.floor(ySize/yGridSize))
+        nx = int(numpy.floor(float(xSize)/xGridSize))
+        ny = int(numpy.floor(float(ySize)/yGridSize))
 
         xGrids = numpy.array([ (i+0.5)*xGridSize for i in range(nx) ])
         yGrids = numpy.array([ (i+0.5)*yGridSize for i in range(ny) ])
@@ -499,8 +548,8 @@ class MeasureSeeingMitakaTask(Task):
 
         xGridSize = self.config.gridSize
         yGridSize = self.config.gridSize
-        nx = int(numpy.floor(xSize/xGridSize))
-        ny = int(numpy.floor(ySize/yGridSize))
+        nx = int(numpy.floor(float(xSize)/xGridSize))
+        ny = int(numpy.floor(float(ySize)/yGridSize))
 
         xGrids = numpy.array([ (i+0.5)*xGridSize for i in range(nx) ])
         yGrids = numpy.array([ (i+0.5)*yGridSize for i in range(ny) ])
@@ -1116,8 +1165,8 @@ class MeasureSeeingTask(Task):
         yGridSize = self.config.gridSize
         
         # making grids
-        nx = int(numpy.floor(xSize/xGridSize))
-        ny = int(numpy.floor(ySize/yGridSize))
+        nx = int(numpy.floor(float(xSize)/xGridSize))
+        ny = int(numpy.floor(float(ySize)/yGridSize))
 
         xGrids = numpy.array([ (i+0.5)*xGridSize for i in range(nx) ])
         yGrids = numpy.array([ (i+0.5)*yGridSize for i in range(ny) ])
@@ -1193,8 +1242,8 @@ class MeasureSeeingTask(Task):
         yGridSize = self.config.gridSize
 
         # making grids
-        nx = int(numpy.floor(xSize/xGridSize))
-        ny = int(numpy.floor(ySize/yGridSize))
+        nx = int(numpy.floor(float(xSize)/xGridSize))
+        ny = int(numpy.floor(float(ySize)/yGridSize))
 
         xGrids = numpy.array([ (i+0.5)*xGridSize for i in range(nx) ])
         yGrids = numpy.array([ (i+0.5)*yGridSize for i in range(ny) ])
@@ -1277,8 +1326,8 @@ class MeasureSeeingTask(Task):
 
         xGridSize = self.config.gridSize
         yGridSize = self.config.gridSize
-        nx = int(numpy.floor(xSize/xGridSize))
-        ny = int(numpy.floor(ySize/yGridSize))
+        nx = int(numpy.floor(float(xSize)/xGridSize))
+        ny = int(numpy.floor(float(ySize)/yGridSize))
 
         xGrids = numpy.array([ (i+0.5)*xGridSize for i in range(nx) ])
         yGrids = numpy.array([ (i+0.5)*yGridSize for i in range(ny) ])
