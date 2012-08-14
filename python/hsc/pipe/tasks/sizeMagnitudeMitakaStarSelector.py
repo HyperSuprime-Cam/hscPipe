@@ -580,7 +580,7 @@ class SizeMagnitudeMitakaStarSelector(object):
         fwhmListPsfLike = fwhmListForRoughFwhm[indicesSourcesPsfLike]
         fwhmRough = numpy.median(fwhmListPsfLike)
 
-        fwhmListUndistPsfLike = []
+        fwhmUndistListPsfLike = []
         fwhmUndistRough = None
         if self.config.doUndistort:
             fwhmUndistListPsfLike = fwhmUndistListForRoughFwhm[indicesSourcesPsfLike]
@@ -710,7 +710,7 @@ class SizeMagnitudeMitakaStarSelector(object):
         if self.config.doUndistort:
             fwhmListAllToEval = data.fwhmUndistListAll
         else:
-            fwhmListToEval = data.fwhmListAll
+            fwhmListAllToEval = data.fwhmListAll
         indicesSourcesForPsfSeq = [ i for i in data.indicesSourcesFwhmRange if
                                     fwhmListAllToEval[i] > fwhmMin and fwhmListAllToEval[i] < fwhmMax and data.magListAll[i] < magLimPsfSeq ]
         magListForPsfSeq = data.magListAll[indicesSourcesForPsfSeq]
