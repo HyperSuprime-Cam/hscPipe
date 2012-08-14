@@ -19,6 +19,8 @@ import lsst.pex.logging as pexLog
 import lsst.daf.base as dafBase
 import lsst.afw.table as afwTable
 import lsst.afw.math as afwMath
+import lsst.afw.geom as afwGeom
+import lsst.afw.geom.ellipses as geomEllip
 import lsst.meas.algorithms as measAlg
 
 from lsst.pipe.base import Task, Struct
@@ -113,6 +115,11 @@ class SizeMagnitudeMitakaStarSelectorConfig(pexConfig.Config):
         dtype = int,
         default = 0,
     )
+    doUndistort = pexConfig.Field(
+        dtype = bool,
+        doc = "Undistort when evaluating the 2nd moments of sources?",
+        default = False,
+    )
 
 class SizeMagnitudeMitakaStarSelector(object):
     """
@@ -206,6 +213,8 @@ class SizeMagnitudeMitakaStarSelector(object):
 
         # extract a list of psf-like sources
         # goodData is updated as same as dataPsfLike in getStarCandidateList()
+        if self.config.doUndistort:
+            fwhmRough = goodData.fwhmUndistRough
         dataPsfLike = self.getStarCandidateList(dataRef, goodData, fwhmRough, magLimPsfSeq)
 
         exposure.getMetadata().combine(self.metadata)
@@ -344,6 +353,10 @@ class SizeMagnitudeMitakaStarSelector(object):
         IxxListAll = []
         IyyListAll = []
         IxyListAll = []
+        fwhmUndistListAll = []
+        IxxUndistListAll = []
+        IyyUndistListAll = []
+        IxyUndistListAll = []
 
         indicesGoodSources = [] # indices of sources which are not dirty
         indicesSourcesFwhmRange = [] # indices of sources in acceptable fwhm range
@@ -353,6 +366,21 @@ class SizeMagnitudeMitakaStarSelector(object):
         ellPaListAll = []
         AEllListAll = []
         BEllListAll = []
+
+        # Undistorting moments when requested
+        if self.config.doUndistort:
+            detector = exposure.getDetector()
+            distorter = None
+            xy0 = afwGeom.Point2D(0,0)
+            if not detector is None:
+                # Note: we use getCenter() instead of getCenterPixel() because getCenterPixel() assumes
+                # that CCDs are laid out in a regular grid, which may not be true (e.g., HSC).
+                pixSize = detector.getPixelSize()
+                cPix = detector.getCenter().getPixels(pixSize)
+                detSize = detector.getSize().getPixels(pixSize)
+                xy0.setX(cPix[0] - int(0.5*detSize[0]))
+                xy0.setY(cPix[1] - int(0.5*detSize[1]))
+                distorter = detector.getDistortion()
 
         catalogSchema = catalog.table.getSchema()
         nameSaturationFlag = 'flags.pixel.saturated.any'
@@ -369,6 +397,7 @@ class SizeMagnitudeMitakaStarSelector(object):
             Ixy = source.getIxy()
             sigma = math.sqrt(0.5*(Ixx+Iyy))
             fwhm = 2.*math.sqrt(2.*math.log(2.)) * sigma # (pix) assuming Gaussian
+            fwhmToEval = fwhm
 
             fluxAper = source.getApFlux()
             fluxErrAper =  source.getApFluxErr()
@@ -389,6 +418,20 @@ class SizeMagnitudeMitakaStarSelector(object):
             magListAll.append(mag)
             fwhmListAll.append(fwhm)
 
+            if self.config.doUndistort:
+                xpix, ypix = xc + xy0.getX(), yc + xy0.getY()
+                p = afwGeom.Point2D(xpix, ypix)
+                m = distorter.undistort(p, geomEllip.Quadrupole(Ixx, Iyy, Ixy), detector)
+                IxxUndist, IyyUndist, IxyUndist = m.getIxx(), m.getIyy(), m.getIxy()
+                sigma = math.sqrt(0.5*(IxxUndist+IyyUndist))
+                fwhmUndist = 2.*math.sqrt(2.*math.log(2.)) * sigma
+                fwhmToEval = fwhmUndist
+
+                IxxUndistListAll.append(IxxUndist)
+                IyyUndistListAll.append(IyyUndist)
+                IxyUndistListAll.append(IxyUndist)
+                fwhmUndistListAll.append(fwhmUndist)
+
             # these for QA
             ellRet = self.getEllipticityFromSecondmoments(Ixx, Iyy, Ixy)
             ellListAll.append(ellRet.ell)
@@ -403,7 +446,7 @@ class SizeMagnitudeMitakaStarSelector(object):
                 indicesGoodSources.append(iseq)
 
                 # checking if this source is sitting within the search range of Fwhm?
-                if self.config.fwhmMin < fwhm and fwhm < self.config.fwhmMax:
+                if self.config.fwhmMin < fwhmToEval and fwhmToEval < self.config.fwhmMax:
                     indicesSourcesFwhmRange.append(iseq)
                 else:
                     continue
@@ -422,6 +465,10 @@ class SizeMagnitudeMitakaStarSelector(object):
             BEllListAll = numpy.array(BEllListAll),
             indicesGoodSources = indicesGoodSources,
             indicesSourcesFwhmRange = indicesSourcesFwhmRange,
+            IxxUndistListAll = numpy.array(IxxUndistListAll),
+            IyyUndistListAll = numpy.array(IyyUndistListAll),
+            IxyUndistListAll = numpy.array(IxyUndistListAll),
+            fwhmUndistListAll = numpy.array(fwhmUndistListAll),
             )
 
     def getMagLimit(self, dataRef, data):
@@ -504,29 +551,46 @@ class SizeMagnitudeMitakaStarSelector(object):
 
         magListForRoughFwhm = data.magListAll[indicesSourcesForRoughFwhm]
         fwhmListForRoughFwhm = data.fwhmListAll[indicesSourcesForRoughFwhm]
-
-        # below for the QA plots
-        xListForRoughFwhm = data.xListAll[indicesSourcesForRoughFwhm]
-        yListForRoughFwhm = data.yListAll[indicesSourcesForRoughFwhm]
-        IxxListForRoughFwhm = data.IxxListAll[indicesSourcesForRoughFwhm]
-        IyyListForRoughFwhm = data.IyyListAll[indicesSourcesForRoughFwhm]
-        IxyListForRoughFwhm = data.IxyListAll[indicesSourcesForRoughFwhm]
+        if self.config.doUndistort:
+            fwhmUndistListForRoughFwhm = data.fwhmUndistListAll[indicesSourcesForRoughFwhm]
+        else:
+            fwhmUndistListForRoughFwhm = []
 
         data.indicesSourcesForRoughFwhm = indicesSourcesForRoughFwhm
         data.magListForRoughFwhm = magListForRoughFwhm
         data.fwhmListForRoughFwhm = fwhmListForRoughFwhm
+        data.fwhmUndistListForRoughFwhm = fwhmUndistListForRoughFwhm
+
+        # below for the QA plots
+        #xListForRoughFwhm = data.xListAll[indicesSourcesForRoughFwhm]
+        #yListForRoughFwhm = data.yListAll[indicesSourcesForRoughFwhm]
+        #IxxListForRoughFwhm = data.IxxListAll[indicesSourcesForRoughFwhm]
+        #IyyListForRoughFwhm = data.IyyListAll[indicesSourcesForRoughFwhm]
+        #IxyListForRoughFwhm = data.IxyListAll[indicesSourcesForRoughFwhm]
 
         self.log.logdebug("nSampleRoughFwhm: %d" % self.config.nSampleRoughFwhm)
 
         # extracting the given number of most compact sources
-        indicesSourcesPsfLike = numpy.argsort(fwhmListForRoughFwhm)[:self.config.nSampleRoughFwhm]
+
+        if self.config.doUndistort:
+            indicesSourcesPsfLike = numpy.argsort(fwhmUndistListForRoughFwhm)[:self.config.nSampleRoughFwhm]
+        else:
+            indicesSourcesPsfLike = numpy.argsort(fwhmListForRoughFwhm)[:self.config.nSampleRoughFwhm]
         magListPsfLike = magListForRoughFwhm[indicesSourcesPsfLike]
         fwhmListPsfLike = fwhmListForRoughFwhm[indicesSourcesPsfLike]
         fwhmRough = numpy.median(fwhmListPsfLike)
 
+        fwhmListUndistPsfLike = []
+        fwhmUndistRough = None
+        if self.config.doUndistort:
+            fwhmUndistListPsfLike = fwhmUndistListForRoughFwhm[indicesSourcesPsfLike]
+            fwhmUndistRough = numpy.median(fwhmUndistListPsfLike)
+
         data.magListPsfLike = magListPsfLike
         data.fwhmListPsfLike = fwhmListPsfLike
         data.fwhmRough = fwhmRough
+        data.fwhmUndistListPsfLike = fwhmUndistListPsfLike
+        data.fwhmUndistRough = fwhmUndistRough
 
         if self.debugFlag:
             print '*** fwhmListForRoughFwhm:', fwhmListForRoughFwhm
@@ -643,11 +707,20 @@ class SizeMagnitudeMitakaStarSelector(object):
         fwhmMin = fwhmRough - self.config.fwhmMarginFinal
         fwhmMax = fwhmRough + self.config.fwhmMarginFinal
 
+        if self.config.doUndistort:
+            fwhmListAllToEval = data.fwhmUndistListAll
+        else:
+            fwhmListToEval = data.fwhmListAll
         indicesSourcesForPsfSeq = [ i for i in data.indicesSourcesFwhmRange if
-                                    data.fwhmListAll[i] > fwhmMin and data.fwhmListAll[i] < fwhmMax and data.magListAll[i] < magLimPsfSeq
-                                    ]
+                                    fwhmListAllToEval[i] > fwhmMin and fwhmListAllToEval[i] < fwhmMax and data.magListAll[i] < magLimPsfSeq ]
         magListForPsfSeq = data.magListAll[indicesSourcesForPsfSeq]
         fwhmListForPsfSeq = data.fwhmListAll[indicesSourcesForPsfSeq]
+        if self.config.doUndistort:
+            fwhmUndistListForPsfSeq = data.fwhmUndistListAll[indicesSourcesForPsfSeq]
+            fwhmListForPsfSeqToEval = fwhmUndistListForPsfSeq
+        else:
+            fwhmUndistListForPsfSeq = []
+            fwhmListForPsfSeqToEval = fwhmListForPsfSeq
 
         #data.indicesForPsfSeq = indicesSourcesForPsfSeq
         #data.magListForPsfSeq = magListForPsfSeq
@@ -659,7 +732,7 @@ class SizeMagnitudeMitakaStarSelector(object):
         fwhmStat = afwMath.MEDIAN
         sigmaStat = afwMath.STDEVCLIP
         sctrl = afwMath.StatisticsControl(clipSigma, nIter)
-        stats = afwMath.makeStatistics(fwhmListForPsfSeq, fwhmStat | sigmaStat, sctrl)
+        stats = afwMath.makeStatistics(fwhmListForPsfSeqToEval, fwhmStat | sigmaStat, sctrl)
         medianFwhmPsfSeq = stats.getValue(fwhmStat)
         sigmaFwhmPsfSeq = stats.getValue(sigmaStat)
 
@@ -669,8 +742,9 @@ class SizeMagnitudeMitakaStarSelector(object):
 
         fwhmPsfSeqMin = medianFwhmPsfSeq - self.config.fwhmMarginNsigma*sigmaFwhmPsfSeq
         fwhmPsfSeqMax = medianFwhmPsfSeq + self.config.fwhmMarginNsigma*sigmaFwhmPsfSeq
+
         indicesSourcesPsfLikeRobust = [ i for i in data.indicesSourcesFwhmRange if
-                                        data.fwhmListAll[i] > fwhmPsfSeqMin and data.fwhmListAll[i] < fwhmPsfSeqMax
+                                       fwhmListAllToEval[i] > fwhmPsfSeqMin and fwhmListAllToEval[i] < fwhmPsfSeqMax 
                                         and data.magListAll[i] < magLimPsfCand  ]
 
         numFwhmPsfLikeRobust = len(indicesSourcesPsfLikeRobust)
@@ -715,6 +789,7 @@ class SizeMagnitudeMitakaStarSelector(object):
         data.indicesForPsfSeq = indicesSourcesForPsfSeq
         data.magListForPsfSeq = magListForPsfSeq
         data.fwhmListForPsfSeq = fwhmListForPsfSeq
+        data.fwhmUndistListForPsfSeq = fwhmUndistListForPsfSeq
         data.magLimPsfSeq = magLimPsfSeq
         data.magLimPsfCand = magLimPsfCand
         data.medianFwhmPsfSeq = medianFwhmPsfSeq
