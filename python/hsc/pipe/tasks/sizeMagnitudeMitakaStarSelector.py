@@ -118,7 +118,7 @@ class SizeMagnitudeMitakaStarSelectorConfig(pexConfig.Config):
     doUndistort = pexConfig.Field(
         dtype = bool,
         doc = "Undistort when evaluating the 2nd moments of sources?",
-        default = False,
+        default = True,
     )
 
 class SizeMagnitudeMitakaStarSelector(object):
@@ -299,6 +299,7 @@ class SizeMagnitudeMitakaStarSelector(object):
             return True
 
     def getEllipticityFromSecondmoments(self, Ixx, Iyy, Ixy):
+        VerySmallValue = 1.0e-10
         if True: # definition by SExtractor
             Val1 = 0.5*(Ixx+Iyy)
             Ixx_Iyy = Ixx-Iyy
@@ -307,10 +308,20 @@ class SizeMagnitudeMitakaStarSelector(object):
                 aa = math.sqrt( Val1 + math.sqrt(Val2) )
                 bb = math.sqrt( Val1 - math.sqrt(Val2) )
                 ell =  1. - bb/aa
-                if math.fabs(Ixx_Iyy) > 1.0e-10:
-                    ellPa = 0.5 * math.degrees(math.atan(2*Ixy / math.fabs(Ixx_Iyy)))
-                else:
-                    ellPa = 0.0
+                if math.fabs(Ixx_Iyy) > VerySmallValue:
+                    tanVal = 2.0 * Ixy / Ixx_Iyy
+                    if tanVal >= 0:
+                        if Ixx_Iyy > 0: # elongation toward x
+                            ellPa = 0.5*math.atan(tanVal)
+                        else: # elongation toward y
+                            ellPa = 0.5*(math.atan(tanVal)+math.pi)
+                    else:
+                        if Ixx_Iyy > 0: # elongation toward x
+                            ellPa = 0.5*(math.atan(tanVal)+2.0*math.pi)
+                        else: # elongation toward y
+                            ellPa = 0.5*(math.atan(tanVal)+math.pi)
+                else: # source is too round to estimate PA of elongation
+                    ellPa = None
             else:
                 ell = None
                 ellPa = None
@@ -320,20 +331,32 @@ class SizeMagnitudeMitakaStarSelector(object):
             # e=sqrt(e1^2+e2^2) where e1=(Ixx-Iyy)/(Ixx+Iyy), e2=2Ixy/(Ixx+Iy)
             # SExtractor's B/A=sqrt((1-e)/(1+e)), ell=1-B/A
             e1 = (Ixx-Iyy)/(Ixx+Iyy)
-            if e1 > 0: 
+            if e1 > 0:
                 e2 = 2.0*Ixy/(Ixx+Iyy)
                 ell = math.sqrt(e1*e1 + e2*e2)
                 fabs_Ixx_Iyy = math.fabs(Ixx-Iyy)
-                if fabs_Ixx_Iyy > 1.0e-10:
-                    ellPa = 0.5 * math.degrees(math.atan(2*Ixy / fabs_Ixx_Iyy))
-                else:
-                    ellPa = 0.0
+                if fabs_Ixx_Iyy > VerySmallValue:
+                    tanVal = 2.0 * Ixy / Ixx_Iyy
+                    if tanVal >= 0:
+                        if Ixx_Iyy > 0: # elongation toward x
+                            ellPa = 0.5*math.atan(tanVal)
+                        else: # elongation toward y
+                            ellPa = 0.5*(math.atan(tanVal)+math.pi)
+                    else:
+                        if Ixx_Iyy > 0: # elongation toward x
+                            ellPa = 0.5*(math.atan(tanVal)+2.0*math.pi)
+                        else: # elongation toward y
+                            ellPa = 0.5*(math.atan(tanVal)+math.pi)
+                else: # source is too round to estimate PA of elongation
+                    ellPa = None
             else:
                 ell = None
                 ellPa = None
 
-            if ellPa is not None:
-                ellPa = 90. - ellPa ## definition of PA to be confirmed
+        if ellPa is not None:
+            #ellPa = 90. - ellPa ## definition of PA to be confirmed
+            ellPa = math.degrees(ellPa)
+            pass
 
         return Struct(
             ell = ell,
