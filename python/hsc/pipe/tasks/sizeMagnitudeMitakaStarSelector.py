@@ -529,7 +529,7 @@ class SizeMagnitudeMitakaStarSelector(object):
         #print '*** magLim: ', magLim
         self.log.info("Mag limit auto-determined: %5.2f or %f (ADU)" %
                  (magLim, numpy.power(10, -0.4*magLim)))
-        self.metadata.add("magLim", numpy.power(10, -0.4*magLim))
+        self.metadata.set("magLim", numpy.power(10, -0.4*magLim))
 
         if self.debugFlag:
             self.log.logdebug("QaSeeing: magHist: %s" % magHist)
@@ -619,7 +619,7 @@ class SizeMagnitudeMitakaStarSelector(object):
             print '*** fwhmListForRoughFwhm:', fwhmListForRoughFwhm
             print '*** fwhmRough:', fwhmRough
         self.log.info("fwhmRough: %f" % fwhmRough)
-        self.metadata.add("fwhmRough", fwhmRough)
+        self.metadata.set("fwhmRough", fwhmRough)
 
         if self.config.doPlots and dataRef is not None:
             #fig = plt.figure()
@@ -670,9 +670,9 @@ class SizeMagnitudeMitakaStarSelector(object):
         ellPaRobust = numpy.median(data.ellPaListPsfLikeRobust)
 
         self.log.info("Robust quantities: %f %f %f" % (fwhmRobust, ellRobust, ellPaRobust))
-        self.metadata.add("fwhmRobust", fwhmRobust)
-        self.metadata.add("ellRobust", ellRobust)
-        self.metadata.add("ellPaRobust", ellPaRobust)
+        self.metadata.set("fwhmRobust", fwhmRobust)
+        self.metadata.set("ellRobust", ellRobust)
+        self.metadata.set("ellPaRobust", ellPaRobust)
 
         if self.config.doPlots and dataRef is not None:
             fig = figure.Figure()
@@ -776,14 +776,14 @@ class SizeMagnitudeMitakaStarSelector(object):
             return None
 
         print '*** medianFwhmPsfSeq:', medianFwhmPsfSeq
-        self.metadata.add("medianFwhmPsfSeq", medianFwhmPsfSeq)
+        self.metadata.set("medianFwhmPsfSeq", medianFwhmPsfSeq)
         print '*** sigmaFwhmPsfSeq:', sigmaFwhmPsfSeq
-        self.metadata.add("sigmaFwhmPsfSeq", sigmaFwhmPsfSeq)
+        self.metadata.set("sigmaFwhmPsfSeq", sigmaFwhmPsfSeq)
         print '*** fwhmPsfSequence(min, max): (%5.3f %5.3f) (pix)' % (fwhmPsfSeqMin, fwhmPsfSeqMax)
-        self.metadata.add("minFwhmPsfSeq", fwhmPsfSeqMin)
-        self.metadata.add("maxFwhmPsfSeq", fwhmPsfSeqMax)
+        self.metadata.set("minFwhmPsfSeq", fwhmPsfSeqMin)
+        self.metadata.set("maxFwhmPsfSeq", fwhmPsfSeqMax)
         print '*** numFwhmPsfLikeRobust:', numFwhmPsfLikeRobust
-        self.metadata.add("numFwhmPsfLikeRobust", numFwhmPsfLikeRobust)
+        self.metadata.set("numFwhmPsfLikeRobust", numFwhmPsfLikeRobust)
 
         magListPsfLikeRobust = data.magListAll[indicesSourcesPsfLikeRobust]
         fwhmListPsfLikeRobust = data.fwhmListAll[indicesSourcesPsfLikeRobust]
