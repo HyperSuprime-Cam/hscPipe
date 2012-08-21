@@ -162,14 +162,15 @@ class MeasureSeeingMitakaTask(Task):
         fwhmList = data.fwhmListPsfLikeRobust
         ellList = data.ellListPsfLikeRobust
         ellPaList = data.ellPaListPsfLikeRobust
-        fname = getFilename(dataRef, "plotSeeingMap").replace('png','txt')
+        AEllList = data.AEllListPsfLikeRobust
+        BEllList = data.BEllListPsfLikeRobust
+        fname = getFilename(dataRef, "tableSeeingMap")
         f = open(fname, 'w')
-        f.write('# 1:ccd 2:x 3:y 4:fwhm 5:ell\n')
-        for (x, y, fwhm, ell) in zip(xList, yList, fwhmList, ellList):
-            f.write('%3d %f %f %f %f' % (ccdId, x, y, fwhm, ell))
+        f.write('# 1:ccd 2:x 3:y 4:fwhm 5:ell 6:pa 7:a 8:b\n')
+        for (x, y, fwhm, ell, pa, a, b) in zip(xList, yList, fwhmList, ellList, ellPaList, AEllList, BEllList):
+            f.write('%3d %f %f %f %f %f %f %f' % (ccdId, x, y, fwhm, ell, pa, a, b))
             f.write('\n')
         f.close()
-
 
     def writeSeeingGridList(self, dataRef, data, exposure):
         ccdId = int(exposure.getMetadata().get('DET-ID'))
@@ -181,7 +182,7 @@ class MeasureSeeingMitakaTask(Task):
         AEllList = data.AEllGridList
         BEllList = data.BEllGridList
 
-        fname = getFilename(dataRef, "plotFwhmGrid").replace('png','txt')
+        fname = getFilename(dataRef, "tableSeeingGrid")
         f = open(fname, 'w')
         f.write('# 1:ccd 2:x 3:y 4:fwhm 5:ell 6:pa 7:a 8:b\n')
         for (x, y, fwhm, ell, pa, a, b) in zip(xList, yList, fwhmList, ellList, ellPaList, AEllList, BEllList):
@@ -221,11 +222,11 @@ class MeasureSeeingMitakaTask(Task):
                     gridImageEllPa.set(i, j, ellPaList[index])
                     index += 1
 
-        fname = getFilename(dataRef, "plotFwhmGrid").replace('png','fits')
+        fname = getFilename(dataRef, "fitsFwhmGrid")
         gridImageFwhm.writeFits(fname)
-        fname = getFilename(dataRef, "plotEllipticityGrid").replace('png','fits')
+        fname = getFilename(dataRef, "fitsEllipticityGrid")
         gridImageEll.writeFits(fname)
-        fname = getFilename(dataRef, "plotEllipticityGrid").replace('llipticity', 'llPa').replace('png','fits')
+        fname = getFilename(dataRef, "fitsEllPaGrid")
         gridImageEllPa.writeFits(fname)
 
 
