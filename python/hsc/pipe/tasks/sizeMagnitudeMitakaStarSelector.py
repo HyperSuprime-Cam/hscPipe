@@ -126,7 +126,7 @@ class SizeMagnitudeMitakaStarSelector(object):
     """
     ConfigClass = SizeMagnitudeMitakaStarSelectorConfig
 
-    def __init__(self, config, schema=None, **kwrgs):
+    def __init__(self, config, schema=None, metadata=None, **kwrgs):
         """
         Construct a star selector that uses second moments and instrumental magnitude
         This is a naive algorithm and should be used with caution.
@@ -155,7 +155,11 @@ class SizeMagnitudeMitakaStarSelector(object):
 
         # In the case of Task-based class, these two are created in the parent class' __init__
         self.log = pexLog.Log.getDefaultLog()
-        self.metadata = dafBase.PropertySet()
+        if metadata is not None:
+            self.metadata = metadata
+        else:
+            self.metadata = dafBase.PropertySet()
+
 
     def selectStars(self, exposure, catalog, dataRef=None, outputStruct=False):
         """
@@ -217,7 +221,13 @@ class SizeMagnitudeMitakaStarSelector(object):
             fwhmRough = goodData.fwhmUndistRough
         dataPsfLike = self.getStarCandidateList(dataRef, goodData, fwhmRough, magLimPsfSeq)
 
-        exposure.getMetadata().combine(self.metadata)
+        # merging local metadata into exposure metadata
+        # n.g., when called from QaTask, this is done again in the QaTask.run() in current version.
+        #exposure.getMetadata().combine(self.metadata)
+        metadata = exposure.getMetadata()
+        for key in self.metadata.names():
+            metadata.set(key, self.metadata.get(key))
+            print '*** local.metadata: %s = %s is set to exposure' % (key, str(self.metadata.get(key)))
 
         if len(catalog) != len(dataPsfLike.xListAll):
             print "Number of catalog sources %d mismatch with gooddata list %d" % (len(catalog), len(dataPsfLike.xListAll))
@@ -264,14 +274,6 @@ class SizeMagnitudeMitakaStarSelector(object):
             return psfCandidateList, dataPsfLike
         else:
             return psfCandidateList
-
-        if self.config.doPlots and dataRef is not None:
-            self.plotSeeingMap(dataRef, dataPsfLike, exposure)
-            self.plotEllipseMap(dataRef, dataPsfLike, exposure)
-            self.plotEllipticityMap(dataRef, dataPsfLike, exposure)
-            self.plotFwhmGrid(dataRef, dataPsfLike, exposure)
-            self.plotEllipseGrid(dataRef, dataPsfLike, exposure)
-            self.plotEllipticityGrid(dataRef, dataPsfLike, exposure)
 
 
     def isGoodSource(self, source, keySaturationCenterFlag, keySaturationFlag):

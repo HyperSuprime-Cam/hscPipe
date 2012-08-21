@@ -12,26 +12,55 @@ class QaTask(Task):
 
     def __init__(self, *args, **kwargs):
         super(QaTask, self).__init__(*args, **kwargs)
-        self.makeSubtask("seeing")
+        self.makeSubtask("seeing", metadata=self.metadata)
+
+        ## initialization of QA values
+        # common
+        self.metadata.set('RERUN', 'NOT_SET')
+        self.metadata.set('FLAG_AUTO', -1)
+        self.metadata.set('FLAG_USR', -1)
+        self.metadata.set('FLAG_TAG', -1)
+        # seeing/starsel
+        self.metadata.set('SEEING_MODE', -1.0)
+        self.metadata.set('ELL_MED', -1.0)
+        self.metadata.set('ELL_PA_MED', -1.0)
+        self.metadata.set("magLim", 99.0)
+        self.metadata.set("fwhmRough", -1.0)
+        self.metadata.set("fwhmRobust", -1.0)
+        self.metadata.set("ellRobust", -1.0)
+        self.metadata.set("ellPaRobust", -1.0)
+        self.metadata.set("medianFwhmPsfSeq", -1.0)
+        self.metadata.set("sigmaFwhmPsfSeq", -1.0)
+        self.metadata.set("minFwhmPsfSeq", -1.0)
+        self.metadata.set("maxFwhmPsfSeq", -1.0)
+        self.metadata.set("numFwhmPsfLikeRobust", -1)
 
     def run(self, dataRef, exposure, sources):
-        self.seeing.run(dataRef, sources, exposure)
+        # initial set of exposure metadata
+        #metadata = exposure.getMetadata()
+        #metadata.combine(self.metadata)
 
-        metadata = exposure.getMetadata()
+        self.seeing.run(dataRef, sources, exposure)
 
         # = flags
         # this part should be done by calculating merit functions somewhere else in a polite manner.
-        metadata.set('FLAG_AUTO', 0)
-        metadata.set('FLAG_USR', 0)
-        metadata.set('FLAG_TAG', 1)
+        self.metadata.set('FLAG_AUTO', 0)
+        self.metadata.set('FLAG_USR', 0)
+        self.metadata.set('FLAG_TAG', 1)
 
         # = info for data management
         # = rerun; assuming directory tree has the fixed form where 'rerun/' is just followed by '$rerun_name/'
         try:
             rerunName = self.getRerunName(dataRef)
-            metadata.set('RERUN', rerunName)
+            self.metadata.set('RERUN', rerunName)
         except:
             self.log.warn("Could not determine rerun from output directory")
+
+        # merging local Qa metadata into exposure metadata
+        metadata = exposure.getMetadata()
+        for key in self.metadata.names():
+            metadata.set(key, self.metadata.get(key))
+            print '*** qa local metadata: %s = %s is set to exposure' % (key, str(self.metadata.get(key)))
 
     def getRerunName(self, sensorRef):
         # rerun: assuming directory tree has the fixed form where 'rerun/' is just followed by '$rerun_name/'

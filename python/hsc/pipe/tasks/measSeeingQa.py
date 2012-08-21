@@ -103,9 +103,14 @@ class MeasureSeeingMitakaTask(Task):
     """
     ConfigClass = MeasureSeeingMitakaConfig
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, metadata=None, *args, **kwargs):
         super(MeasureSeeingMitakaTask, self).__init__(*args, **kwargs)
         self.debugFlag = False
+
+        if metadata is not None:
+            self.metadata = metadata
+        else:
+            pass # task's default metadata is used
 
 #        if exposure is not None:
 #            self.metadata = exposure.getMetadata()
@@ -119,10 +124,10 @@ class MeasureSeeingMitakaTask(Task):
                   # no need in seeng measurement if this starselection is done in psfmeas stage
             schema = catalog.table.getSchema()
             starSel = StarSelMitaka.SizeMagnitudeMitakaStarSelector(
-                config=self.config.starsel,  schema=schema)
+                config=self.config.starsel,  schema=schema, metadata=self.metadata)
         else:
             starSel = StarSelMitaka.SizeMagnitudeMitakaStarSelector(
-                config=StarSelMitaka.SizeMagnitudeMitakaStarSelectorConfig(),  schema=None)
+                config=StarSelMitaka.SizeMagnitudeMitakaStarSelectorConfig(),  schema=None, metadata=self.metadata)
 
         psfCandidateList, dataPsfLike = starSel.selectStars(exposure, catalog, dataRef=dataRef, outputStruct=True)
 
@@ -133,7 +138,8 @@ class MeasureSeeingMitakaTask(Task):
         print '*** ellipticity:', dataPsfLike.ellRobust
         print '*** elongationPa:', dataPsfLike.ellPaRobust
 
-        self.metadata = starSel.metadata
+        # setting local metadata in measSeeing (incl.starsel) into exposure.metadata
+        #self.metadata = starSel.metadata
         self.setMetadata(exposure)
 
         if self.config.doPlots:
@@ -225,13 +231,18 @@ class MeasureSeeingMitakaTask(Task):
 
     def setMetadata(self, exposure):
         """Put processing results in header of exposure"""
+
+        self.metadata.set('SEEING_MODE', self.metadata.get("fwhmRobust"))
+        self.metadata.set('ELL_MED', self.metadata.get("ellRobust"))
+        self.metadata.set('ELL_PA_MED', self.metadata.get("ellPaRobust"))
+
         metadata = exposure.getMetadata()
         metadata.set('SEEING_MODE', self.metadata.get("fwhmRobust"))
         metadata.set('ELL_MED', self.metadata.get("ellRobust"))
         metadata.set('ELL_PA_MED', self.metadata.get("ellPaRobust"))
 
-        for key in self.metadata.names():
-            metadata.set(key, self.metadata.get(key))
+        #for key in self.metadata.names():
+        #    metadata.set(key, self.metadata.get(key))
 
     def plotSeeingMap(self, dataRef, data, exposure):
         """fwhm-map plots"""
@@ -837,7 +848,7 @@ class MeasureSeeingTask(Task):
         #print '*** magLim: ', magLim
         self.log.info("Mag limit auto-determined: %5.2f or %f (ADU)" %
                  (magLim, numpy.power(10, -0.4*magLim)))
-        self.metadata.add("magLim", numpy.power(10, -0.4*magLim))
+        self.metadata.set("magLim", numpy.power(10, -0.4*magLim))
 
         if self.debugFlag:
             self.log.logdebug("QaSeeing: magHist: %s" % magHist)
@@ -902,7 +913,7 @@ class MeasureSeeingTask(Task):
             print '*** fwhmListForRoughFwhm:', fwhmListForRoughFwhm
             print '*** fwhmRough:', fwhmRough
         self.log.info("fwhmRough: %f" % fwhmRough)
-        self.metadata.add("fwhmRough", fwhmRough)
+        self.metadata.set("fwhmRough", fwhmRough)
 
         if self.config.doPlots:
             fig = figure.Figure()
@@ -967,9 +978,9 @@ class MeasureSeeingTask(Task):
         ellPaRobust = numpy.median(ellPaListPsfLikeRobust) 
 
         self.log.info("Robust quantities: %f %f %f" % (fwhmRobust, ellRobust, ellPaRobust))
-        self.metadata.add("fwhmRobust", fwhmRobust)
-        self.metadata.add("ellRobust", ellRobust)
-        self.metadata.add("ellPaRobust", ellPaRobust)
+        self.metadata.set("fwhmRobust", fwhmRobust)
+        self.metadata.set("ellRobust", ellRobust)
+        self.metadata.set("ellPaRobust", ellPaRobust)
 
         if self.config.doPlots:
             fig = figure.Figure()
