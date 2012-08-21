@@ -69,21 +69,32 @@ class SizeMagnitudeMitakaStarSelectorConfig(pexConfig.Config):
         doc = 'Faintest mag for number counting as a fn of instrumnetal mag',
         default = 0.0,
         )
-    nSampleRoughFwhm = pexConfig.Field(
+    nBrightSampleRoughFwhm = pexConfig.Field(
+        dtype = int,
+        doc = 'Number of brightest (non-saturated) objects which are used to determine rough-interim seeing',
+        default = 50, # seems to be too small to capture lager fwhm sources?
+        #default = 100,
+        )
+    nSmallSampleRoughFwhm = pexConfig.Field(
         dtype = int,
         doc = 'Number of smallest objects which are used to determine rough-interim seeing',
-        default = 30,
+        default = 30, # seems to be too small to capture lager fwhm sources?
+        #default = 100,
         )
     fwhmMarginFinal = pexConfig.Field(
         dtype = float,
         doc = 'How many pixels around the peak are used for final seeing estimation as mode',
-        default = 0.5,
+        #default = 0.5, --> too tight to assess width of psf sequence?
+        default = 1.0, # seems to be ok for SC CCD=0
         )
     fwhmMarginNsigma = pexConfig.Field(
         dtype = float,
         doc = 'How many sigmas around the peak fwhm are used for extracting final PSF sources',
         #default = 1.0,
-        default = 1.2,
+        #default = 1.2, # good but not optimal for broad psf sequence
+        default = 1.5, 
+        #default = 2.0, # a bit broad for some data
+        #default = 3., # too broad
         )
     magLimitFaintExtension = pexConfig.Field(
         dtype = float,
@@ -572,6 +583,7 @@ class SizeMagnitudeMitakaStarSelector(object):
 #    def getFwhmRough(self, magListAll, fwhmListAll, indicesSourcesFwhmRange, magLim):
 
         """Estimating roughly-estimated FWHM for sources with mag < magLim"""
+        # saturated sources are already filtered in data.indicesSourcesFwhmRange
         indicesSourcesForRoughFwhm = [i for i in data.indicesSourcesFwhmRange if data.magListAll[i] < magLimSeq ]
 
         magListForRoughFwhm = data.magListAll[indicesSourcesForRoughFwhm]
@@ -593,14 +605,27 @@ class SizeMagnitudeMitakaStarSelector(object):
         #IyyListForRoughFwhm = data.IyyListAll[indicesSourcesForRoughFwhm]
         #IxyListForRoughFwhm = data.IxyListAll[indicesSourcesForRoughFwhm]
 
-        self.log.logdebug("nSampleRoughFwhm: %d" % self.config.nSampleRoughFwhm)
+        self.log.logdebug("nBritestSampleRoughFwhm: %d" % self.config.nBrightSampleRoughFwhm)
+        self.log.logdebug("nSmallestSampleRoughFwhm: %d" % self.config.nSmallSampleRoughFwhm)
 
         # extracting the given number of most compact sources
 
-        if self.config.doUndistort:
-            indicesSourcesPsfLike = numpy.argsort(fwhmUndistListForRoughFwhm)[:self.config.nSampleRoughFwhm]
-        else:
-            indicesSourcesPsfLike = numpy.argsort(fwhmListForRoughFwhm)[:self.config.nSampleRoughFwhm]
+        if True:
+            # first pick n brightest sources, then pick n compact sources of them 
+            indicesSourcesBright = numpy.argsort(magListForRoughFwhm)[:self.config.nBrightSampleRoughFwhm]
+            if self.config.doUndistort:
+                fwhmUndistListForRoughFwhmBright = fwhmUndistListForRoughFwhm[indicesSourcesBright]
+                indicesSourcesSmallOfBright = numpy.argsort(fwhmUndistListForRoughFwhmBright)[:self.config.nSmallSampleRoughFwhm]
+            else:
+                fwhmListForRoughFwhmBright = fwhmListForRoughFwhm[indicesSourcesBright]
+                indicesSourcesSmallOfBright = numpy.argsort(fwhmListForRoughFwhmBright)[:self.config.nSmallSampleRoughFwhm]
+            indicesSourcesPsfLike = indicesSourcesBright[indicesSourcesSmallOfBright]
+        else: # old; not optimized for edge CCDs where psf elongated and so psf sequence is broad in fwhm axis
+            if self.config.doUndistort:
+                indicesSourcesPsfLike = numpy.argsort(fwhmUndistListForRoughFwhm)[:self.config.nSmallSampleRoughFwhm]
+            else:
+                indicesSourcesPsfLike = numpy.argsort(fwhmListForRoughFwhm)[:self.config.nSmallestSampleRoughFwhm]
+
         magListPsfLike = magListForRoughFwhm[indicesSourcesPsfLike]
         fwhmListPsfLike = fwhmListForRoughFwhm[indicesSourcesPsfLike]
         fwhmRough = numpy.median(fwhmListPsfLike)
