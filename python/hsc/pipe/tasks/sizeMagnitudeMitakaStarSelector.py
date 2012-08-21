@@ -227,7 +227,7 @@ class SizeMagnitudeMitakaStarSelector(object):
         metadata = exposure.getMetadata()
         for key in self.metadata.names():
             metadata.set(key, self.metadata.get(key))
-            print '*** local.metadata: %s = %s is set to exposure' % (key, str(self.metadata.get(key)))
+            #print '*** local.metadata: %s = %s is set to exposure' % (key, str(self.metadata.get(key)))
 
         if len(catalog) != len(dataPsfLike.xListAll):
             print "Number of catalog sources %d mismatch with gooddata list %d" % (len(catalog), len(dataPsfLike.xListAll))

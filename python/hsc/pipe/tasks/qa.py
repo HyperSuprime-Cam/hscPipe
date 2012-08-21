@@ -60,7 +60,7 @@ class QaTask(Task):
         metadata = exposure.getMetadata()
         for key in self.metadata.names():
             metadata.set(key, self.metadata.get(key))
-            print '*** qa local metadata: %s = %s is set to exposure' % (key, str(self.metadata.get(key)))
+            #print '*** qa local metadata: %s = %s is set to exposure' % (key, str(self.metadata.get(key)))
 
     def getRerunName(self, sensorRef):
         # rerun: assuming directory tree has the fixed form where 'rerun/' is just followed by '$rerun_name/'
