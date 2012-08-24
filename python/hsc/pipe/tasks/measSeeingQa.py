@@ -13,15 +13,33 @@ import math
 import lsst.pex.config as pexConfig
 import lsst.pex.logging as pexLog
 import lsst.afw.table as afwTable
+import lsst.afw.image as afwImage
+import lsst.afw.geom as afwGeom
 
 from lsst.pipe.base import Task, Struct
 
 import numpy
 
+import hsc.pipe.tasks.sizeMagnitudeMitakaStarSelector as StarSelMitaka
+
 import matplotlib.figure as figure
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigCanvas
 from matplotlib import patches as patches
 
+
+class MeasureSeeingMitakaConfig(pexConfig.Config):
+    doPlots = pexConfig.Field(
+        dtype = bool,
+        doc = "Make plots?",
+        default = True
+        )
+    gridSize = pexConfig.Field(
+        dtype = float,
+        doc = "Size of grid (pixels)",
+        default = 1024
+        )
+
+    starsel = pexConfig.ConfigField(dtype=StarSelMitaka.SizeMagnitudeMitakaStarSelectorConfig, doc="star selection")
 
 class MeasureSeeingConfig(pexConfig.Config):
     fracSrcIni = pexConfig.Field(
@@ -80,6 +98,555 @@ class MeasureSeeingConfig(pexConfig.Config):
         default = 1024
         )
 
+class MeasureSeeingMitakaTask(Task):
+    """
+    """
+    ConfigClass = MeasureSeeingMitakaConfig
+
+    def __init__(self, metadata=None, *args, **kwargs):
+        super(MeasureSeeingMitakaTask, self).__init__(*args, **kwargs)
+        self.debugFlag = False
+
+        if metadata is not None:
+            self.metadata = metadata
+        else:
+            pass # task's default metadata is used
+
+#        if exposure is not None:
+#            self.metadata = exposure.getMetadata()
+#        else:
+#            self.metadata = dafBase.PropertySet()
+
+    def run(self, dataRef, catalog, exposure):
+
+        # instantiating star selector
+        if True: # we need schema (to record star flag) in starselction
+                  # no need in seeng measurement if this starselection is done in psfmeas stage
+            schema = catalog.table.getSchema()
+            starSel = StarSelMitaka.SizeMagnitudeMitakaStarSelector(
+                config=self.config.starsel,  schema=schema, metadata=self.metadata)
+        else:
+            starSel = StarSelMitaka.SizeMagnitudeMitakaStarSelector(
+                config=StarSelMitaka.SizeMagnitudeMitakaStarSelectorConfig(),  schema=None, metadata=self.metadata)
+
+        psfCandidateList, dataPsfLike = starSel.selectStars(exposure, catalog, dataRef=dataRef, outputStruct=True)
+
+        # getting a final fwhm
+        dataPsfLike = starSel.getFwhmRobust(dataRef, dataPsfLike, dataPsfLike.fwhmRough)
+
+        print '*** seeing:', dataPsfLike.fwhmRobust
+        print '*** ellipticity:', dataPsfLike.ellRobust
+        print '*** elongationPa:', dataPsfLike.ellPaRobust
+
+        # setting local metadata in measSeeing (incl.starsel) into exposure.metadata
+        #self.metadata = starSel.metadata
+        self.setMetadata(exposure)
+
+        if self.config.doPlots:
+            self.plotSeeingMap(dataRef, dataPsfLike, exposure)
+            self.plotEllipseMap(dataRef, dataPsfLike, exposure)
+            self.plotEllipticityMap(dataRef, dataPsfLike, exposure)
+            self.plotFwhmGrid(dataRef, dataPsfLike, exposure)
+            self.plotEllipseGrid(dataRef, dataPsfLike, exposure)
+            self.plotEllipticityGrid(dataRef, dataPsfLike, exposure)
+        if True:
+            self.writeSeeingMapList(dataRef, dataPsfLike, exposure)
+            self.writeSeeingGridList(dataRef, dataPsfLike, exposure)
+            self.writeSeeingGridFits(dataRef, dataPsfLike, exposure)
+
+        del dataPsfLike
+        del psfCandidateList
+        del starSel
+
+    def writeSeeingMapList(self, dataRef, data, exposure):
+        ccdId = int(exposure.getMetadata().get('DET-ID'))
+        xList = data.xListPsfLikeRobust
+        yList = data.yListPsfLikeRobust
+        fwhmList = data.fwhmListPsfLikeRobust
+        ellList = data.ellListPsfLikeRobust
+        ellPaList = data.ellPaListPsfLikeRobust
+        AEllList = data.AEllListPsfLikeRobust
+        BEllList = data.BEllListPsfLikeRobust
+        fname = getFilename(dataRef, "tableSeeingMap")
+        f = open(fname, 'w')
+        f.write('# 1:ccd 2:x 3:y 4:fwhm 5:ell 6:pa 7:a 8:b\n')
+        for (x, y, fwhm, ell, pa, a, b) in zip(xList, yList, fwhmList, ellList, ellPaList, AEllList, BEllList):
+            f.write('%3d %f %f %f %f %f %f %f' % (ccdId, x, y, fwhm, ell, pa, a, b))
+            f.write('\n')
+        f.close()
+
+    def writeSeeingGridList(self, dataRef, data, exposure):
+        ccdId = int(exposure.getMetadata().get('DET-ID'))
+        xList = data.xGridList
+        yList = data.yGridList
+        fwhmList = data.fwhmGridList
+        ellList = data.ellGridList
+        ellPaList = data.ellPaGridList
+        AEllList = data.AEllGridList
+        BEllList = data.BEllGridList
+
+        fname = getFilename(dataRef, "tableSeeingGrid")
+        f = open(fname, 'w')
+        f.write('# 1:ccd 2:x 3:y 4:fwhm 5:ell 6:pa 7:a 8:b\n')
+        for (x, y, fwhm, ell, pa, a, b) in zip(xList, yList, fwhmList, ellList, ellPaList, AEllList, BEllList):
+            f.write('%3d %f %f %f %f %f %f %f' % (ccdId, x, y, fwhm, ell, pa, a, b))
+            f.write('\n')
+        f.close()
+
+
+    def writeSeeingGridFits(self, dataRef, data, exposure):
+        """
+        writing out values of fwhm in grids per ccd into FITS
+        condition: current version assumes plotFwhmGrid() has run before this func is called.
+
+        """
+        #ccdId = int(exposure.getMetadata().get('DET-ID'))
+        xList = data.xGridList
+        yList = data.yGridList
+        fwhmList = data.fwhmGridList
+        ellList = data.ellGridList
+        ellPaList = data.ellPaGridList
+        AEllList = data.AEllGridList
+        BEllList = data.BEllGridList
+
+        xSize = data.nxGrid
+        ySize = data.nyGrid
+        print '** (xSize,ySize):(%d,%d)' % (xSize,ySize)
+        gridImageFwhm = afwImage.ImageF(afwGeom.ExtentI(xSize, ySize), 0.0)
+        gridImageEll = afwImage.ImageF(afwGeom.ExtentI(xSize, ySize), 0.0)
+        gridImageEllPa = afwImage.ImageF(afwGeom.ExtentI(xSize, ySize), 0.0)
+
+        if True:
+            index = 0
+            for j in range(ySize):
+                for i in range(xSize): # x/yGridLists sorted in the manner: x is incremented with fixed y
+                    gridImageFwhm.set(i, j, fwhmList[index])
+                    gridImageEll.set(i, j, ellList[index])
+                    gridImageEllPa.set(i, j, ellPaList[index])
+                    index += 1
+
+        fname = getFilename(dataRef, "fitsFwhmGrid")
+        gridImageFwhm.writeFits(fname)
+        fname = getFilename(dataRef, "fitsEllipticityGrid")
+        gridImageEll.writeFits(fname)
+        fname = getFilename(dataRef, "fitsEllPaGrid")
+        gridImageEllPa.writeFits(fname)
+
+
+    def setMetadata(self, exposure):
+        """Put processing results in header of exposure"""
+
+        self.metadata.set('SEEING_MODE', self.metadata.get("fwhmRobust"))
+        self.metadata.set('ELL_MED', self.metadata.get("ellRobust"))
+        self.metadata.set('ELL_PA_MED', self.metadata.get("ellPaRobust"))
+
+        metadata = exposure.getMetadata()
+        metadata.set('SEEING_MODE', self.metadata.get("fwhmRobust"))
+        metadata.set('ELL_MED', self.metadata.get("ellRobust"))
+        metadata.set('ELL_PA_MED', self.metadata.get("ellPaRobust"))
+
+        #for key in self.metadata.names():
+        #    metadata.set(key, self.metadata.get(key))
+
+    def plotSeeingMap(self, dataRef, data, exposure):
+        """fwhm-map plots"""
+
+        xSize, ySize = exposure.getWidth(), exposure.getHeight()
+        facSize = 10.0 / max(xSize,ySize)  # targeting 10 inch in size
+        wFig = xSize * facSize * 1.3
+        hFig = ySize * facSize
+        fig = figure.Figure(figsize=(wFig,hFig))
+        canvas = FigCanvas(fig)
+        pltFwhmMap = fig.add_axes([0.2, 0.1, 0.7, 0.8]) # left,bottom,width,height
+        pltFwhmMap.set_xlim(0, xSize)
+        pltFwhmMap.set_ylim(0, ySize)
+        pointSize = math.pi*(10*data.fwhmListPsfLikeRobust/2)**2. # 10pix=2arcsec fwhm = 50 point radius
+        pltFwhmMap.scatter(data.xListPsfLikeRobust, data.yListPsfLikeRobust, s=pointSize, marker='o',
+                           color=None, facecolor=(1,1,1,0), label='PSF sample')
+        #pltFwhmMap.legend()
+
+        # reference sample point
+        fwhmPix = numpy.array([5.0]) # pixel in fwhm
+        pointSize = math.pi*(10*fwhmPix/2)**2.
+        pltFwhmMap.scatter([0.1*xSize], [0.9*ySize], s=pointSize, marker='o', color='magenta',
+                           facecolor=(1,1,1,0), label='PSF sample')        
+        fig.text(0.1 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
+
+        pltFwhmMap.set_title('FWHM of PSF sources')
+        pltFwhmMap.set_xlabel('X (pix)')
+        pltFwhmMap.set_ylabel('Y (pix)')
+
+        fname = getFilename(dataRef, "plotSeeingMap")
+        fig.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
+                    format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
+
+        del fig
+        del pltFwhmMap
+        del canvas
+
+    def plotEllipseMap(self, dataRef, data, exposure):
+        """psfellipse-map plots"""
+        xSize, ySize = exposure.getWidth(), exposure.getHeight()
+
+        facSize = 10.0 / max(xSize,ySize)  # targeting 10 inch in size
+        wFig = xSize * facSize * 1.2
+        hFig = ySize * facSize
+        fig = figure.Figure(figsize=(wFig,hFig))
+        canvas = FigCanvas(fig)
+        pltEllipseMap = fig.add_axes([0.2, 0.1, 0.7, 0.8]) # left,bottom,width,height
+        
+        pltEllipseMap.set_xlim(0, xSize)
+        pltEllipseMap.set_ylim(0, ySize)
+        scaleFactor = 100.  # 10pix~2arcsec (width) -> 1000pix
+        for xEllipse, yEllipse, aa, bb, ellPa in zip(data.xListPsfLikeRobust, data.yListPsfLikeRobust,
+                                                     data.AEllListPsfLikeRobust, data.BEllListPsfLikeRobust,
+                                                     data.ellPaListPsfLikeRobust):
+            if all([aa, bb, ellPa]):
+                ell = patches.Ellipse((xEllipse, yEllipse), 2.*aa*scaleFactor, 2.*bb*scaleFactor,
+                                      angle=ellPa, linewidth=2., fill=False, zorder=2)
+                pltEllipseMap.add_patch(ell)
+
+        # reference sample point
+        fwhmPix = aa = bb = 2.5 # pixel in A, B (in half width)
+        ell = patches.Ellipse((0.1*xSize, 0.9*ySize), 2.*aa*scaleFactor, 2.*bb*scaleFactor, angle=0.,
+                              linewidth=4., color='magenta', fill=False, zorder=2)
+        pltEllipseMap.add_patch(ell)
+        fig.text(0.1 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
+
+        pltEllipseMap.set_title('Size and Elongation of PSF sources')
+        pltEllipseMap.set_xlabel('X (pix)')
+        pltEllipseMap.set_ylabel('Y (pix)')
+
+        fname = getFilename(dataRef, "plotEllipseMap")
+        fig.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
+                    format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
+
+        del fig
+        del pltEllipseMap
+        del canvas
+
+    def plotEllipticityMap(self, dataRef, data, exposure):
+        """ellipticity-map plots"""
+
+        xSize, ySize = exposure.getWidth(), exposure.getHeight()
+        facSize = 10.0 / max(xSize,ySize)  # targeting 10 inch in size
+        wFig = xSize * facSize * 1.3
+        hFig = ySize * facSize
+        fig = figure.Figure(figsize=(wFig,hFig))
+        canvas = FigCanvas(fig)
+
+        pltEllMap = fig.add_axes([0.2, 0.1, 0.7, 0.8]) # left,bottom,width,height
+        pltEllMap.set_xlim(0, xSize)
+        pltEllMap.set_ylim(0, ySize)
+
+        ellX = numpy.array([ell*numpy.cos(numpy.radians(ellPa)) for ell, ellPa in 
+                            zip(data.ellListPsfLikeRobust, data.ellPaListPsfLikeRobust) if all([ell, ellPa])])
+        ellY = numpy.array([ell*numpy.sin(numpy.radians(ellPa)) for ell, ellPa in
+                            zip(data.ellListPsfLikeRobust, data.ellPaListPsfLikeRobust) if all([ell, ellPa])])
+        
+        Q = pltEllMap.quiver(
+            data.xListPsfLikeRobust, data.yListPsfLikeRobust,
+            #data.ellListPsfLikeRobust*numpy.cos(ellPaRadianListPsfLikeRobust),
+            #data.ellListPsfLikeRobust*numpy.sin(ellPaRadianListPsfLikeRobust),
+            ellX, ellY,
+            units = 'x', # scale is based on multiplication of 'x (pixel)'
+            angles = 'uv',
+            #angles = data.ellPaRobust,
+            scale = 0.0005,   # (ell/pix)
+            # 1pix corresponds to this value of ellipticity --> 1000pix = ellipticity 0.02 for full CCD size.
+            # and scaled by using (GridSize(in shorter axis) / CcdSize)
+            scale_units = 'x',
+            headwidth=0,
+            headlength=0,
+            headaxislength=0,
+            label='PSF sample'
+            )
+
+        #plt.quiverkey(Q, 0.05, 1.05, 0.05, 'e=0.05', labelpos='W')
+
+        pltEllMap.set_title('Ellipticity of PSF sources')
+        pltEllMap.set_xlabel('X (pix)')
+        pltEllMap.set_ylabel('Y (pix)')
+        pltEllMap.legend()
+
+        fname = getFilename(dataRef, "plotEllipticityMap")
+        fig.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
+                    format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
+
+        del fig
+        del pltEllMap
+        del canvas
+
+    def plotFwhmGrid(self, dataRef, data, exposure):
+        """fwhm-in-grids plots"""
+        xSize, ySize = exposure.getWidth(), exposure.getHeight()
+        facSize = 10.0 / max(xSize,ySize)  # targeting 10 inch in size
+        wFig = xSize * facSize * 1.3
+        hFig = ySize * facSize
+        fig = figure.Figure(figsize=(wFig,hFig))
+        canvas = FigCanvas(fig)
+        pltFwhm = fig.add_axes([0.2, 0.1, 0.7, 0.8]) # left,bottom,width,height
+
+        pltFwhm.set_xlim(0, xSize)
+        pltFwhm.set_ylim(0, ySize)
+
+        xGridSize = self.config.gridSize
+        yGridSize = self.config.gridSize
+        
+        # making grids
+        nx = int(numpy.floor(float(xSize)/xGridSize))
+        ny = int(numpy.floor(float(ySize)/yGridSize))
+
+        xGrids = numpy.array([ (i+0.5)*xGridSize for i in range(nx) ])
+        yGrids = numpy.array([ (i+0.5)*yGridSize for i in range(ny) ])
+        xMeshGrid, yMeshGrid = numpy.meshgrid(xGrids, yGrids)
+        xGridList = numpy.reshape(xMeshGrid, (-1,))
+        yGridList = numpy.reshape(yMeshGrid, (-1,))
+
+        # walking through all grid meshes
+        fwhmList = numpy.array([])
+        for xGridCenter, yGridCenter in zip(xGridList, yGridList):
+            xGridMin = xGridCenter - xGridSize/2.
+            xGridMax = xGridCenter + xGridSize/2.
+            yGridMin = yGridCenter - yGridSize/2.
+            yGridMax = yGridCenter + yGridSize/2.
+
+            fwhmsInGrid = numpy.array([])
+            for xFwhm, yFwhm, fwhm in zip(data.xListPsfLikeRobust, data.yListPsfLikeRobust,
+                                          data.fwhmListPsfLikeRobust):
+                if xGridMin <= xFwhm and xFwhm < xGridMax and yGridMin <= yFwhm and yFwhm < yGridMax:
+                    if fwhm is not None:
+                        fwhmsInGrid = numpy.append(fwhmsInGrid, fwhm)
+            # taking median to represent the value in a grid mesh
+            fwhmList = numpy.append(fwhmList, numpy.median(fwhmsInGrid))
+
+        # For latter use; this may be a bit entangled way.
+        data.nxGrid = nx
+        data.nyGrid = ny
+        data.yGridList = yGridList
+        data.xGridList = xGridList
+        data.yGridList = yGridList
+        data.fwhmGridList = fwhmList
+
+        # 10pix=2arcsec(fwhm)=500 point(radius) (to be ~0.6*min(xGridSize, yGridSize)?)
+        pointRadius = 100*fwhmList/2.
+        scaleFactor = min(xGridSize/xSize, yGridSize/ySize)
+        pointRadius *= scaleFactor    
+        pointArea = math.pi*(pointRadius)**2.
+
+        pltFwhm.scatter(xGridList, yGridList, s=pointArea, marker='o', color=None, facecolor=(1,1,1,0),
+                        linewidth=5.0, label='PSF sample')
+
+        # reference sample symbol
+        fwhmPix = 5.0 # 5pix in fwhm
+        pointRadius = 100*numpy.array([fwhmPix])/2. 
+        scaleFactor = min(xGridSize/xSize, yGridSize/ySize)
+        pointRadius *= scaleFactor    
+        pointArea = math.pi*(pointRadius)**2.
+        pltFwhm.scatter([0.1 * xSize], [0.9 * ySize], s=pointArea, marker='o', color='magenta',
+                        facecolor=(1,1,1,0), linewidth=8.0, label='PSF sample')
+        fig.text(0.1 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
+
+        pltFwhm.set_title('FWHM of PSF sources')
+        pltFwhm.set_xlabel('X (pix)')
+        pltFwhm.set_ylabel('Y (pix)')
+
+        pltFwhm.set_xticks([ xc+xGridSize/2. for xc in xGridList ])
+        pltFwhm.set_yticks([ yc+yGridSize/2. for yc in yGridList ])
+        pltFwhm.grid()
+
+        fname = getFilename(dataRef, "plotFwhmGrid")
+        fig.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait',
+                    papertype=None, format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
+
+        del fig
+        del pltFwhm
+        del canvas
+
+    def plotEllipseGrid(self, dataRef, data, exposure):
+        xSize, ySize = exposure.getWidth(), exposure.getHeight()
+
+        facSize = 10.0 / max(xSize,ySize)  # targeting 10 inch in size
+        wFig = xSize * facSize * 1.2
+        hFig = ySize * facSize
+        fig = figure.Figure(figsize=(wFig,hFig))
+        canvas = FigCanvas(fig)
+        pltEllipse = fig.add_axes([0.2, 0.1, 0.7, 0.8]) # left,bottom,width,height
+
+        pltEllipse.set_xlim(0, xSize)
+        pltEllipse.set_ylim(0, ySize)
+
+        xGridSize = self.config.gridSize
+        yGridSize = self.config.gridSize
+
+        # making grids
+        nx = int(numpy.floor(float(xSize)/xGridSize))
+        ny = int(numpy.floor(float(ySize)/yGridSize))
+
+        xGrids = numpy.array([ (i+0.5)*xGridSize for i in range(nx) ])
+        yGrids = numpy.array([ (i+0.5)*yGridSize for i in range(ny) ])
+        xMeshGrid, yMeshGrid = numpy.meshgrid(xGrids, yGrids)
+        xGridList = numpy.reshape(xMeshGrid, (-1,))
+        yGridList = numpy.reshape(yMeshGrid, (-1,))    
+
+        # walking through all grid meshes
+        AEllList = numpy.array([])
+        BEllList = numpy.array([])
+        ellPaList = numpy.array([])        
+        for xGridCenter, yGridCenter in zip(xGridList, yGridList):
+            xGridMin = xGridCenter - xGridSize/2.
+            xGridMax = xGridCenter + xGridSize/2.
+            yGridMin = yGridCenter - yGridSize/2.
+            yGridMax = yGridCenter + yGridSize/2.
+
+            AEllsInGrid = numpy.array([])
+            BEllsInGrid = numpy.array([])        
+            ellPasInGrid = numpy.array([])
+            for xEllipse, yEllipse, aa, bb, ellPa in zip(data.xListPsfLikeRobust, data.yListPsfLikeRobust,
+                                                         data.AEllListPsfLikeRobust,
+                                                         data.BEllListPsfLikeRobust,
+                                                         data.ellPaListPsfLikeRobust):
+                if xGridMin <= xEllipse and xEllipse < xGridMax and \
+                        yGridMin <= yEllipse and yEllipse < yGridMax:
+                    if all([aa, bb, ellPa]):
+                        AEllsInGrid = numpy.append(AEllsInGrid, aa)
+                        BEllsInGrid = numpy.append(BEllsInGrid, bb)
+                        ellPasInGrid = numpy.append(ellPasInGrid, ellPa)
+            # taking median to represent the value in a grid mesh
+            AEllList = numpy.append(AEllList, numpy.median(AEllsInGrid))
+            BEllList = numpy.append(BEllList, numpy.median(BEllsInGrid))        
+            ellPaList = numpy.append(ellPaList, numpy.median(ellPasInGrid))        
+
+        data.AEllGridList = AEllList
+        data.BEllGridList = BEllList
+
+        # 10pix=2arcsec(fwhm)==>A=0.6*gridSize~1200pix(for whole_CCD)
+        scaleFactor = (1/10.)*0.8*min(xGridSize, yGridSize)
+        for xEllipse, yEllipse, aa, bb, ellPa in zip(xGridList, yGridList, AEllList, BEllList, ellPaList):
+            if all([aa, bb, ellPa]):
+                ell = patches.Ellipse((xEllipse, yEllipse), 2.*aa*scaleFactor, 2.*bb*scaleFactor,
+                                      angle=ellPa, linewidth=2., fill=False, zorder=2)
+                pltEllipse.add_patch(ell)
+        pltEllipse.set_title('Size and Elongation of PSF sources')
+        pltEllipse.set_xlabel('X (pix)')
+        pltEllipse.set_ylabel('Y (pix)')
+
+        # reference sample point
+        fwhmPix = 5 # pixel in A, B (in half width)
+        aa = bb = fwhmPix/2.
+        ell = patches.Ellipse((0.1*xSize, 0.9*ySize), 2.*aa*scaleFactor, 2.*bb*scaleFactor, angle=0.,
+                              linewidth=4., color='magenta', fill=False, zorder=2)
+        pltEllipse.add_patch(ell)
+        fig.text(0.1 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
+
+        pltEllipse.set_xticks([ xc+xGridSize/2. for xc in xGridList ])
+        pltEllipse.set_yticks([ yc+yGridSize/2. for yc in yGridList ])
+        pltEllipse.grid()
+
+        fname = getFilename(dataRef, "plotEllipseGrid")
+        fig.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
+                    format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
+
+        del fig
+        del pltEllipse
+        del canvas
+
+    def plotEllipticityGrid(self, dataRef, data, exposure):
+        """ellipticity-in-grids plots"""
+        # http://stackoverflow.com/questions/9382664/python-matplotlib-imshow-custom-tickmarks
+    
+        xSize, ySize = exposure.getWidth(), exposure.getHeight()
+        facSize = 10.0 / max(xSize,ySize)  # targeting 10 inch in size
+        wFig = xSize * facSize * 1.2
+        hFig = ySize * facSize
+        fig = figure.Figure(figsize=(wFig,hFig))
+        canvas = FigCanvas(fig)
+
+        pltEll = fig.add_axes([0.2, 0.1, 0.7, 0.8]) # left,bottom,width,height
+        pltEll.set_xlim(0, xSize)
+        pltEll.set_ylim(0, ySize)
+
+        xGridSize = self.config.gridSize
+        yGridSize = self.config.gridSize
+        nx = int(numpy.floor(float(xSize)/xGridSize))
+        ny = int(numpy.floor(float(ySize)/yGridSize))
+
+        xGrids = numpy.array([ (i+0.5)*xGridSize for i in range(nx) ])
+        yGrids = numpy.array([ (i+0.5)*yGridSize for i in range(ny) ])
+        xMeshGrid, yMeshGrid = numpy.meshgrid(xGrids, yGrids)
+        xGridList = numpy.reshape(xMeshGrid, (-1,))
+        yGridList = numpy.reshape(yMeshGrid, (-1,))            
+
+        ellXList = numpy.array([])
+        ellYList = numpy.array([])
+        ellMed = numpy.array([])
+        ellPaMed = numpy.array([])
+        # walking through all grid meshes
+        for xGridCenter, yGridCenter in zip(xGridList, yGridList):
+            xGridMin = xGridCenter - xGridSize/2.
+            xGridMax = xGridCenter + xGridSize/2.
+            yGridMin = yGridCenter - yGridSize/2.
+            yGridMax = yGridCenter + yGridSize/2.
+
+            ellsInGrid = numpy.array([])
+            ellPasInGrid = numpy.array([])
+            for xEll, yEll, ell, ellPa in zip(data.xListPsfLikeRobust, data.yListPsfLikeRobust,
+                                              data.ellListPsfLikeRobust, data.ellPaListPsfLikeRobust):
+                if (xGridMin <= xEll) and (xEll < xGridMax) and (yGridMin <= yEll) and (yEll < yGridMax):
+                    if all([ell, ellPa]):
+                        ellsInGrid = numpy.append(ellsInGrid, ell)
+                        ellPasInGrid = numpy.append(ellPasInGrid, ellPa)
+            # taking median to represent the value in a grid mesh
+            ellPerGrid = numpy.median(ellsInGrid)
+            ellPaPerGrid = numpy.median(ellPasInGrid)
+
+            ellXList = numpy.append(ellXList, ellPerGrid*numpy.cos(numpy.radians(ellPaPerGrid)))
+            ellYList = numpy.append(ellYList, ellPerGrid*numpy.sin(numpy.radians(ellPaPerGrid)))
+
+            ellMed = numpy.append(ellMed, ellPerGrid)
+            ellPaMed = numpy.append(ellPaMed, ellPaPerGrid)                
+
+        data.ellGridList = ellMed
+        data.ellPaGridList = ellPaMed
+
+        scaleFactor = min(xGridSize/xSize, yGridSize/ySize)
+
+        Q = pltEll.quiver(
+            xGridList, yGridList,
+            ellXList, ellYList,    # ellipticity 1 ~ 1000?
+            units = 'x', # scale is based on multiplication of 'x (pixel)'
+            angles = 'uv',
+            #angles = ellPaMed,
+            scale = (2e-5 / scaleFactor),   # (ell/pix)
+            # 1pix corresponds to this value of ellipticity --> 1000pix = ellipticity 0.02 for full CCD size.
+            # and scaled by using (GridSize(in shorter axis) / CcdSize)
+            scale_units = 'x',
+            headwidth=0,
+            headlength=0,
+            headaxislength=0,
+            width = 50,
+            #label='PSF sample'
+            #angles = 'xy',
+            pivot = 'middle',
+            )
+        #plt.quiverkey(Q, 0.05, 1.05, 0.05, 'e=0.05', labelpos='W')
+
+        pltEll.set_xticks([ xc+xGridSize/2. for xc in xGridList ])
+        pltEll.set_yticks([ yc+yGridSize/2. for yc in yGridList ])
+        pltEll.grid()
+
+        pltEll.set_title('Ellipticity of PSF sources')
+        pltEll.set_xlabel('X (pix)')
+        pltEll.set_ylabel('Y (pix)')
+
+
+        fname = getFilename(dataRef, "plotEllipticityGrid")
+        fig.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
+                    format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
+
+        del fig
+        del pltEll
+        del canvas
 
 class MeasureSeeingTask(Task):
     """
@@ -290,7 +857,7 @@ class MeasureSeeingTask(Task):
         #print '*** magLim: ', magLim
         self.log.info("Mag limit auto-determined: %5.2f or %f (ADU)" %
                  (magLim, numpy.power(10, -0.4*magLim)))
-        self.metadata.add("magLim", numpy.power(10, -0.4*magLim))
+        self.metadata.set("magLim", numpy.power(10, -0.4*magLim))
 
         if self.debugFlag:
             self.log.logdebug("QaSeeing: magHist: %s" % magHist)
@@ -355,7 +922,7 @@ class MeasureSeeingTask(Task):
             print '*** fwhmListForRoughFwhm:', fwhmListForRoughFwhm
             print '*** fwhmRough:', fwhmRough
         self.log.info("fwhmRough: %f" % fwhmRough)
-        self.metadata.add("fwhmRough", fwhmRough)
+        self.metadata.set("fwhmRough", fwhmRough)
 
         if self.config.doPlots:
             fig = figure.Figure()
@@ -420,9 +987,9 @@ class MeasureSeeingTask(Task):
         ellPaRobust = numpy.median(ellPaListPsfLikeRobust) 
 
         self.log.info("Robust quantities: %f %f %f" % (fwhmRobust, ellRobust, ellPaRobust))
-        self.metadata.add("fwhmRobust", fwhmRobust)
-        self.metadata.add("ellRobust", ellRobust)
-        self.metadata.add("ellPaRobust", ellPaRobust)
+        self.metadata.set("fwhmRobust", fwhmRobust)
+        self.metadata.set("ellRobust", ellRobust)
+        self.metadata.set("ellPaRobust", ellPaRobust)
 
         if self.config.doPlots:
             fig = figure.Figure()
@@ -536,7 +1103,7 @@ class MeasureSeeingTask(Task):
         pltEllipseMap.add_patch(ell)
         fig.text(0.1 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
 
-        pltEllipseMap.set_title('Size and Ellongation of PSF sources')
+        pltEllipseMap.set_title('Size and Elongation of PSF sources')
         pltEllipseMap.set_xlabel('X (pix)')
         pltEllipseMap.set_ylabel('Y (pix)')
 
@@ -618,8 +1185,8 @@ class MeasureSeeingTask(Task):
         yGridSize = self.config.gridSize
         
         # making grids
-        nx = int(numpy.floor(xSize/xGridSize))
-        ny = int(numpy.floor(ySize/yGridSize))
+        nx = int(numpy.floor(float(xSize)/xGridSize))
+        ny = int(numpy.floor(float(ySize)/yGridSize))
 
         xGrids = numpy.array([ (i+0.5)*xGridSize for i in range(nx) ])
         yGrids = numpy.array([ (i+0.5)*yGridSize for i in range(ny) ])
@@ -695,8 +1262,8 @@ class MeasureSeeingTask(Task):
         yGridSize = self.config.gridSize
 
         # making grids
-        nx = int(numpy.floor(xSize/xGridSize))
-        ny = int(numpy.floor(ySize/yGridSize))
+        nx = int(numpy.floor(float(xSize)/xGridSize))
+        ny = int(numpy.floor(float(ySize)/yGridSize))
 
         xGrids = numpy.array([ (i+0.5)*xGridSize for i in range(nx) ])
         yGrids = numpy.array([ (i+0.5)*yGridSize for i in range(ny) ])
@@ -739,7 +1306,7 @@ class MeasureSeeingTask(Task):
                 ell = patches.Ellipse((xEllipse, yEllipse), 2.*aa*scaleFactor, 2.*bb*scaleFactor,
                                       angle=ellPa, linewidth=2., fill=False, zorder=2)
                 pltEllipse.add_patch(ell)
-        pltEllipse.set_title('Size and Ellongation of PSF sources')
+        pltEllipse.set_title('Size and Elongation of PSF sources')
         pltEllipse.set_xlabel('X (pix)')
         pltEllipse.set_ylabel('Y (pix)')
 
@@ -779,8 +1346,8 @@ class MeasureSeeingTask(Task):
 
         xGridSize = self.config.gridSize
         yGridSize = self.config.gridSize
-        nx = int(numpy.floor(xSize/xGridSize))
-        ny = int(numpy.floor(ySize/yGridSize))
+        nx = int(numpy.floor(float(xSize)/xGridSize))
+        ny = int(numpy.floor(float(ySize)/yGridSize))
 
         xGrids = numpy.array([ (i+0.5)*xGridSize for i in range(nx) ])
         yGrids = numpy.array([ (i+0.5)*yGridSize for i in range(ny) ])

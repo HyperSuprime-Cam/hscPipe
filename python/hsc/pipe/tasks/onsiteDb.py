@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import os
+import sys
 
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
@@ -20,7 +21,7 @@ class SubaruProcessCcdOnsiteDbTask(SubaruProcessCcdOnsiteTask):
         id, visit, ccd =  self.getDataId()
         self.onsiteDbUtils.updateStatusFrameAnalysisStart(id)
         # Run main processing task and QA by calling base class
-        result = OnsiteSubaruProcessCcdTask.run(self, sensorRef)
+        result = SubaruProcessCcdOnsiteTask.run(self, sensorRef)
         ## === update onsite Db status
         self.onsiteDbUtils.updateStatusFrameAnalysisEnd(id)
         ## === register CORR data QA values
@@ -32,9 +33,9 @@ class SubaruProcessCcdOnsiteDbTask(SubaruProcessCcdOnsiteTask):
     def importDbUtils(self):
         namespace = self.parsedCmd
         try:
-            if namespace.camera in ['suprimecam', 'sc', 'suprimecam-mit', 'mit']:
+            if namespace.camera.lower() in ['suprimecam', 'sc', 'suprimecam-mit', 'mit']:
                 import onsiteDbUtilsSuprime as onsiteDbUtils
-            elif namespace.camera in ['hsc', 'hscsim']:
+            elif namespace.camera.lower() in ['hsc', 'hscsim']:
                 import onsiteDbUtilsHsc as onsiteDbUtils
             else:
                 print >> sys.stderr, "Given instrument name is not valid: %s" % namespace.camera
@@ -49,12 +50,12 @@ class SubaruProcessCcdOnsiteDbTask(SubaruProcessCcdOnsiteTask):
         dataId = (namespace.dataIdList)[0]
         ccd = int(dataId['ccd'])
         visit = int(dataId['visit'])
-        if namespace.camera in ['suprimecam', 'sc', 'suprimecam-mit', 'mit']:
+        if namespace.camera.lower() in ['suprimecam', 'sc', 'suprimecam-mit', 'mit']:
             id = int(visit)*10 + int(ccd)
-        elif namespace.camera in ['hsc', 'hscsim']:
+        elif namespace.camera.lower() in ['hsc', 'hscsim']:
             #### !!! TBD how to assign visit for HSC data
-            id = int(visit)*1000 + int(ccd)
-            #id = int(visit)*100 + int(ccd)
+            #id = int(visit)*1000 + int(ccd)
+            id = int(visit)*100 + int(ccd)
         else:
             print >> sys.stderr, "Given instrument name is not valid: %s" % namespace.camera
             sys.exit(1)

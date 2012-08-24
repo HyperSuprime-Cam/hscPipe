@@ -20,12 +20,13 @@ signal.signal(signal.SIGALRM, sigalrm_handler)
 
 
 
-def main(instrument, rerun, frameList):
-    print "Processing inst=%s rerun=%s frames=%s" % (instrument, rerun, frameList)
+def main(instrument, rerun, root, outputRoot, calibRoot, configFile, frameList):
+    #print "Processing inst=%s rerun=%s frames=%s" % (instrument, rerun, frameList)
+    print "Processing inst=%s root=%s rerun=%s outputRoot=%s calibRoot=%s userConfig=%s frames=%s" % (instrument, root, rerun, outputRoot, calibRoot, configFile, frameList)    
     try:
         for frame in frameList:
             print "Processing frame %d" % frame
-            ProcessExposure(instrument, rerun, frame)
+            ProcessExposure(instrument, root, rerun, outputRoot, calibRoot, configFile, frame)
             print "Done processing frame %d" % frame
     except:
         pbasf.ReportError("Total catastrophic failure processing frame %s" % frame)
@@ -33,7 +34,7 @@ def main(instrument, rerun, frameList):
         mpi.COMM_WORLD.Abort(1)
         return 1
 
-def ProcessExposure(instrument, rerun, frame):
+def ProcessExposure(instrument, root, rerun, outputRoot, calibRoot, configFile, frame):
     comm = mpi.COMM_WORLD
 
     # We don't need camera-specific ProcessCcdTasks anymore.  But we may want to use
@@ -42,7 +43,10 @@ def ProcessExposure(instrument, rerun, frame):
     # script specifically for that purpose.
     ProcessCcdTask = SubaruProcessCcdTask
 
-    butler = hscCamera.getButler(instrument, rerun=rerun)
+    #butler = hscCamera.getButler(instrument, rerun=rerun)
+    # FH note: We use the data root and outputRoot when given by command line, 
+    # which override rerun and envar SUPRIME_DATA_DIR for root.
+    butler = hscCamera.getButler(instrument, rerun=rerun, root=root, outputRoot=outputRoot, calibRoot=calibRoot)
     dataIdList = [{'visit': frame, 'ccd': ccd} for ccd in range(hscCamera.getNumCcds(instrument))]
 
     # FIXME: should really rely on pipe_base to do this.
@@ -51,6 +55,9 @@ def ProcessExposure(instrument, rerun, frame):
                              ProcessCcdTask._DefaultName + ".py"))
     config.load(os.path.join(os.environ['OBS_SUBARU_DIR'], 'config', 
                              instrument, ProcessCcdTask._DefaultName + ".py"))
+    if os.path.exists(configFile):
+        config.load(configFile)
+
     processor = ProcessCcdTask(config=config)
 
     # Scatter: process CCDs independently
@@ -132,5 +139,9 @@ if __name__ == "__main__":
     print "argv=", sys.argv
     instrument = sys.argv[1]
     rerun = sys.argv[2]
-    frames = [int(f) for f in sys.argv[3:]]
-    main(instrument, rerun, frames)
+    root = sys.argv[3]
+    outputRoot = sys.argv[4]
+    calibRoot = sys.argv[5]    
+    configFile = sys.argv[6]
+    frames = [int(f) for f in sys.argv[7:]]
+    main(instrument, rerun, root, outputRoot, calibRoot, configFile, frames)
