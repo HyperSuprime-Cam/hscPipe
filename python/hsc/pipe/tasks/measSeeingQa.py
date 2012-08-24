@@ -154,6 +154,9 @@ class MeasureSeeingMitakaTask(Task):
             self.writeSeeingGridList(dataRef, dataPsfLike, exposure)
             self.writeSeeingGridFits(dataRef, dataPsfLike, exposure)
 
+        del dataPsfLike
+        del psfCandidateList
+        del starSel
 
     def writeSeeingMapList(self, dataRef, data, exposure):
         ccdId = int(exposure.getMetadata().get('DET-ID'))
@@ -279,6 +282,7 @@ class MeasureSeeingMitakaTask(Task):
 
         del fig
         del pltFwhmMap
+        del canvas
 
     def plotEllipseMap(self, dataRef, data, exposure):
         """psfellipse-map plots"""
@@ -319,6 +323,7 @@ class MeasureSeeingMitakaTask(Task):
 
         del fig
         del pltEllipseMap
+        del canvas
 
     def plotEllipticityMap(self, dataRef, data, exposure):
         """ellipticity-map plots"""
@@ -329,7 +334,7 @@ class MeasureSeeingMitakaTask(Task):
         hFig = ySize * facSize
         fig = figure.Figure(figsize=(wFig,hFig))
         canvas = FigCanvas(fig)
-        
+
         pltEllMap = fig.add_axes([0.2, 0.1, 0.7, 0.8]) # left,bottom,width,height
         pltEllMap.set_xlim(0, xSize)
         pltEllMap.set_ylim(0, ySize)
@@ -370,6 +375,7 @@ class MeasureSeeingMitakaTask(Task):
 
         del fig
         del pltEllMap
+        del canvas
 
     def plotFwhmGrid(self, dataRef, data, exposure):
         """fwhm-in-grids plots"""
@@ -455,6 +461,7 @@ class MeasureSeeingMitakaTask(Task):
 
         del fig
         del pltFwhm
+        del canvas
 
     def plotEllipseGrid(self, dataRef, data, exposure):
         xSize, ySize = exposure.getWidth(), exposure.getHeight()
@@ -542,6 +549,7 @@ class MeasureSeeingMitakaTask(Task):
 
         del fig
         del pltEllipse
+        del canvas
 
     def plotEllipticityGrid(self, dataRef, data, exposure):
         """ellipticity-in-grids plots"""
@@ -638,7 +646,7 @@ class MeasureSeeingMitakaTask(Task):
 
         del fig
         del pltEll
-
+        del canvas
 
 class MeasureSeeingTask(Task):
     """

@@ -69,32 +69,54 @@ class SizeMagnitudeMitakaStarSelectorConfig(pexConfig.Config):
         doc = 'Faintest mag for number counting as a fn of instrumnetal mag',
         default = 0.0,
         )
+    statAlgRoughFwhm = pexConfig.ChoiceField(
+        doc = 'Statistical algorithm to derive rough Fwhm in the 1st step seeing estimation',
+        dtype = str,  default = "MEDIAN",
+        allowed = {
+        "MEDIAN" : "median of sample",
+        "MEANCLIP" : "clipped mean of sample with 3-sigma clip + 3-times iteration",
+        }
+        )
     nBrightSampleRoughFwhm = pexConfig.Field(
         dtype = int,
         doc = 'Number of brightest (non-saturated) objects which are used to determine rough-interim seeing',
-        default = 50, # seems to be too small to capture lager fwhm sources?
-        #default = 100,
+        #default = 50, # seems to be too small to capture lager fwhm sources?
+        default = 30,
         )
     nSmallSampleRoughFwhm = pexConfig.Field(
         dtype = int,
         doc = 'Number of smallest objects which are used to determine rough-interim seeing',
-        default = 30, # seems to be too small to capture lager fwhm sources?
+        #default = 30, # seems to be too small to capture lager fwhm sources?
+        default = 50,
         #default = 100,
         )
     fwhmMarginFinal = pexConfig.Field(
         dtype = float,
-        doc = 'How many pixels around the peak are used for final seeing estimation as mode',
-        #default = 0.5, --> too tight to assess width of psf sequence?
-        default = 1.0, # seems to be ok for SC CCD=0
+        doc = 'How many pixels around the peak are used for calculating scatter of psf candidates',
+        #default = 0.5, # --> too tight to assess width of psf sequence?
+        default = 0.75, # seems to be ok for SC CCD=0,a bit tight =8
+        #default = 1.0, # seems to be ok for SC CCD=0,a bit tight =8
+        #default = 1.5,
         )
     fwhmMarginNsigma = pexConfig.Field(
         dtype = float,
-        doc = 'How many sigmas around the peak fwhm are used for extracting final PSF sources',
+        doc = 'How many sigmas around the peak fwhm are used for calculating statistics of PSF sequence',
         #default = 1.0,
         #default = 1.2, # good but not optimal for broad psf sequence
-        default = 1.5, 
+        #default = 1.5, 
         #default = 2.0, # a bit broad for some data
-        #default = 3., # too broad
+        ###default = 2.5, # a bit broad
+        default = 3., # broad
+        )
+    psfSeqStatNsigma = pexConfig.Field(
+        dtype = float,
+        doc = 'How many sigmas around the peak fwhm are used for calculating statistics of PSF sequence',
+        default = 3.,
+        )
+    psfSeqStatNiter = pexConfig.Field(
+        dtype = int, 
+        doc = 'How many times do we iterate calculating statistics of PSF sequence',
+        default = 3,
         )
     magLimitFaintExtension = pexConfig.Field(
         dtype = float,
@@ -129,7 +151,7 @@ class SizeMagnitudeMitakaStarSelectorConfig(pexConfig.Config):
     doUndistort = pexConfig.Field(
         dtype = bool,
         doc = "Undistort when evaluating the 2nd moments of sources?",
-        default = True,
+        default = False,
     )
 
 class SizeMagnitudeMitakaStarSelector(object):
@@ -219,7 +241,7 @@ class SizeMagnitudeMitakaStarSelector(object):
                     ds9.dot("o", xc, yc, frame=frames["displayExposure"], ctype=ctype)
 
         # determine mag limit for clean psf candidates, dynamically based on the image
-        magLimPsfSeq = self.getMagLimit(dataRef, goodData)
+        magLimPsfSeq = self.getMagLimit(dataRef, goodData, exposure)
         if magLimPsfSeq is None:
             return
 
@@ -507,7 +529,7 @@ class SizeMagnitudeMitakaStarSelector(object):
             fwhmUndistListAll = numpy.array(fwhmUndistListAll),
             )
 
-    def getMagLimit(self, dataRef, data):
+    def getMagLimit(self, dataRef, data, exposure):
         """
         Derive the normalized cumulative magnitude histogram and estimate good limit mag
         for extracting psf-like candidates based on the histogram
@@ -531,12 +553,21 @@ class SizeMagnitudeMitakaStarSelector(object):
 
         # -- Estimating mag limit based no the cumlative mag histogram
         magLim = None
+
+        # handling slight dependency on filter kinds
+        filterName = exposure.getFilter().getName()
+        if filterName in ['g', 'B']:
+            fracSrcIni = self.config.fracSrcIni * (2./3.)
+        else:
+            fracSrcIni = self.config.fracSrcIni
+        self.log.info("Filter: %s -> fraction for guessing magnitude limit is set to: %f" % (filterName, fracSrcIni))
+
         for i, cumFraction in enumerate(magCumHist[0]):
-            if cumFraction >= self.config.fracSrcIni:
+            if cumFraction >= fracSrcIni:
                 magLim = magCumHist[1][i] # magLim is the mag which exceeds the cumulative n(m) of 0.15
                 break
         if not magLim:
-            self.log.log(self.log.WARN, "Error: cumulative magnitude histogram does not exceed 0.15.")
+            self.log.log(self.log.WARN, "Error: cumulative magnitude histogram does not exceed fracSrcIni: %f" % fracSrcIni)
             return None
 
         #print '*** magLim: ', magLim
@@ -576,6 +607,7 @@ class SizeMagnitudeMitakaStarSelector(object):
             del fig
             del pltMagHist
             del pltCumHist
+            del canvas
 
         return magLim
 
@@ -611,7 +643,16 @@ class SizeMagnitudeMitakaStarSelector(object):
         # extracting the given number of most compact sources
 
         if True:
-            # first pick n brightest sources, then pick n compact sources of them 
+            # first pick n compact sources, then pick n bright sources of them
+            if self.config.doUndistort:
+                indicesSourcesSmall = numpy.argsort(fwhmUndistListForRoughFwhm)[:self.config.nSmallSampleRoughFwhm]
+            else:
+                indicesSourcesSmall = numpy.argsort(fwhmListForRoughFwhm)[:self.config.nSmallSampleRoughFwhm]
+            magListForRoughFwhmSmall = magListForRoughFwhm[indicesSourcesSmall]
+            indicesSourcesBrightOfSmall = numpy.argsort(magListForRoughFwhmSmall)[:self.config.nBrightSampleRoughFwhm]
+            indicesSourcesPsfLike = indicesSourcesSmall[indicesSourcesBrightOfSmall]
+        elif False:
+            # first pick n brightest sources, then pick n compact sources of them
             indicesSourcesBright = numpy.argsort(magListForRoughFwhm)[:self.config.nBrightSampleRoughFwhm]
             if self.config.doUndistort:
                 fwhmUndistListForRoughFwhmBright = fwhmUndistListForRoughFwhm[indicesSourcesBright]
@@ -624,17 +665,28 @@ class SizeMagnitudeMitakaStarSelector(object):
             if self.config.doUndistort:
                 indicesSourcesPsfLike = numpy.argsort(fwhmUndistListForRoughFwhm)[:self.config.nSmallSampleRoughFwhm]
             else:
-                indicesSourcesPsfLike = numpy.argsort(fwhmListForRoughFwhm)[:self.config.nSmallestSampleRoughFwhm]
+                indicesSourcesPsfLike = numpy.argsort(fwhmListForRoughFwhm)[:self.config.nSmallSampleRoughFwhm]
 
         magListPsfLike = magListForRoughFwhm[indicesSourcesPsfLike]
         fwhmListPsfLike = fwhmListForRoughFwhm[indicesSourcesPsfLike]
-        fwhmRough = numpy.median(fwhmListPsfLike)
-
         fwhmUndistListPsfLike = []
+        fwhmRough = None
         fwhmUndistRough = None
-        if self.config.doUndistort:
-            fwhmUndistListPsfLike = fwhmUndistListForRoughFwhm[indicesSourcesPsfLike]
-            fwhmUndistRough = numpy.median(fwhmUndistListPsfLike)
+
+        if self.config.statAlgRoughFwhm == "MEANCLIP":
+            clipSigma = 3.0
+            nIter = 3
+            fwhmStat = afwMath.MEANCLIP
+            sctrl = afwMath.StatisticsControl(clipSigma, nIter)
+            stats = afwMath.makeStatistics(fwhmListPsfLike, fwhmStat, sctrl)
+            fwhmRough = stats.getValue(fwhmStat)
+            if self.config.doUndistort:
+                stats = afwMath.makeStatistics(fwhmUndistListPsfLike, fwhmStat, sctrl)
+                fwhmUndistRough = stats.getValue(fwhmStat)
+        else:
+            fwhmRough = numpy.median(fwhmListPsfLike)
+            if self.config.doUndistort:
+                fwhmUndistRough = numpy.median(fwhmUndistListPsfLike)
 
         data.magListPsfLike = magListPsfLike
         data.fwhmListPsfLike = fwhmListPsfLike
@@ -672,6 +724,7 @@ class SizeMagnitudeMitakaStarSelector(object):
 
             del fig
             del pltMagFwhm
+            del canvas
 
         return fwhmRough
 
@@ -740,7 +793,9 @@ class SizeMagnitudeMitakaStarSelector(object):
                         papertype=None, format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
 
             del fig
+            del pltMagFwhm
             del pltHistFwhm
+            del canvas
 
         data.fwhmRobust = fwhmRobust
         data.ellRobust = ellRobust
@@ -777,8 +832,8 @@ class SizeMagnitudeMitakaStarSelector(object):
         #data.fwhmListForPsfSeq = fwhmListForPsfSeq
 
         # deriving fwhwRobust and sigma
-        clipSigma = 3.0
-        nIter = 3
+        clipSigma = self.config.psfSeqStatNsigma
+        nIter = self.config.psfSeqStatNiter
         fwhmStat = afwMath.MEDIAN
         sigmaStat = afwMath.STDEVCLIP
         sctrl = afwMath.StatisticsControl(clipSigma, nIter)
