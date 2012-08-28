@@ -132,7 +132,7 @@ class MeasureSeeingMitakaTask(Task):
         psfCandidateList, dataPsfLike = starSel.selectStars(exposure, catalog, dataRef=dataRef, outputStruct=True)
 
         # getting a final fwhm
-        dataPsfLike = starSel.getFwhmRobust(dataRef, dataPsfLike, dataPsfLike.fwhmRough)
+        dataPsfLike = starSel.getFwhmRobust(dataRef, dataPsfLike, dataPsfLike.fwhmRough, exposure)
 
         print '*** seeing:', dataPsfLike.fwhmRobust
         print '*** ellipticity:', dataPsfLike.ellRobust
@@ -262,15 +262,15 @@ class MeasureSeeingMitakaTask(Task):
         pltFwhmMap.set_ylim(0, ySize)
         pointSize = math.pi*(10*data.fwhmListPsfLikeRobust/2)**2. # 10pix=2arcsec fwhm = 50 point radius
         pltFwhmMap.scatter(data.xListPsfLikeRobust, data.yListPsfLikeRobust, s=pointSize, marker='o',
-                           color=None, facecolor=(1,1,1,0), label='PSF sample')
+                           color=None, facecolor=(1,1,1,0), linewidth=2.0, label='PSF sample')
         #pltFwhmMap.legend()
 
         # reference sample point
         fwhmPix = numpy.array([5.0]) # pixel in fwhm
         pointSize = math.pi*(10*fwhmPix/2)**2.
-        pltFwhmMap.scatter([0.1*xSize], [0.9*ySize], s=pointSize, marker='o', color='magenta',
-                           facecolor=(1,1,1,0), label='PSF sample')        
-        fig.text(0.1 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
+        pltFwhmMap.scatter([0.2*xSize], [0.9*ySize], s=pointSize, marker='o', color='magenta',
+                           facecolor=(1,1,1,0), linewidth=4.0, label='PSF sample')        
+        fig.text(0.2 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
 
         pltFwhmMap.set_title('FWHM of PSF sources')
         pltFwhmMap.set_xlabel('X (pix)')
@@ -308,10 +308,10 @@ class MeasureSeeingMitakaTask(Task):
 
         # reference sample point
         fwhmPix = aa = bb = 2.5 # pixel in A, B (in half width)
-        ell = patches.Ellipse((0.1*xSize, 0.9*ySize), 2.*aa*scaleFactor, 2.*bb*scaleFactor, angle=0.,
+        ell = patches.Ellipse((0.2*xSize, 0.9*ySize), 2.*aa*scaleFactor, 2.*bb*scaleFactor, angle=0.,
                               linewidth=4., color='magenta', fill=False, zorder=2)
         pltEllipseMap.add_patch(ell)
-        fig.text(0.1 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
+        fig.text(0.2 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
 
         pltEllipseMap.set_title('Size and Elongation of PSF sources')
         pltEllipseMap.set_xlabel('X (pix)')
@@ -362,7 +362,7 @@ class MeasureSeeingMitakaTask(Task):
             label='PSF sample'
             )
 
-        #plt.quiverkey(Q, 0.05, 1.05, 0.05, 'e=0.05', labelpos='W')
+        pltEllMap.quiverkey(Q, 0.05, 1.05, 0.05, 'e=0.05', labelpos='W')
 
         pltEllMap.set_title('Ellipticity of PSF sources')
         pltEllMap.set_xlabel('X (pix)')
@@ -443,9 +443,9 @@ class MeasureSeeingMitakaTask(Task):
         scaleFactor = min(xGridSize/xSize, yGridSize/ySize)
         pointRadius *= scaleFactor    
         pointArea = math.pi*(pointRadius)**2.
-        pltFwhm.scatter([0.1 * xSize], [0.9 * ySize], s=pointArea, marker='o', color='magenta',
+        pltFwhm.scatter([0.2 * xSize], [0.85 * ySize], s=pointArea, marker='o', color='magenta',
                         facecolor=(1,1,1,0), linewidth=8.0, label='PSF sample')
-        fig.text(0.1 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
+        fig.text(0.2 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
 
         pltFwhm.set_title('FWHM of PSF sources')
         pltFwhm.set_xlabel('X (pix)')
@@ -534,10 +534,10 @@ class MeasureSeeingMitakaTask(Task):
         # reference sample point
         fwhmPix = 5 # pixel in A, B (in half width)
         aa = bb = fwhmPix/2.
-        ell = patches.Ellipse((0.1*xSize, 0.9*ySize), 2.*aa*scaleFactor, 2.*bb*scaleFactor, angle=0.,
+        ell = patches.Ellipse((0.2*xSize, 0.9*ySize), 2.*aa*scaleFactor, 2.*bb*scaleFactor, angle=0.,
                               linewidth=4., color='magenta', fill=False, zorder=2)
         pltEllipse.add_patch(ell)
-        fig.text(0.1 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
+        fig.text(0.2 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
 
         pltEllipse.set_xticks([ xc+xGridSize/2. for xc in xGridList ])
         pltEllipse.set_yticks([ yc+yGridSize/2. for yc in yGridList ])
@@ -629,7 +629,7 @@ class MeasureSeeingMitakaTask(Task):
             #angles = 'xy',
             pivot = 'middle',
             )
-        #plt.quiverkey(Q, 0.05, 1.05, 0.05, 'e=0.05', labelpos='W')
+        pltEll.quiverkey(Q, 0.05, 1.05, 0.05, 'e=0.05', labelpos='W')
 
         pltEll.set_xticks([ xc+xGridSize/2. for xc in xGridList ])
         pltEll.set_yticks([ yc+yGridSize/2. for yc in yGridList ])

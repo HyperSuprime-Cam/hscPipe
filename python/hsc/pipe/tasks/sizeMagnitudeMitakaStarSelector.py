@@ -246,7 +246,7 @@ class SizeMagnitudeMitakaStarSelector(object):
             return
 
         # getting a decent median fwhm
-        fwhmRough = self.getFwhmRough(dataRef, goodData, magLimPsfSeq)
+        fwhmRough = self.getFwhmRough(dataRef, goodData, magLimPsfSeq, exposure)
 
         # extract a list of psf-like sources
         # goodData is updated as same as dataPsfLike in getStarCandidateList()
@@ -534,6 +534,9 @@ class SizeMagnitudeMitakaStarSelector(object):
         Derive the normalized cumulative magnitude histogram and estimate good limit mag
         for extracting psf-like candidates based on the histogram
         """
+
+        #import pudb; pudb.set_trace()
+
         magListFwhmRange = data.magListAll[data.indicesSourcesFwhmRange]
         # n.b. below magHist[1] is sorted so index=0 is brightest
         magHist = numpy.histogram(magListFwhmRange, range=(self.config.magMinHist, self.config.magMaxHist),
@@ -571,9 +574,18 @@ class SizeMagnitudeMitakaStarSelector(object):
             return None
 
         #print '*** magLim: ', magLim
-        self.log.info("Mag limit auto-determined: %5.2f or %f (ADU)" %
-                 (magLim, numpy.power(10, -0.4*magLim)))
-        self.metadata.set("magLim", numpy.power(10, -0.4*magLim))
+        self.metadata.set("magLim", magLim)
+        self.metadata.set("fluxLim", numpy.power(10, -0.4*magLim))
+        try:
+            zpFrame = exposure.getCalib().getMagnitude(1.0) # zp(mag/ADU/exptime)
+        except: # photocal yet to be done or failure in photocal
+            zpFrame = None
+        if zpFrame and not numpy.isnan(zpFrame):
+            magLimCalib = magLim + zpFrame
+        else:
+            magLimCalib = 99.0
+        self.log.info("Mag limit auto-determined: %5.2f (%5.2f by calib) or %f (ADU)" % (magLim, magLimCalib, numpy.power(10, -0.4*magLim)))
+        self.metadata.set("magLimCalib", magLimCalib)
 
         if self.debugFlag:
             self.log.logdebug("QaSeeing: magHist: %s" % magHist)
@@ -585,8 +597,9 @@ class SizeMagnitudeMitakaStarSelector(object):
             #fig = plt.figure()
             pltMagHist = fig.add_subplot(2,1,1)
             pltMagHist.hist(magListFwhmRange, bins=magHist[1], orientation='vertical')
-            pltMagHist.set_title('histogram of magnitudes')
-            #        pltMagHist.set_xlabel('magnitude instrumental')
+            pltMagHist.set_title('differential / cumulative histograms of magnitudes')
+            #pltMagHist.set_xlabel('magnitude instrumental')
+            pltMagHist.set_xticklabels([])
             pltMagHist.set_ylabel('number of samples')
             pltMagHist.legend()
 
@@ -596,8 +609,15 @@ class SizeMagnitudeMitakaStarSelector(object):
                             orientation='vertical', histtype='step')
             xx = [magLim, magLim]; yy = [0, 1]
             pltCumHist.plot(xx, yy, linestyle='dashed', label='mag limit') # solid,dashed,dashdot,dotted
-            pltCumHist.set_title('cumulative histogram of magnitudes')
-            pltCumHist.set_xlabel('magnitude instrumental')
+
+            if zpFrame and not numpy.isnan(zpFrame):
+                pltCumHist2 = pltCumHist.twiny() # another x axis with the calibrated mag
+                xlimCalib = [ x + zpFrame for x in pltCumHist.get_xlim() ]
+                pltCumHist2.set_xlim(xlimCalib)
+                pltCumHist2.set_ylim(pltCumHist.get_ylim())
+                pltCumHist2.plot([-100,100],[-1,-1])
+
+            pltCumHist.set_xlabel('magnitude (bottom:isnt / top:calib)')
             pltCumHist.set_ylabel('Nsample scaled to unity')
             pltCumHist.legend()
 
@@ -608,10 +628,12 @@ class SizeMagnitudeMitakaStarSelector(object):
             del pltMagHist
             del pltCumHist
             del canvas
+            if zpFrame and not numpy.isnan(zpFrame):
+                del pltCumHist2
 
         return magLim
 
-    def getFwhmRough(self, dataRef, data, magLimSeq):
+    def getFwhmRough(self, dataRef, data, magLimSeq, exposure):
 #    def getFwhmRough(self, magListAll, fwhmListAll, indicesSourcesFwhmRange, magLim):
 
         """Estimating roughly-estimated FWHM for sources with mag < magLim"""
@@ -713,11 +735,21 @@ class SizeMagnitudeMitakaStarSelector(object):
             xx = [-20,-5]
             yy = [fwhmRough, fwhmRough]
             pltMagFwhm.plot(xx, yy, linestyle='dashed', label='tentative FWHM')
-            pltMagFwhm.set_title('FWHM vs magnitudes')
-            pltMagFwhm.set_xlabel('magnitude instrumental')
+            pltMagFwhm.set_title('FWHM vs magnitudes', position=(0.5,1.05))
+            pltMagFwhm.set_xlabel('magnitude (bottom:isnt / top:calib)')
             pltMagFwhm.set_ylabel('FWHM (pix)')
-
             pltMagFwhm.legend()
+            try:
+                zpFrame = exposure.getCalib().getMagnitude(1.0) # zp(mag/ADU/exptime)
+            except: # photocal yet to be done or failure in photocal
+                zpFrame = None
+            if zpFrame and not numpy.isnan(zpFrame):
+                pltMagFwhm2 = pltMagFwhm.twiny() # another x axis with the calibrated mag
+                xlimCalib = [ x + zpFrame for x in pltMagFwhm.get_xlim() ]
+                pltMagFwhm2.set_xlim(xlimCalib)
+                pltMagFwhm2.set_ylim(pltMagFwhm.get_ylim())
+                pltMagFwhm2.plot([-100,100],[-1,-1])
+
             fname = getFilename(dataRef, "plotSeeingRough")
             fig.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait',
                         papertype=None, format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
@@ -725,10 +757,12 @@ class SizeMagnitudeMitakaStarSelector(object):
             del fig
             del pltMagFwhm
             del canvas
-
+            if zpFrame and not numpy.isnan(zpFrame):
+                del pltMagFwhm2
+ 
         return fwhmRough
 
-    def getFwhmRobust(self, dataRef, data, fwhmRough):
+    def getFwhmRobust(self, dataRef, data, fwhmRough, exposure):
         """Good Estimation of Final PSF"""
 
         # deriving final representative values of seeing, ellipticity and pa of elongation
@@ -775,10 +809,20 @@ class SizeMagnitudeMitakaStarSelector(object):
             pltMagFwhm.plot(xx, yy_median, linestyle='dashed', color='red', label='median FHWM of sequence')
             pltMagFwhm.plot(xx, yy_sigma_l, linestyle='-.', color='blue', label='sigma range')
             pltMagFwhm.plot(xx, yy_sigma_h, linestyle='-.', color='blue', label=None)
-            pltMagFwhm.set_title('FWHM vs magnitudes')
-            pltMagFwhm.set_xlabel('magnitude instrumental')
+            pltMagFwhm.set_title('FWHM vs magnitudes', position=(0.45,1.05))
+            pltMagFwhm.set_xlabel('magnitude (bottom:isnt / top:calib)')
             pltMagFwhm.set_ylabel('FWHM (pix)')
             pltMagFwhm.legend()
+            try:
+                zpFrame = exposure.getCalib().getMagnitude(1.0) # zp(mag/ADU/exptime)
+            except: # photocal yet to be done or failure in photocal
+                zpFrame = None
+            if zpFrame and not numpy.isnan(zpFrame):
+                pltMagFwhm2 = pltMagFwhm.twiny() # another x axis with the calibrated mag
+                xlimCalib = [ x + zpFrame for x in pltMagFwhm.get_xlim() ]
+                pltMagFwhm2.set_xlim(xlimCalib)
+                pltMagFwhm2.set_ylim(pltMagFwhm.get_ylim())
+                pltMagFwhm2.plot([-100,100],[-1,-1])
 
             pltHistFwhm = fig.add_subplot(1,2,2)
             pltHistFwhm.hist(data.fwhmListForPsfSeq, range=(fwhmMin, fwhmMax), bins=nbin, orientation='horizontal', histtype='bar')
@@ -796,6 +840,8 @@ class SizeMagnitudeMitakaStarSelector(object):
             del pltMagFwhm
             del pltHistFwhm
             del canvas
+            if zpFrame and not numpy.isnan(zpFrame):
+                del pltMagFwhm2
 
         data.fwhmRobust = fwhmRobust
         data.ellRobust = ellRobust
