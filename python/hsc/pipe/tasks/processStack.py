@@ -21,6 +21,7 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 
+import os
 import numpy
 
 import lsst.pex.config as pexConfig
@@ -41,6 +42,15 @@ class ProcessStackConfig(ProcessImageTask.ConfigClass):
     )
     doScaleVariance = pexConfig.Field(dtype=bool, default=True,
                                       doc = "Scale variance plane using empirical noise")
+    #delayWrite = pexConfig.Field(
+    #            dtype=bool, default=False,
+    #                    doc="Delay writing outputs (e.g., for pbasf processing)?"
+    #                    )
+    doWriteUnpackedMatches = pexConfig.Field(
+        dtype=bool, default=True,
+        doc=("Write the denormalized match table as well as the normalized match table; "
+             "ignored if doWriteCalibrate=False")
+        )
 
 class ProcessStackTask(ProcessImageTask):
     """Process a Stack image
@@ -124,12 +134,72 @@ class ProcessStackTask(ProcessImageTask):
         # delegate most of the work to ProcessImageTask
         result = self.process(dataRef, coadd)
         result.coadd = coadd
+
+        if self.config.doWriteUnpackedMatches:
+            dataRef.put(self.unpackMatches(result.calib.matches, result.calib.matchMeta), self.dataPrefix + "icMatchList")
+        if self.config.doWriteSourceMatches and self.config.doWriteUnpackedMatches:
+            dataRef.put(self.unpackMatches(result.matches, result.matchMeta), self.dataPrefix + "srcMatchList")
+
         return result
 
+
+    # The below unpackMatches function is a wholesale copy from processCcd
+    def unpackMatches(self, matches, matchMeta):
+        """Denormalise matches into "unpacked matches" """
+
+        refSchema = matches[0].first.getSchema()
+        srcSchema = matches[0].second.getSchema()
+
+        mergedSchema = afwTable.Schema()
+        def merge(schema, key, merged, name):
+            field = schema.find(key).field
+            typeStr = field.getTypeString()
+            fieldDoc = field.getDoc()
+            fieldUnits = field.getUnits()
+            if typeStr in ("ArrayF", "ArrayD", "CovF", "CovD"):
+                fieldSize = field.getSize()
+            else:
+                fieldSize = None
+            mergedSchema.addField(name + '.' + key, type=typeStr, doc=fieldDoc, units=fieldUnits,
+                                  size=fieldSize)
+
+        for keyName in refSchema.getNames():
+            merge(refSchema, keyName, mergedSchema, "ref")
+
+        for keyName in srcSchema.getNames():
+            merge(srcSchema, keyName, mergedSchema, "src")
+
+        mergedCatalog = afwTable.BaseCatalog(mergedSchema)
+
+        refKeys = []
+        for keyName in refSchema.getNames():
+            refKeys.append((refSchema.find(keyName).key, mergedSchema.find('ref.' + keyName).key))
+        srcKeys = []
+        for keyName in srcSchema.getNames():
+            srcKeys.append((srcSchema.find(keyName).key, mergedSchema.find('src.' + keyName).key))
+
+        for match in matches:
+            record = mergedCatalog.addNew()
+            for key in refKeys:
+                keyIn = key[0]
+                keyOut = key[1]
+                record.set(keyOut, match.first.get(keyIn))
+            for key in srcKeys:
+                keyIn = key[0]
+                keyOut = key[1]
+                record.set(keyOut, match.second.get(keyIn))
+
+        # obtaining reference catalog name
+        catalogName = os.path.basename(os.getenv("ASTROMETRY_NET_DATA_DIR").rstrip('/'))
+        matchMeta.add('REFCAT', catalogName)
+        mergedCatalog.getTable().setMetadata(matchMeta)
+
+        return mergedCatalog
 
     @classmethod
     def _makeArgumentParser(cls):
         return StackArgumentParser(name=cls._DefaultName, datasetType="stack", defaultToUserName=False)
+
 
 class StackArgumentParser(hscPipeBase.SubaruArgumentParser):
     """A version of lsst.pipe.base.ArgumentParser specialized for stacks.
@@ -153,3 +223,4 @@ class StackArgumentParser(hscPipeBase.SubaruArgumentParser):
                 dataId = dataId,
             )
             namespace.dataRefList.append(dataRef)
+
