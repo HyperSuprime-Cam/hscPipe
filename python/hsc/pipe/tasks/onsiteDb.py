@@ -34,9 +34,9 @@ class SubaruProcessCcdOnsiteDbTask(SubaruProcessCcdOnsiteTask):
         namespace = self.parsedCmd
         try:
             if namespace.camera.lower() in ['suprimecam', 'sc', 'suprimecam-mit', 'mit']:
-                import onsiteDbUtilsSuprime as onsiteDbUtils
+                import hsc.onsite.onsiteDbUtilsSuprime as onsiteDbUtils
             elif namespace.camera.lower() in ['hsc', 'hscsim']:
-                import onsiteDbUtilsHsc as onsiteDbUtils
+                import hsc.onsite.onsiteDbUtilsHsc as onsiteDbUtils
             else:
                 print >> sys.stderr, "Given instrument name is not valid: %s" % namespace.camera
                 sys.exit(1)
