@@ -16,9 +16,11 @@ class SubaruProcessCcdOnsiteDbTask(SubaruProcessCcdOnsiteTask):
     def run(self, sensorRef):
         # !!! it is better to db update for frame_analysis_start just before execution of this script
         #     but, to get 'id' on time when this analysis process is invoked, I'm temporarily 
-        #     doing this here. 
+        #     doing this here.
         self.importDbUtils()
         id, visit, ccd =  self.getDataId()
+        sensorRef.dataId['registryId'] = id
+
         self.onsiteDbUtils.updateStatusFrameAnalysisStart(id)
         # Run main processing task and QA by calling base class
         result = SubaruProcessCcdOnsiteTask.run(self, sensorRef)
@@ -50,13 +52,20 @@ class SubaruProcessCcdOnsiteDbTask(SubaruProcessCcdOnsiteTask):
         dataId = (namespace.dataIdList)[0]
         ccd = int(dataId['ccd'])
         visit = int(dataId['visit'])
-        if namespace.camera.lower() in ['suprimecam', 'sc', 'suprimecam-mit', 'mit']:
-            id = int(visit)*10 + int(ccd)
-        elif namespace.camera.lower() in ['hsc', 'hscsim']:
-            #### !!! TBD how to assign visit for HSC data
-            #id = int(visit)*1000 + int(ccd)
-            id = int(visit)*100 + int(ccd)
+
+        # id is obtained from the one place (sup/hscpipe db) rather than being calculated in individual places
+        if False:
+            if namespace.camera.lower() in ['suprimecam', 'sc', 'suprimecam-mit', 'mit']:
+                id = int(visit)*10 + int(ccd)
+            elif namespace.camera.lower() in ['hsc', 'hscsim']:
+                #### !!! TBD how to assign visit for HSC data
+                #id = int(visit)*1000 + int(ccd)  
+                id = int(visit)*100 + int(ccd)
+            else:
+                print >> sys.stderr, "Given instrument name is not valid: %s" % namespace.camera
+                sys.exit(1)
+
         else:
-            print >> sys.stderr, "Given instrument name is not valid: %s" % namespace.camera
-            sys.exit(1)
+            id = self.onsiteDbUtils.getRegistryId(visit, ccd)
+                
         return id, visit, ccd
