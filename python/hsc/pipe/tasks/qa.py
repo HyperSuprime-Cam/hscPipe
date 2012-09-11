@@ -1,4 +1,4 @@
-from lsst.pex.config import Config, ConfigurableField
+from lsst.pex.config import Config, ConfigurableField, Field
 from lsst.pipe.base import Task
 from . import measSeeingQa
 from . import sizeMagnitudeMitakaStarSelector as starSel
@@ -6,6 +6,7 @@ from . import sizeMagnitudeMitakaStarSelector as starSel
 class QaConfig(Config):
     ##seeing = ConfigurableField(target=measSeeingQa.MeasureSeeingTask, doc="Measure seeing")
     seeing = ConfigurableField(target=measSeeingQa.MeasureSeeingMitakaTask, doc="Measure seeing ver. Mitaka")
+    useIcsources = Field(dtype=bool, default=False, doc="Use icsources(calib.sources) rather than final sources") 
 
 class QaTask(Task):
     ConfigClass = QaConfig

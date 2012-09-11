@@ -42,13 +42,16 @@ class SubaruProcessCcdTask(ProcessCcdTask):
 
     def run(self, sensorRef):
         result = ProcessCcdTask.run(self, sensorRef)
-        self.qa.run(sensorRef, result.exposure, result.sources)
+        if self.config.qa.useIcsources:
+            self.qa.run(sensorRef, result.exposure, result.calib.sources)        
+        else:
+            self.qa.run(sensorRef, result.exposure, result.sources)
         sensorRef.put(result.exposure, self.dataPrefix + 'calexp')
         if not self.config.delayWrite:
             self.write(sensorRef, result, wcs=result.exposure.getWcs())
         if self.config.doWriteUnpackedMatches:
             sensorRef.put(self.unpackMatches(result.calib.matches, result.calib.matchMeta), "icMatchList")
-        if self.config.doWriteSourceMatches and self.config.doWriteUnpackedMatches:
+        if self.config.doWriteSourceMatches and self.config.doWriteUnpackedMatches and (not self.config.qa.useIcsources):
             sensorRef.put(self.unpackMatches(result.matches, result.matchMeta), "srcMatchList")
 
         return result
@@ -126,12 +129,21 @@ class SubaruProcessCcdTask(ProcessCcdTask):
             for s in sources:
                 s.updateCoord(wcs)
 
-        normalizedMatches = afwTable.packMatches(struct.calib.matches)
-        normalizedMatches.table.setMetadata(struct.calib.matchMeta)
-        dataRef.put(self.unpackMatches(struct.calib.matches, struct.calib.matchMeta), "icMatchList")
-        dataRef.put(struct.exposure, 'calexp')
-        dataRef.put(struct.sources, 'src')
-        dataRef.put(normalizedMatches, "icMatch")
-        dataRef.put(struct.calib.psf, 'psf')
-        dataRef.put(struct.calib.apCorr, 'apCorr')
-        dataRef.put(struct.calib.sources, 'icSrc')
+        if self.config.doCalibrate and self.config.doWriteCalibrate:
+            if struct.calib.psf is not None:
+                dataRef.put(struct.calib.psf, 'psf')
+            if self.config.doWriteCalibrateMatches and struct.calib.matches is not None and struct.calib.matchMeta is not None:
+                normalizedMatches = afwTable.packMatches(struct.calib.matches)
+                normalizedMatches.table.setMetadata(struct.calib.matchMeta)
+                dataRef.put(normalizedMatches, "icMatch")
+            if self.config.doWriteUnpackedMatches and  struct.calib.matches is not None and struct.calib.matchMeta is not None:
+                dataRef.put(self.unpackMatches(struct.calib.matches, struct.calib.matchMeta), "icMatchList")
+            if self.config.calibrate.doComputeApCorr and struct.calib.apCorr is not None:
+                dataRef.put(struct.calib.apCorr, 'apCorr')
+            if struct.calib.sources is not None:
+                dataRef.put(struct.calib.sources, 'icSrc')
+
+        if struct.exposure is not None:
+            dataRef.put(struct.exposure, 'calexp')
+        if self.config.doWriteSources and not self.config.qa.useIcsources and struct.sources is not None:
+            dataRef.put(struct.sources, 'src')
