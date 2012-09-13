@@ -25,19 +25,37 @@ def convertImageToNumpyArray2(image, x0=0, y0=0, xmax=None, ymax=None):
                 gridArray[i, j] = image.get(i+x0-imx0, j+y0-imy0)
     return gridArray
 
-def convertImageToNumpyArray(image, nx=None, ny=None):
-    if nx is None:
-        nx = image.getWidth()
-    if ny is None:
-        ny = image.getHeight()
-    gridList = numpy.zeros([ny, nx])
-    xList, yList = numpy.meshgrid(numpy.arange(0, nx, 1), numpy.arange(0, ny, 1))
-    for j in range(ny):
-        for i in range(nx):
+def convertImageToNumpyArray(image, exposure, xPsfMapSize=None, yPsfMapSize=None, xGridSize=None, yGridSize=None, xSize=None, ySize=None):
+    if xPsfMapSize is None:
+        xPsfMapSize = image.getWidth()
+    if yPsfMapSize is None:
+        yPsfMapSize = image.getHeight()
+    if xGridSize is None:
+        xGridSize = 1.0
+    if yGridSize is None:
+        yGridSize = 1.0
+    if xSize is None:
+        xSize = exposure.getWidth()
+    if ySize is None:
+        ySize = exposure.getHeight()
+
+
+    nGridX = int(numpy.floor(float(xSize)/xGridSize))
+    nGridY = int(numpy.floor(float(ySize)/yGridSize))
+    xPlotSize = xGridSize * nGridX
+    yPlotSize = yGridSize * nGridY
+    facX = float(xPlotSize)/xPsfMapSize
+    facY = float(yPlotSize)/yPsfMapSize
+
+    gridList = numpy.zeros([yPsfMapSize, xPsfMapSize])
+    xList, yList = numpy.meshgrid(numpy.linspace(0.5*facX, (xPsfMapSize-0.5)*facX, num=xPsfMapSize, endpoint=True),
+                                  numpy.linspace(0.5*facY, (yPsfMapSize-0.5)*facY, num=yPsfMapSize, endpoint=True))
+    for j in range(yPsfMapSize):
+        for i in range(xPsfMapSize):
             #import pudb; pudb.set_trace()
             #gridList[i, j] = image.get(int(xList[j][i]), int(yList[j][i]))
             gridList[j, i] = image.get(i, j)
-            print gridList
+            #print gridList
 
     return  xList, yList, gridList
 
@@ -133,38 +151,35 @@ def getPsfGridImage(visit, ccd, psf, exposure, xGridSize=1024, yGridSize=1024, d
     generate an image of psf grid map arranged in a mosaic with given grid sizes
     """
     psfDimension = psf.getKernel().getDimensions()
-    xSizePsf = psfDimension.getX()
-    ySizePsf = psfDimension.getY()
+    xPsfSize = psfDimension.getX()
+    yPsfSize = psfDimension.getY()
 
     #xGridSize = self.config.gridSize
     #yGridSize = self.config.gridSize
     # making grids
-    xSize, ySize = exposure.getWidth(), exposure.getHeight()
-    print '** xSize, ySize:', xSize, ySize
-    nx = int(numpy.floor(float(xSize)/xGridSize))
-    ny = int(numpy.floor(float(ySize)/yGridSize))
-
+    xCcdSize, yCcdSize = exposure.getWidth(), exposure.getHeight()
+    print '** getPsfGridImage: xGridSize, yGridSize:', xGridSize, yGridSize
+    print '** getPsfGridImage: xCcdSize, yCcdSize:', xCcdSize, yCcdSize
+    nx = int(numpy.floor(float(xCcdSize)/xGridSize))
+    ny = int(numpy.floor(float(yCcdSize)/yGridSize))
+    print '** getPsfGridImage: grid nx, ny:', nx, ny
+    
     # referring to http://dev.lsstcorp.org/doxygen/trunk/afw/classafw_1_1display_1_1utils_1_1_mosaic.html
-    if True: # if config.display:
-        m = afwDisp.Mosaic(gutter=0, background=0)
-        ###m.setGutter(0) # never call this func; a bug in afwDisp.Mosaic.setGutter() forces to set to 3
-        m.setBackground(0)
-        print 'display:nx:', nx
+    m = afwDisp.Mosaic(gutter=0, background=0)
+    ###m.setGutter(0) # never call this func; a bug in afwDisp.Mosaic.setGutter() forces to set to 3
+    m.setBackground(0)
+    #print 'getPsfGridImage: display:nx:', nx
 
     xc = xGridSize * 0.5
     yc = yGridSize * 0.5
-    while yc < ySize:
-        while xc < xSize:
+    for j in range(ny):
+        for i in range(nx):
             pointXY = afwGeom.Point2D(xc, yc)
-            psfSize = afwGeom.Extent2I(xSizePsf, ySizePsf)
+            psfSize = afwGeom.Extent2I(xPsfSize, yPsfSize)
             psfImage = psf.computeImage(pointXY, psfSize, True)
-
-            xc += xGridSize
             #cellSet.insertCandidate(testSpatialCellLib.ExampleCandidate(xc, yc, psfImage, psfImage.getBBox()))
-            if True: #if config.display:
-                m.append(psfImage, '(%d,%d)' % (xc, yc))
-
-        xc = xGridSize * 0.5
+            m.append(psfImage, '(%d,%d)' % (xc, yc))
+            xc += xGridSize
         yc += yGridSize
 
     m.drawLabels()
@@ -181,12 +196,14 @@ def getPsfGridImage(visit, ccd, psf, exposure, xGridSize=1024, yGridSize=1024, d
 
     return psfGridImage
 
-
-def plotPsfCountorGrid(visit, ccd, xList, yList, psfGridList, xSize, ySize, exposure, xGridSize=1024, yGridSize=1024):
+def plotPsfContourGrid(visit, ccd, xList, yList, psfGridList, xPsfMapSize, yPsfMapSize, exposure, xGridSize=1024, yGridSize=1024, xSize=None, ySize=None):
     import matplotlib.figure as figure
     from matplotlib.backends.backend_agg import FigureCanvasAgg as FigCanvas
+    if xSize is None:
+        xSize = exposure.getWidth()
+    if ySize is None:
+        ySize = exposure.getHeight()
 
-    #xSize, ySize = exposure.getWidth(), exposure.getHeight()
     facSize = 10.0 / max(xSize,ySize)  # targeting 10 inch in size
     wFig = xSize * facSize * 1.3
     hFig = ySize * facSize
@@ -198,7 +215,8 @@ def plotPsfCountorGrid(visit, ccd, xList, yList, psfGridList, xSize, ySize, expo
     pltPsf.set_ylim(0, ySize)
 
     #pltPsf.contour(xList, yList, psfGridList)
-    pltPsf.contour(psfGridList, extent=(0, xSize, 0, ySize), origin='lower', extend='neither', levels=[0.01, 0.05,0.25,0.55,0.75,0.95], colors='black', )
+    #pltPsf.contour(psfGridList, extent=(0, xSize, 0, ySize), origin='lower', extend='neither', levels=[0.01, 0.05,0.25,0.55,0.75,0.95], colors='black', )
+    pltPsf.contour(psfGridList, extent=(xList[0][0], xList[-1][-1], yList[0][0], yList[-1][-1]), origin='lower', extend='neither', levels=[0.05,0.25,0.55,0.75,0.95], colors='black', )    
 
     pltPsf.set_title('Psf Contour')
     pltPsf.set_xlabel('X (pix)')
@@ -218,6 +236,8 @@ def main():
     parser.add_argument('ccd', type=int)
     parser.add_argument('--inroot', default='/data/data1', help='e.g., /data/data1')
     parser.add_argument('--outroot', default='/data/data2', help='e.g., /data/data2/')
+    parser.add_argument('--xgridsize', type=int, default=1024, help='mesh size in x for psf sampling')
+    parser.add_argument('--ygridsize', type=int, default=1024, help='mesh size in y for psf sampling')
     #parser.add_argument('--dst-rerun', dest='dstRerun', default=None, help='XXX')
     args = parser.parse_args()
 
@@ -237,17 +257,18 @@ def main():
     psf = butler.get('psf', {'visit':args.visit, 'ccd':args.ccd})
 
 
-    gridSize = 2048
+    xGridSize = args.xgridsize
+    yGridSize = args.ygridsize
 
-    psfGridImage = getPsfGridImage(args.visit, args.ccd, psf, exposure, xGridSize=gridSize, yGridSize=gridSize, doWriteFits=True, display=False)
+    psfGridImage = getPsfGridImage(args.visit, args.ccd, psf, exposure, xGridSize=xGridSize, yGridSize=yGridSize, doWriteFits=True, display=False)
 
 
     xPsfMapSize, yPsfMapSize = psfGridImage.getWidth(), psfGridImage.getHeight()
-    xList, yList, psfGridList = convertImageToNumpyArray(psfGridImage, nx=xPsfMapSize, ny=yPsfMapSize)
-    print xList, yList, psfGridList
+    xCcdSize, yCcdSize = exposure.getWidth(), exposure.getHeight()
+    xList, yList, psfGridList = convertImageToNumpyArray(psfGridImage, exposure, xPsfMapSize=xPsfMapSize, yPsfMapSize=yPsfMapSize, xGridSize=xGridSize, yGridSize=yGridSize, xSize=xCcdSize, ySize=yCcdSize)
+    #print xList, yList, psfGridList
 
-    plotPsfCountorGrid(args.visit, args.ccd, xList, yList, psfGridList, xPsfMapSize, yPsfMapSize, exposure, xGridSize=gridSize, yGridSize=gridSize)
-
+    plotPsfContourGrid(args.visit, args.ccd, xList, yList, psfGridList, xPsfMapSize, yPsfMapSize, exposure, xGridSize=xGridSize, yGridSize=yGridSize, xSize=xCcdSize, ySize=yCcdSize)
 
 if __name__ == '__main__':
     main()
