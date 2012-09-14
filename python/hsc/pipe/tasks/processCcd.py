@@ -43,7 +43,7 @@ class SubaruProcessCcdTask(ProcessCcdTask):
     def run(self, sensorRef):
         result = ProcessCcdTask.run(self, sensorRef)
         if self.config.qa.useIcsources:
-            self.qa.run(sensorRef, result.exposure, result.calib.sources)        
+            self.qa.run(sensorRef, result.exposure, result.calib.sources)
         else:
             self.qa.run(sensorRef, result.exposure, result.sources)
         sensorRef.put(result.exposure, self.dataPrefix + 'calexp')

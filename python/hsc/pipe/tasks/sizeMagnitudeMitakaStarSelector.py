@@ -266,6 +266,7 @@ class SizeMagnitudeMitakaStarSelector(object):
             print "Number of catalog sources %d mismatch with gooddata list %d" % (len(catalog), len(dataPsfLike.xListAll))
             return
 
+        xCcdSize, yCcdSize = exposure.getWidth(), exposure.getHeight()
         psfCandidateList = []
 
         with ds9.Buffering():
@@ -273,7 +274,6 @@ class SizeMagnitudeMitakaStarSelector(object):
                 source = catalog[i]
                 try:
                     psfCandidate = measAlg.makePsfCandidate(source, exposure)
-
                     # The setXXX methods are class static, but it's convenient to call them on
                     # an instance as we don't know Exposure's pixel type
                     # (and hence psfCandidate's exact type)
@@ -281,6 +281,13 @@ class SizeMagnitudeMitakaStarSelector(object):
                         psfCandidate.setBorderWidth(self._borderWidth)
                         psfCandidate.setWidth(self._kernelSize + 2*self._borderWidth)
                         psfCandidate.setHeight(self._kernelSize + 2*self._borderWidth)
+
+                    # to check if the psf image sits within the CCD pixel area
+                    xPsf, yPsf = psfCandidate.getXCenter(), psfCandidate.getYCenter()
+                    xPsfSize, yPsfSize = psfCandidate.getWidth(), psfCandidate.getHeight()
+                    if not (xPsfSize*0.5 < xPsf and xPsf <= (xCcdSize-xPsfSize*0.5) and \
+                            yPsfSize*0.5 < yPsf and yPsf <= (yCcdSize-yPsfSize*0.5)):
+                        continue
 
                     im = psfCandidate.getMaskedImage().getImage()
                     maxVal = afwMath.makeStatistics(im, afwMath.MAX).getValue()

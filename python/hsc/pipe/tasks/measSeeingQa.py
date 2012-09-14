@@ -149,10 +149,12 @@ class MeasureSeeingMitakaTask(Task):
             self.plotFwhmGrid(dataRef, dataPsfLike, exposure)
             self.plotEllipseGrid(dataRef, dataPsfLike, exposure)
             self.plotEllipticityGrid(dataRef, dataPsfLike, exposure)
+            self.plotPsfContourGrid(dataRef, exposure, psfCandidateList)
         if True:
             self.writeSeeingMapList(dataRef, dataPsfLike, exposure)
             self.writeSeeingGridList(dataRef, dataPsfLike, exposure)
             self.writeSeeingGridFits(dataRef, dataPsfLike, exposure)
+
 
         del dataPsfLike
         del psfCandidateList
@@ -647,6 +649,179 @@ class MeasureSeeingMitakaTask(Task):
         del fig
         del pltEll
         del canvas
+
+    def plotPsfContourGrid(self, dataRef, exposure, psfCandidateList):
+        import lsst.afw.display.utils as afwDisp
+        import lsst.afw.display.ds9 as ds9
+        import lsst.afw.math as afwMath
+
+        def getPsfGridImage(visit, ccd, psfCandidateList, exposure, xGridSize=1024, yGridSize=1024, doWriteFits=True, display=False):
+            """
+            generate an image of psf grid map arranged in a mosaic with given grid sizes
+            """
+            #psfDimension = psf.getKernel().getDimensions()
+            psfDimension = psfCandidateList[0].getMaskedImage().getImage().getDimensions()
+            xPsfSize = psfDimension.getX()
+            yPsfSize = psfDimension.getY()
+
+            #xGridSize = self.config.gridSize
+            #yGridSize = self.config.gridSize
+            # making grids
+            xCcdSize, yCcdSize = exposure.getWidth(), exposure.getHeight()
+            print '** getPsfGridImage: xGridSize, yGridSize:', xGridSize, yGridSize
+            print '** getPsfGridImage: xCcdSize, yCcdSize:', xCcdSize, yCcdSize
+            nx = int(numpy.floor(float(xCcdSize)/xGridSize))
+            ny = int(numpy.floor(float(yCcdSize)/yGridSize))
+            print '** getPsfGridImage: grid nx, ny:', nx, ny
+
+            # referring to http://dev.lsstcorp.org/doxygen/trunk/afw/classafw_1_1display_1_1utils_1_1_mosaic.html
+            m = afwDisp.Mosaic(gutter=0, background=0)
+            ###m.setGutter(0) # never call this func; a bug in afwDisp.Mosaic.setGutter() forces to set to 3
+            m.setBackground(0)
+            #print 'getPsfGridImage: display:nx:', nx
+
+            xc = xGridSize * 0.5
+            yc = yGridSize * 0.5
+            for j in range(ny):
+                yGridMin = yGridSize * j
+                yGridMax = yGridSize * (j+1)
+
+                for i in range(nx):
+
+                    xGridMin = xGridSize * i
+                    xGridMax = xGridSize * (i+1)
+
+                    psfCandImagePerGridList = afwImage.vectorImageF()
+                    print len(psfCandidateList)
+
+                    for psfCand in psfCandidateList:
+                        if False:
+                            xPsf = psfCand.getXCenter()
+                            yPsf = psfCand.getYCenter()
+                        else: # which is better?
+                            xPsf = psfCand.getSource().getX()
+                            yPsf = psfCand.getSource().getY()
+                        # is this psfcand is located in the current grid, and the kernel size is within the CCD pixel area?
+                        xPsfSize = psfCand.getWidth()
+                        yPsfSize = psfCand.getHeight()
+                        if xGridMin <= xPsf and xPsf < xGridMax and yGridMin <= yPsf and yPsf < yGridMax  and \
+                            (xPsfSize*0.5) < xPsf and xPsf < xCcdSize-(xPsfSize*0.5) and \
+                            (yPsfSize*0.5) < yPsf and yPsf < yCcdSize-(yPsfSize*0.5):
+
+                            psfCandImage = psfCand.getMaskedImage().getImage()
+                            if self.debugFlag:
+                                print '** appending a psfcand'
+
+                            centralCount = psfCandImage.get(psfCand.getWidth()/2, psfCand.getHeight()/2)
+                            psfCandImageNorm = afwImage.ImageF(psfCandImage.getDimensions(), 0.0)
+                            psfCandImageNorm <<= psfCandImage # to avoid accidental overwrite on the psfcand
+                            psfCandImageNorm /= centralCount
+                            psfCandImagePerGridList.push_back(psfCandImageNorm)
+
+                        else: # psfcand is out of grid or ccd area
+                            continue
+
+                    print '** len(psfImagePerGridList):', len(psfCandImagePerGridList)
+
+                    algStat = afwMath.MEANCLIP
+                    sctrl = afwMath.StatisticsControl(3.0, 3)
+                    psfCandImagePerGrid = afwMath.statisticsStack(psfCandImagePerGridList, algStat, sctrl)
+
+                    m.append(psfCandImagePerGrid, '(%d,%d)' % (xc, yc))
+
+                    xc += xGridSize
+                yc += yGridSize
+
+            m.drawLabels()
+                # See afw.display.utils.py:L129.
+                #    Mosaic.makeMoasic() seems to accept nx*ny mosaic, in addition to 'square', 'x', and 'y'.
+                #    m.setMode(nx)
+            psfGridImage = m.makeMosaic(mode=nx)
+
+            if display:
+                ds9.mtv(psfGridImage, frame=0)
+
+            if doWriteFits:
+                psfGridImage.writeFits('psfGrid-%07d-%03d.fits' % (visit, ccd))
+
+            return psfGridImage
+
+        def convertImageToNumpyArray(image, exposure, xPsfMapSize=None, yPsfMapSize=None, xGridSize=None, yGridSize=None, xSize=None, ySize=None):
+            if xPsfMapSize is None:
+                xPsfMapSize = image.getWidth()
+            if yPsfMapSize is None:
+                yPsfMapSize = image.getHeight()
+            if xGridSize is None:
+                xGridSize = 1.0
+            if yGridSize is None:
+                yGridSize = 1.0
+            if xSize is None:
+                xSize = exposure.getWidth()
+            if ySize is None:
+                ySize = exposure.getHeight()
+
+
+            nGridX = int(numpy.floor(float(xSize)/xGridSize))
+            nGridY = int(numpy.floor(float(ySize)/yGridSize))
+            xPlotSize = xGridSize * nGridX
+            yPlotSize = yGridSize * nGridY
+            facX = float(xPlotSize)/xPsfMapSize
+            facY = float(yPlotSize)/yPsfMapSize
+
+            gridList = numpy.zeros([yPsfMapSize, xPsfMapSize])
+            xList, yList = numpy.meshgrid(numpy.linspace(0.5*facX, (xPsfMapSize-0.5)*facX, num=xPsfMapSize, endpoint=True),
+                                          numpy.linspace(0.5*facY, (yPsfMapSize-0.5)*facY, num=yPsfMapSize, endpoint=True))
+            for j in range(yPsfMapSize):
+                for i in range(xPsfMapSize):
+                    gridList[j, i] = image.get(i, j)
+                    #print gridList
+
+            return  xList, yList, gridList
+
+        def plotPsfContourGridSub(visit, ccd, xList, yList, psfGridList, xPsfMapSize, yPsfMapSize, exposure, xGridSize=1024, yGridSize=1024, xSize=None, ySize=None):
+
+            if xSize is None:
+                xSize = exposure.getWidth()
+            if ySize is None:
+                ySize = exposure.getHeight()
+
+            facSize = 10.0 / max(xSize,ySize)  # targeting 10 inch in size
+            wFig = xSize * facSize * 1.3
+            hFig = ySize * facSize
+            fig = figure.Figure(figsize=(wFig,hFig))
+            canvas = FigCanvas(fig)
+            pltPsf = fig.add_axes([0.2, 0.1, 0.7, 0.8]) # left,bottom,width,height
+
+            pltPsf.set_xlim(0, xSize)
+            pltPsf.set_ylim(0, ySize)
+
+            #pltPsf.contour(xList, yList, psfGridList)
+            #pltPsf.contour(psfGridList, extent=(0, xSize, 0, ySize), origin='lower', extend='neither', levels=[0.01, 0.05,0.25,0.55,0.75,0.95], colors='black', )
+            pltPsf.contour(psfGridList, extent=(xList[0][0], xList[-1][-1], yList[0][0], yList[-1][-1]), origin='lower', extend='neither', levels=[0.05,0.25,0.55,0.75,0.95], colors='black', )
+
+            pltPsf.set_title('Psf Contour')
+            pltPsf.set_xlabel('X (pix)')
+            pltPsf.set_ylabel('Y (pix)')
+
+            filename = 'psfGrid-%07d-%03d.png' % (visit, ccd)
+            fig.savefig(filename, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
+                        format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
+
+
+        dataId  = dataRef.dataId
+        visit = dataId['visit']
+        ccd =  dataId['ccd']
+
+        xGridSize = self.config.gridSize
+        yGridSize = self.config.gridSize
+
+        psfGridImage = getPsfGridImage(visit, ccd, psfCandidateList, exposure, xGridSize=self.config.gridSize, yGridSize=self.config.gridSize, doWriteFits=True, display=True)
+        xPsfMapSize, yPsfMapSize = psfGridImage.getWidth(), psfGridImage.getHeight()
+        xCcdSize, yCcdSize = exposure.getWidth(), exposure.getHeight()
+        xList, yList, psfGridList = convertImageToNumpyArray(psfGridImage, exposure, xPsfMapSize=xPsfMapSize, yPsfMapSize=yPsfMapSize, xGridSize=self.config.gridSize, yGridSize=self.config.gridSize, xSize=xCcdSize, ySize=yCcdSize)
+
+        plotPsfContourGridSub(visit, ccd, xList, yList, psfGridList, xPsfMapSize, yPsfMapSize, exposure, xGridSize=self.config.gridSize, yGridSize=self.config.gridSize, xSize=None, ySize=None)
+
 
 class MeasureSeeingTask(Task):
     """
@@ -1423,10 +1598,10 @@ class MeasureSeeingTask(Task):
         del pltEll
 
 
+
 def getFilename(dataRef, dataset):
     fname = dataRef.get(dataset + "_filename")[0]
     directory = os.path.dirname(fname)
     if not os.path.exists(directory):
         os.makedirs(directory)
     return fname
-            

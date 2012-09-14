@@ -146,7 +146,7 @@ if False:
         del pltFwhm
         del canvas
 
-def getPsfGridImage(visit, ccd, psf, exposure, xGridSize=1024, yGridSize=1024, doWriteFits=True, display=True):
+def getPsfModelGridImage(visit, ccd, psf, exposure, xGridSize=1024, yGridSize=1024, doWriteFits=True, display=True):
     """
     generate an image of psf grid map arranged in a mosaic with given grid sizes
     """
@@ -238,6 +238,7 @@ def main():
     parser.add_argument('--outroot', default='/data/data2', help='e.g., /data/data2/')
     parser.add_argument('--xgridsize', type=int, default=1024, help='mesh size in x for psf sampling')
     parser.add_argument('--ygridsize', type=int, default=1024, help='mesh size in y for psf sampling')
+    parser.add_argument('--model', action="store_true", help='use Psf model instead of raw profile')
     #parser.add_argument('--dst-rerun', dest='dstRerun', default=None, help='XXX')
     args = parser.parse_args()
 
@@ -260,8 +261,10 @@ def main():
     xGridSize = args.xgridsize
     yGridSize = args.ygridsize
 
-    psfGridImage = getPsfGridImage(args.visit, args.ccd, psf, exposure, xGridSize=xGridSize, yGridSize=yGridSize, doWriteFits=True, display=False)
-
+    if args.model:
+        psfGridImage = getPsfModelGridImage(args.visit, args.ccd, psf, exposure, xGridSize=xGridSize, yGridSize=yGridSize, doWriteFits=True, display=False)
+    else:
+        pass
 
     xPsfMapSize, yPsfMapSize = psfGridImage.getWidth(), psfGridImage.getHeight()
     xCcdSize, yCcdSize = exposure.getWidth(), exposure.getHeight()
