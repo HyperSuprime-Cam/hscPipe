@@ -121,12 +121,17 @@ def globalWcs(instrument, cameraGeom, matchLists):
     config = SolveTansipTask.ConfigClass()
     task = SolveTansipTask(name="solvetansip", config=config)
 
-    matchLists = [[tansip.SourceMatch(m.id, afwCoord.IcrsCoord(afwGeom.Angle(m.ra, afwGeom.degrees),
-                                                               afwGeom.Angle(m.dec, afwGeom.degrees)),
-                                      afwGeom.Point2D(m.x, m.y), afwGeom.Point2D(m.xErr, m.yErr), m.flux)
-                   for m in ml ] for ml in matchLists]
+    def solveTansipTranslate(matchList):
+        if matchList is None:
+            return []
+        return [tansip.SourceMatch(m.id, afwCoord.IcrsCoord(afwGeom.Angle(m.ra, afwGeom.degrees),
+                                                            afwGeom.Angle(m.dec, afwGeom.degrees)),
+                                   afwGeom.Point2D(m.x, m.y), afwGeom.Point2D(m.xErr, m.yErr), m.flux)
+                for m in matchList]
 
-    return task.solve(instrument, cameraGeom, matchLists)
+    solvetansipIn = [solveTansipTranslate(ml) for ml in matchLists]
+
+    return task.solve(instrument, cameraGeom, solvetansipIn)
 
 if __name__ == "__main__":
     print "argv=", sys.argv
