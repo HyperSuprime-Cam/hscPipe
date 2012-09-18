@@ -18,20 +18,23 @@ def sigalrm_handler(signum, frame):
     sys.stderr.write('Signal handler called with signal %s\n' % (signum))
 signal.signal(signal.SIGALRM, sigalrm_handler)
 
+def thisNode():
+    return "%s,%d" % (os.uname()[1], os.getpid())
 
 
 def main(instrument, rerun, frameList):
-    print "Processing inst=%s rerun=%s frames=%s" % (instrument, rerun, frameList)
+    print "Processing inst=%s rerun=%s node=%s frames=%s" % (instrument, rerun, thisNode(), frameList)
     try:
         for frame in frameList:
-            print "Processing frame %d" % frame
+            print "Processing frame %d on %s" % (frame, thisNode())
             ProcessExposure(instrument, rerun, frame)
-            print "Done processing frame %d" % frame
+            print "Done processing frame %d on %s" % (frame, thisNode())
     except:
-        pbasf.ReportError("Total catastrophic failure processing frame %s" % frame)
+        pbasf.ReportError("Total catastrophic failure processing frame %s on %s" % (frame, thisNode()))
         print "Aborting due to errors."
         mpi.COMM_WORLD.Abort(1)
         return 1
+    print "Done on %s" % thisNode()
 
 def ProcessExposure(instrument, rerun, frame):
     comm = mpi.COMM_WORLD
@@ -70,6 +73,7 @@ def ProcessExposure(instrument, rerun, frame):
 
 Match = collections.namedtuple("Match", ["id", "ra", "dec", "x", "y", "xErr", "yErr", "flux"])
 
+
 class Worker(object):
     """Worker to process a CCD"""
     def __init__(self, butler, processor):
@@ -78,7 +82,8 @@ class Worker(object):
         self.resultCache = dict() # Cache to remember results for saving
     
     def process(self, dataId):
-        print "Started processing %s on %s,%d" % (dataId, os.uname()[1], os.getpid())
+        print "Started processing %s on %s" % (dataId, thisNode())
+        ccd = dataId['ccd']
 
         # We will do persistence ourselves
         self.processor.config.isr.doWrite = False
@@ -87,22 +92,36 @@ class Worker(object):
 
         try:
             dataRef = hscButler.getDataRef(self.butler, dataId)
-            self.resultCache[dataId['ccd']] = self.processor.runDataRefList([dataRef])[0]
+            results = self.processor.runDataRefList([dataRef])
         except Exception, e:
             sys.stderr.write("Failed to process %s: %s\n" % (dataId, e))
             raise
 
-        print "Finished processing %s on %s,%d" % (dataId, os.uname()[1], os.getpid())
-        return [Match(m.second.getId(), m.first.getRa().asDegrees(), m.first.getDec().asDegrees(),
-                      m.second.getX(), m.second.getY(),
-                      m.second.get(m.second.getTable().getCentroidErrKey()[0,0]),
-                      m.second.get(m.second.getTable().getCentroidErrKey()[1,1]),
-                      m.second.getPsfFlux()) for m in self.resultCache[dataId['ccd']].calib.matches]
+        if len(results) != 1:
+            self.resultCache[ccd] = None
+            return []
+
+        result = results[0]
+        self.resultCache[ccd] = result
+
+        try:
+            matches = [Match(m.second.getId(), m.first.getRa().asDegrees(), m.first.getDec().asDegrees(),
+                             m.second.getX(), m.second.getY(),
+                             m.second.get(m.second.getTable().getCentroidErrKey()[0,0]),
+                             m.second.get(m.second.getTable().getCentroidErrKey()[1,1]),
+                             m.second.getPsfFlux()) for m in result.calib.matches]
+        except:
+            matches = []
+
+        print "Finished processing %s on %s with %d matches" % (dataId, thisNode(), len(matches))
+
+        return matches
 
     def write(self, dataId, wcs):
         if not dataId['ccd'] in self.resultCache:
+            # This node didn't process this CCD, or it failed; either way, nothing we can do
             return
-        print "Start writing %s on %s,%d" % (dataId, os.uname()[1], os.getpid())
+        print "Start writing %s on %s" % (dataId, thisNode())
 
         try:
             result = self.resultCache[dataId['ccd']]
@@ -112,7 +131,7 @@ class Worker(object):
         except Exception, e:
             sys.stderr.write('ERROR: Failed to write %s: %s\n' % (dataId, e))
 
-        print "Finished writing CCD %s on %s,%d" % (dataId, os.uname()[1], os.getpid())
+        print "Finished writing CCD %s on %s" % (dataId, thisNode())
 
 
 def globalWcs(instrument, cameraGeom, matchLists):
