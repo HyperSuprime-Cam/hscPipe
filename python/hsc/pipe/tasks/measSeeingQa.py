@@ -742,7 +742,8 @@ class MeasureSeeingMitakaTask(Task):
                 ds9.mtv(psfGridImage, frame=0)
 
             if doWriteFits:
-                psfGridImage.writeFits('psfGrid-%07d-%03d.fits' % (visit, ccd))
+                fname = getFilename(dataRef, "fitsPsfSrcGrid")
+                psfGridImage.writeFits(fname)
 
             return psfGridImage
 
@@ -803,8 +804,8 @@ class MeasureSeeingMitakaTask(Task):
             pltPsf.set_xlabel('X (pix)')
             pltPsf.set_ylabel('Y (pix)')
 
-            filename = 'psfGrid-%07d-%03d.png' % (visit, ccd)
-            fig.savefig(filename, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
+            fname = getFilename(dataRef, "plotPsfSrcGrid")
+            fig.savefig(fname, dpi=None, facecolor='w', edgecolor='w', orientation='portrait', papertype=None,
                         format='png', transparent=False, bbox_inches=None, pad_inches=0.1)
 
 
@@ -815,12 +816,17 @@ class MeasureSeeingMitakaTask(Task):
         xGridSize = self.config.gridSize
         yGridSize = self.config.gridSize
 
-        psfGridImage = getPsfGridImage(visit, ccd, psfCandidateList, exposure, xGridSize=self.config.gridSize, yGridSize=self.config.gridSize, doWriteFits=True, display=True)
+        psfGridImage = getPsfGridImage(visit, ccd, psfCandidateList, exposure,
+                                       xGridSize=self.config.gridSize, yGridSize=self.config.gridSize,
+                                       doWriteFits=True, display=True)
         xPsfMapSize, yPsfMapSize = psfGridImage.getWidth(), psfGridImage.getHeight()
         xCcdSize, yCcdSize = exposure.getWidth(), exposure.getHeight()
-        xList, yList, psfGridList = convertImageToNumpyArray(psfGridImage, exposure, xPsfMapSize=xPsfMapSize, yPsfMapSize=yPsfMapSize, xGridSize=self.config.gridSize, yGridSize=self.config.gridSize, xSize=xCcdSize, ySize=yCcdSize)
-
-        plotPsfContourGridSub(visit, ccd, xList, yList, psfGridList, xPsfMapSize, yPsfMapSize, exposure, xGridSize=self.config.gridSize, yGridSize=self.config.gridSize, xSize=None, ySize=None)
+        xList, yList, psfGridList = convertImageToNumpyArray(psfGridImage, exposure,
+                                                             xPsfMapSize=xPsfMapSize, yPsfMapSize=yPsfMapSize,
+                                                             xGridSize=self.config.gridSize, yGridSize=self.config.gridSize,
+                                                             xSize=xCcdSize, ySize=yCcdSize)
+        plotPsfContourGridSub(visit, ccd, xList, yList, psfGridList, xPsfMapSize, yPsfMapSize, exposure,
+                              xGridSize=self.config.gridSize, yGridSize=self.config.gridSize, xSize=None, ySize=None)
 
 
 class MeasureSeeingTask(Task):
