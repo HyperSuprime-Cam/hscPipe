@@ -221,7 +221,7 @@ class MeasureSeeingMitakaTask(Task):
 
         xSize = data.nxGrid
         ySize = data.nyGrid
-        print '** (xSize,ySize):(%d,%d)' % (xSize,ySize)
+        print '*** (xSize,ySize):(%d,%d)' % (xSize,ySize)
         gridImageFwhm = afwImage.ImageF(afwGeom.ExtentI(xSize, ySize), 0.0)
         gridImageEll = afwImage.ImageF(afwGeom.ExtentI(xSize, ySize), 0.0)
         gridImageEllPa = afwImage.ImageF(afwGeom.ExtentI(xSize, ySize), 0.0)
@@ -673,11 +673,12 @@ class MeasureSeeingMitakaTask(Task):
 
             # making grids
             xCcdSize, yCcdSize = exposure.getWidth(), exposure.getHeight()
-            print '** getPsfGridImage: xGridSize, yGridSize:', xGridSize, yGridSize
-            print '** getPsfGridImage: xCcdSize, yCcdSize:', xCcdSize, yCcdSize
             nx = int(numpy.floor(float(xCcdSize)/xGridSize))
             ny = int(numpy.floor(float(yCcdSize)/yGridSize))
-            print '** getPsfGridImage: grid nx, ny:', nx, ny
+            if self.debugFlag:
+                print '*** getPsfGridImage: xGridSize, yGridSize:', xGridSize, yGridSize
+                print '*** getPsfGridImage: xCcdSize, yCcdSize:', xCcdSize, yCcdSize
+                print '*** getPsfGridImage: grid nx, ny:', nx, ny
 
             # referring to http://dev.lsstcorp.org/doxygen/trunk/afw/classafw_1_1display_1_1utils_1_1_mosaic.html
             m = afwDisp.Mosaic(gutter=0, background=0)
@@ -697,7 +698,8 @@ class MeasureSeeingMitakaTask(Task):
                     xGridMax = xGridSize * (i+1)
 
                     psfCandImagePerGridList = afwImage.vectorImageF()
-                    print len(psfCandidateList)
+                    if self.debugFlag:
+                        print '*** len(psfCandidateList):', len(psfCandidateList)
 
                     for psfCand in psfCandidateList:
                         if False:
@@ -715,7 +717,7 @@ class MeasureSeeingMitakaTask(Task):
 
                             psfCandImage = psfCand.getMaskedImage().getImage()
                             if self.debugFlag:
-                                print '** appending a psfcand'
+                                print '*** appending a psfcand'
 
                             centralCount = psfCandImage.get(psfCand.getWidth()/2, psfCand.getHeight()/2)
                             psfCandImageNorm = afwImage.ImageF(psfCandImage.getDimensions(), 0.0)
@@ -726,16 +728,18 @@ class MeasureSeeingMitakaTask(Task):
                         else: # psfcand is out of grid or ccd area
                             continue
 
-                    print '** len(psfImagePerGridList):', len(psfCandImagePerGridList)
-
                     algStat = afwMath.MEANCLIP
                     sctrl = afwMath.StatisticsControl(3.0, 3)
                     psfCandImagePerGrid = afwMath.statisticsStack(psfCandImagePerGridList, algStat, sctrl)
 
                     m.append(psfCandImagePerGrid, '(%d,%d)' % (xc, yc))
+                    if self.debugFlag:
+                        print '*** len(psfImagePerGridList):', len(psfCandImagePerGridList)
+                        print '*** psfSrcGrid at [%d,%d] (%d,%d)' % (i, j, xc, yc)
 
                     xc += xGridSize
                 yc += yGridSize
+                xc = xGridSize * 0.5
 
             m.drawLabels()
                 # See afw.display.utils.py:L129.
@@ -764,11 +768,12 @@ class MeasureSeeingMitakaTask(Task):
 
             # making grids
             xCcdSize, yCcdSize = exposure.getWidth(), exposure.getHeight()
-            print '** getPsfModelGridImage: xGridSize, yGridSize:', xGridSize, yGridSize
-            print '** getPsfModelGridImage: xCcdSize, yCcdSize:', xCcdSize, yCcdSize
             nx = int(numpy.floor(float(xCcdSize)/xGridSize))
             ny = int(numpy.floor(float(yCcdSize)/yGridSize))
-            print '** getPsfModelGridImage: grid nx, ny:', nx, ny
+            if self.debugFlag:
+                print '*** getPsfModelGridImage: xGridSize, yGridSize:', xGridSize, yGridSize
+                print '*** getPsfModelGridImage: xCcdSize, yCcdSize:', xCcdSize, yCcdSize
+                print '*** getPsfModelGridImage: grid nx, ny:', nx, ny
 
             # referring to http://dev.lsstcorp.org/doxygen/trunk/afw/classafw_1_1display_1_1utils_1_1_mosaic.html
             m = afwDisp.Mosaic(gutter=0, background=0)
@@ -784,8 +789,11 @@ class MeasureSeeingMitakaTask(Task):
                     psfSize = afwGeom.Extent2I(xPsfSize, yPsfSize)
                     psfImage = psf.computeImage(pointXY, psfSize, True)
                     m.append(psfImage, '(%d,%d)' % (xc, yc))
+                    if self.debugFlag:
+                        print '*** psfModelGrid at [%d,%d] (%d,%d)' % (i, j, xc, yc)
                     xc += xGridSize
                 yc += yGridSize
+                xc = xGridSize * 0.5
 
             m.drawLabels()
             psfModelGridImage = m.makeMosaic(mode=nx)

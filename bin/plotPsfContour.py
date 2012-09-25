@@ -72,12 +72,12 @@ def getPsfModelGridImage(visit, ccd, psf, exposure, xGridSize=1024, yGridSize=10
     #yGridSize = self.config.gridSize
     # making grids
     xCcdSize, yCcdSize = exposure.getWidth(), exposure.getHeight()
-    print '** getPsfGridImage: xGridSize, yGridSize:', xGridSize, yGridSize
-    print '** getPsfGridImage: xCcdSize, yCcdSize:', xCcdSize, yCcdSize
     nx = int(numpy.floor(float(xCcdSize)/xGridSize))
     ny = int(numpy.floor(float(yCcdSize)/yGridSize))
-    print '** getPsfGridImage: grid nx, ny:', nx, ny
-    
+    print '*** getPsfGridImage: xGridSize, yGridSize:', xGridSize, yGridSize
+    print '*** getPsfGridImage: xCcdSize, yCcdSize:', xCcdSize, yCcdSize
+    print '*** getPsfGridImage: grid nx, ny:', nx, ny
+
     # referring to http://dev.lsstcorp.org/doxygen/trunk/afw/classafw_1_1display_1_1utils_1_1_mosaic.html
     m = afwDisp.Mosaic(gutter=0, background=0)
     ###m.setGutter(0) # never call this func; a bug in afwDisp.Mosaic.setGutter() forces to set to 3
@@ -95,6 +95,7 @@ def getPsfModelGridImage(visit, ccd, psf, exposure, xGridSize=1024, yGridSize=10
             m.append(psfImage, '(%d,%d)' % (xc, yc))
             xc += xGridSize
         yc += yGridSize
+        xc = xGridSize * 0.5
 
     m.drawLabels()
         # See afw.display.utils.py:L129.
@@ -130,7 +131,7 @@ def plotPsfContourGrid(visit, ccd, xList, yList, psfGridList, xPsfMapSize, yPsfM
 
     #pltPsf.contour(xList, yList, psfGridList)
     #pltPsf.contour(psfGridList, extent=(0, xSize, 0, ySize), origin='lower', extend='neither', levels=[0.01, 0.05,0.25,0.55,0.75,0.95], colors='black', )
-    pltPsf.contour(psfGridList, extent=(xList[0][0], xList[-1][-1], yList[0][0], yList[-1][-1]), origin='lower', extend='neither', levels=[0.05,0.25,0.55,0.75,0.95], colors='black', )    
+    pltPsf.contour(psfGridList, extent=(xList[0][0], xList[-1][-1], yList[0][0], yList[-1][-1]), origin='lower', extend='neither', levels=[0.05,0.25,0.55,0.75,0.95], colors='black', )
 
     pltPsf.set_title('Psf Contour')
     pltPsf.set_xlabel('X (pix)')
@@ -152,7 +153,7 @@ def main():
     parser.add_argument('--outroot', default='/data/data2', help='e.g., /data/data2/')
     parser.add_argument('--xgridsize', type=int, default=1024, help='mesh size in x for psf sampling')
     parser.add_argument('--ygridsize', type=int, default=1024, help='mesh size in y for psf sampling')
-    parser.add_argument('--model', action="store_true", help='use Psf model instead of raw profile')
+    #parser.add_argument('--model', action="store_true", help='use Psf model instead of raw profile')
     #parser.add_argument('--dst-rerun', dest='dstRerun', default=None, help='XXX')
     args = parser.parse_args()
 
@@ -175,10 +176,7 @@ def main():
     xGridSize = args.xgridsize
     yGridSize = args.ygridsize
 
-    if args.model:
-        psfGridImage = getPsfModelGridImage(args.visit, args.ccd, psf, exposure, xGridSize=xGridSize, yGridSize=yGridSize, doWriteFits=True, display=False)
-    else:
-        pass
+    psfGridImage = getPsfModelGridImage(args.visit, args.ccd, psf, exposure, xGridSize=xGridSize, yGridSize=yGridSize, doWriteFits=True, display=False)
 
     xPsfMapSize, yPsfMapSize = psfGridImage.getWidth(), psfGridImage.getHeight()
     xCcdSize, yCcdSize = exposure.getWidth(), exposure.getHeight()
