@@ -12,14 +12,13 @@ from .qa import QaTask
 
 
 class SubaruProcessCcdConfig(ProcessCcdTask.ConfigClass):
-    delayWrite = pexConfig.Field(
-        dtype=bool, default=False,
-        doc="Delay writing outputs (e.g., for pbasf processing)?"
+    doFinalWrite = pexConfig.Field(
+        dtype=bool, default=True,
+        doc="Write all outputs at end?  If so, you also likely want doWriteCalibrate=False."
         )
     doWriteUnpackedMatches = pexConfig.Field(
         dtype=bool, default=True,
-        doc=("Write the denormalized match table as well as the normalized match table; "
-             "ignored if doWriteCalibrate=False")
+        doc=("Write the denormalized match table as well as the normalized match table (in the final write)?")
     )
     qa = pexConfig.ConfigurableField(target = QaTask, doc = "QA analysis")
 
@@ -43,16 +42,13 @@ class SubaruProcessCcdTask(ProcessCcdTask):
     def run(self, sensorRef):
         result = ProcessCcdTask.run(self, sensorRef)
         if self.config.qa.useIcsources:
-            self.qa.run(sensorRef, result.exposure, result.calib.sources)        
+            self.qa.run(sensorRef, result.exposure, result.calib.sources)
         else:
             self.qa.run(sensorRef, result.exposure, result.sources)
-        sensorRef.put(result.exposure, self.dataPrefix + 'calexp')
-        if not self.config.delayWrite:
+
+        if self.config.doFinalWrite:
             self.write(sensorRef, result, wcs=result.exposure.getWcs())
-        if self.config.doWriteUnpackedMatches:
-            sensorRef.put(self.unpackMatches(result.calib.matches, result.calib.matchMeta), "icMatchList")
-        if self.config.doWriteSourceMatches and self.config.doWriteUnpackedMatches and (not self.config.qa.useIcsources):
-            sensorRef.put(self.unpackMatches(result.matches, result.matchMeta), "srcMatchList")
+
 
         return result
 
@@ -114,36 +110,51 @@ class SubaruProcessCcdTask(ProcessCcdTask):
 
         return mergedCatalog
 
-    def write(self, dataRef, struct, wcs=None):
+    def packMatches(self, matches, matchMeta):
+        """Write normalised match table"""
+        normalizedMatches = afwTable.packMatches(matches)
+        normalizedMatches.table.setMetadata(matchMeta)
+        return normalizedMatches
+
+    def write(self, dataRef, results, wcs=None):
         if wcs is None:
-            wcs = struct.exposure.getWcs()
-            self.log.log(self.log.WARN, "WARNING: No new WCS provided")
+            self.log.warn("WARNING: No new WCS provided")
+        else:
+            # Apply WCS to sources
+            # No longer handling matchSources explicitly - these should all be in calib.sources,
+            # or there's a bug in the calibrate task.
+            if results.exposure is not None:
+                results.exposure.setWcs(wcs)
+            for sources in (results.sources, results.calib.sources):
+                if sources is None:
+                    continue
+                for s in sources:
+                    s.updateCoord(wcs)
 
-        # Apply WCS to sources
-        # No longer handling matchSources explicitly - these should all be in calib.sources,
-        # or there's a bug in the calibrate task.
-        struct.exposure.setWcs(wcs)
-        for sources in (struct.sources, struct.calib.sources):
-            if sources is None:
-                continue
-            for s in sources:
-                s.updateCoord(wcs)
+        if self.config.doCalibrate:
+            if results.calib.psf is not None:
+                dataRef.put(results.calib.psf, 'psf')
+            if (self.config.doWriteCalibrateMatches and results.calib.matches is not None and
+                results.calib.matchMeta is not None):
+                dataRef.put(self.packMatches(results.calib.matches, results.calib.matchMeta), "icMatch")
+                if self.config.doWriteUnpackedMatches:
+                    dataRef.put(self.unpackMatches(results.calib.matches, results.calib.matchMeta),
+                                "icMatchFull")
+            if self.config.calibrate.doComputeApCorr and results.calib.apCorr is not None:
+                dataRef.put(results.calib.apCorr, 'apCorr')
+            if results.calib.sources is not None:
+                dataRef.put(results.calib.sources, 'icSrc')
 
-        if self.config.doCalibrate and self.config.doWriteCalibrate:
-            if struct.calib.psf is not None:
-                dataRef.put(struct.calib.psf, 'psf')
-            if self.config.doWriteCalibrateMatches and struct.calib.matches is not None and struct.calib.matchMeta is not None:
-                normalizedMatches = afwTable.packMatches(struct.calib.matches)
-                normalizedMatches.table.setMetadata(struct.calib.matchMeta)
-                dataRef.put(normalizedMatches, "icMatch")
-            if self.config.doWriteUnpackedMatches and  struct.calib.matches is not None and struct.calib.matchMeta is not None:
-                dataRef.put(self.unpackMatches(struct.calib.matches, struct.calib.matchMeta), "icMatchList")
-            if self.config.calibrate.doComputeApCorr and struct.calib.apCorr is not None:
-                dataRef.put(struct.calib.apCorr, 'apCorr')
-            if struct.calib.sources is not None:
-                dataRef.put(struct.calib.sources, 'icSrc')
+        if results.exposure is not None:
+            dataRef.put(results.exposure, 'calexp')
 
-        if struct.exposure is not None:
-            dataRef.put(struct.exposure, 'calexp')
-        if self.config.doWriteSources and not self.config.qa.useIcsources and struct.sources is not None:
-            dataRef.put(struct.sources, 'src')
+        if self.config.doWriteSources and not self.config.qa.useIcsources and results.sources is not None:
+            dataRef.put(results.sources, 'src')
+        if (self.config.doWriteSourceMatches and self.config.doWriteUnpackedMatches and
+            (not self.config.qa.useIcsources)):
+            sensorRef.put(self.packMatches(result.matches, result.matchMeta), "srcMatch")
+            if self.config.doWriteUnpackedMatches:
+                sensorRef.put(self.unpackMatches(result.matches, result.matchMeta), "srcMatchFull")
+
+
+
