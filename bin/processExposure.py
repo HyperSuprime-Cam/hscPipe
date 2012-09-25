@@ -10,8 +10,12 @@ import collections
 import hsc.pipe.tasks.plotSetup
 import lsst.afw.geom as afwGeom
 import lsst.afw.coord as afwCoord
+import lsst.afw.table as afwTable
+import lsst.afw.image as afwImage
 import hsc.pipe.base.camera as hscCamera
 import hsc.pipe.base.butler as hscButler
+import hsc.pipe.base.matches as hscMatches
+from lsst.pipe.base import Struct
 from hsc.pipe.tasks.processCcd import SubaruProcessCcdTask
 
 def sigalrm_handler(signum, frame):
@@ -58,7 +62,10 @@ def ProcessExposure(instrument, rerun, frame):
 
     # Scatter: process CCDs independently
     worker = Worker(butler, processor)
-    matchLists = pbasf.ScatterJob(comm, worker.process, dataIdList, root=0)
+    structList = pbasf.ScatterJob(comm, worker.process, dataIdList, root=0)
+    matchLists = [hscMatches.matchesFromCatalog(s.matches, processor.measurement.config.slots)
+                  for s in structList]
+    filterList = [s.filterName for s in structList]
 
     # Together: global WCS solution
     if comm.Get_rank() == 0:
@@ -66,12 +73,14 @@ def ProcessExposure(instrument, rerun, frame):
         if not wcsList:
             sys.stderr.write("WARNING: Global astrometric solution failed!\n")
             wcsList = [None] * len(dataIdList)
+        fluxMag0 = pbasf.SafeCall(globalZeroPoint, processor, filterList, matchLists)
 
     # Scatter with data from root: save CCDs with WCS
-    pbasf.QueryToRoot(comm, worker.write, lambda dataId: wcsList[dataId['ccd']], dataIdList, root=0)
+    query = lambda dataId: Struct(wcs=wcsList[dataId['ccd']], fluxMag0=fluxMag0)
+    pbasf.QueryToRoot(comm, worker.write, query, dataIdList, root=0)
 
-
-Match = collections.namedtuple("Match", ["id", "ra", "dec", "x", "y", "xErr", "yErr", "flux"])
+Match = collections.namedtuple("Match", ["id", "ra", "dec", "x", "y", "xErr", "yErr", "xyFlag", "measFlux",
+                                         "measFluxErr", "measFluxFlag", "refFlux"])
 
 
 class Worker(object):
@@ -103,30 +112,26 @@ class Worker(object):
 
         result = results[0]
         self.resultCache[ccd] = result
+        filterName = result.exposure.getFilter().getName()
 
-        try:
-            matches = [Match(m.second.getId(), m.first.getRa().asDegrees(), m.first.getDec().asDegrees(),
-                             m.second.getX(), m.second.getY(),
-                             m.second.get(m.second.getTable().getCentroidErrKey()[0,0]),
-                             m.second.get(m.second.getTable().getCentroidErrKey()[1,1]),
-                             m.second.getPsfFlux()) for m in result.calib.matches]
-        except:
-            matches = []
+        matches = hscMatches.matchesToCatalog(result.calib.matches, result.calib.matchMeta)
 
         print "Finished processing %s on %s with %d matches" % (dataId, thisNode(), len(matches))
 
-        return matches
+        return Struct(matches=matches, filterName=filterName)
 
-    def write(self, dataId, wcs):
+    def write(self, dataId, struct):
         if not dataId['ccd'] in self.resultCache:
             # This node didn't process this CCD, or it failed; either way, nothing we can do
             return
         print "Start writing %s on %s" % (dataId, thisNode())
+        wcs = struct.wcs
+        fluxMag0 = struct.fluxMag0
 
         try:
             result = self.resultCache[dataId['ccd']]
             dataRef = hscButler.getDataRef(self.butler, dataId)
-            self.processor.write(dataRef, result, wcs)
+            self.processor.write(dataRef, result, wcs=wcs, fluxMag0=fluxMag0)
             del self.resultCache[dataId['ccd']]
         except Exception, e:
             sys.stderr.write('ERROR: Failed to write %s: %s\n' % (dataId, e))
@@ -140,17 +145,68 @@ def globalWcs(instrument, cameraGeom, matchLists):
     config = SolveTansipTask.ConfigClass()
     task = SolveTansipTask(name="solvetansip", config=config)
 
-    def solveTansipTranslate(matchList):
-        if matchList is None:
-            return []
-        return [tansip.SourceMatch(m.id, afwCoord.IcrsCoord(afwGeom.Angle(m.ra, afwGeom.degrees),
-                                                            afwGeom.Angle(m.dec, afwGeom.degrees)),
-                                   afwGeom.Point2D(m.x, m.y), afwGeom.Point2D(m.xErr, m.yErr), m.flux)
-                for m in matchList]
-
-    solvetansipIn = [solveTansipTranslate(ml) for ml in matchLists]
-
+    solvetansipIn = [task.convert(ml) for ml in matchLists]
     return task.solve(instrument, cameraGeom, solvetansipIn)
+
+def globalZeroPoint(processor, filterList, matchLists):
+    photocal = processor.calibrate.photocal
+
+    # Ensure all the match lists have the same schema, by copying them into the same table
+    template = None
+    for ml in matchLists:
+        if ml is not None and len(ml) > 0:
+            template = ml[0]
+            break
+    if template is None:
+        raise RuntimeError("No matches provided")
+    ref = afwTable.SimpleTable.make(template.first.schema)
+    src = afwTable.SourceTable.make(template.second.schema)
+    for prop in ("Centroid", "Shape", "PsfFlux", "ApFlux", "ModelFlux", "InstFlux"):
+        getter = getattr(template.second.table, "get" + prop + "Definition")
+        setter = getattr(src, "define" + prop)
+        setter(getter())
+
+    refNames = ref.schema.getNames()
+    srcNames = src.schema.getNames()
+    refNewKeys = [ref.schema.find(k).key for k in refNames]
+    srcNewKeys = [src.schema.find(k).key for k in srcNames]
+    matches = []
+    for ml in matchLists:
+        if ml is None or len(ml) == 0:
+            continue
+        refOldKeys = [ml[0].first.schema.find(k).key for k in refNames]
+        srcOldKeys = [ml[0].second.schema.find(k).key for k in srcNames]
+        for m in ml:
+            newRef = ref.makeRecord()
+            for old, new in zip(refOldKeys, refNewKeys):
+                newRef.set(new, m.first.get(old))
+            newSrc = src.makeRecord()
+            for old, new in zip(srcOldKeys, srcNewKeys):
+                newSrc.set(new, m.second.get(old))
+            matches.append(afwTable.ReferenceMatch(newRef, newSrc, m.distance))
+
+    try:
+        filterSet = set(filterList)
+        if len(filterSet) != 1:
+            raise RuntimeError("Multiple filters over exposure: %s" % filterSet)
+        filterName = filterSet.pop()
+
+        class DummyExposure(object):
+            """Quacks like an lsst.afw.image.Exposure, for the purposes of PhotoCal."""
+            def __init__(self, filterName):
+                self._filterName = filterName
+            def getFilter(self):
+                return afwImage.Filter(filterName)
+
+        result = photocal.run(DummyExposure(filterName), matches)
+    except Exception, e:
+        processor.log.warn("Failed to determine global photometric zero-point: %s" % e)
+        return None
+
+    processor.log.info("Global photometric zero-point: %f" % result.calib.getMagnitude(1.0))
+    return result.calib.getFluxMag0()
+
+
 
 if __name__ == "__main__":
     print "argv=", sys.argv

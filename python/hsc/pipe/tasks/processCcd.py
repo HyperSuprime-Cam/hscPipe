@@ -6,6 +6,7 @@ import hsc.pipe.tasks.plotSetup
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.afw.table as afwTable
+import hsc.pipe.base.matches as hscMatches
 from hsc.pipe.base import SubaruArgumentParser
 from lsst.pipe.tasks.processCcd import ProcessCcdTask
 from .qa import QaTask
@@ -50,9 +51,9 @@ class SubaruProcessCcdTask(ProcessCcdTask):
         if not self.config.delayWrite:
             self.write(sensorRef, result, wcs=result.exposure.getWcs())
         if self.config.doWriteUnpackedMatches:
-            sensorRef.put(self.unpackMatches(result.calib.matches, result.calib.matchMeta), "icMatchList")
+            sensorRef.put(hscMatches.matchesToCatalog(result.calib.matches, result.calib.matchMeta), "icMatchList")
         if self.config.doWriteSourceMatches and self.config.doWriteUnpackedMatches and (not self.config.qa.useIcsources):
-            sensorRef.put(self.unpackMatches(result.matches, result.matchMeta), "srcMatchList")
+            sensorRef.put(hscMatches.matchesToCatalog(result.matches, result.matchMeta), "srcMatchList")
 
         return result
 
@@ -62,59 +63,7 @@ class SubaruProcessCcdTask(ProcessCcdTask):
         """
         return SubaruArgumentParser(name=cls._DefaultName)
 
-    def unpackMatches(self, matches, matchMeta):
-        """Denormalise matches into "unpacked matches" """
-
-        refSchema = matches[0].first.getSchema()
-        srcSchema = matches[0].second.getSchema()
-
-        mergedSchema = afwTable.Schema()
-        def merge(schema, key, merged, name):
-            field = schema.find(key).field
-            typeStr = field.getTypeString()
-            fieldDoc = field.getDoc()
-            fieldUnits = field.getUnits()
-            if typeStr in ("ArrayF", "ArrayD", "CovF", "CovD"):
-                fieldSize = field.getSize()
-            else:
-                fieldSize = None
-            mergedSchema.addField(name + '.' + key, type=typeStr, doc=fieldDoc, units=fieldUnits,
-                                  size=fieldSize)
-
-        for keyName in refSchema.getNames():
-            merge(refSchema, keyName, mergedSchema, "ref")
-
-        for keyName in srcSchema.getNames():
-            merge(srcSchema, keyName, mergedSchema, "src")
-
-        mergedCatalog = afwTable.BaseCatalog(mergedSchema)
-
-        refKeys = []
-        for keyName in refSchema.getNames():
-            refKeys.append((refSchema.find(keyName).key, mergedSchema.find('ref.' + keyName).key))
-        srcKeys = []
-        for keyName in srcSchema.getNames():
-            srcKeys.append((srcSchema.find(keyName).key, mergedSchema.find('src.' + keyName).key))
-
-        for match in matches:
-            record = mergedCatalog.addNew()
-            for key in refKeys:
-                keyIn = key[0]
-                keyOut = key[1]
-                record.set(keyOut, match.first.get(keyIn))
-            for key in srcKeys:
-                keyIn = key[0]
-                keyOut = key[1]
-                record.set(keyOut, match.second.get(keyIn))
-
-        # obtaining reference catalog name
-        catalogName = os.path.basename(os.getenv("ASTROMETRY_NET_DATA_DIR").rstrip('/'))
-        matchMeta.add('REFCAT', catalogName)
-        mergedCatalog.getTable().setMetadata(matchMeta)
-
-        return mergedCatalog
-
-    def write(self, dataRef, struct, wcs=None):
+    def write(self, dataRef, struct, wcs=None, fluxMag0=None):
         if wcs is None:
             wcs = struct.exposure.getWcs()
             self.log.log(self.log.WARN, "WARNING: No new WCS provided")
@@ -129,6 +78,9 @@ class SubaruProcessCcdTask(ProcessCcdTask):
             for s in sources:
                 s.updateCoord(wcs)
 
+        if fluxMag0 is not None:
+            struct.exposure.getCalib().setFluxMag0(fluxMag0)
+
         if self.config.doCalibrate and self.config.doWriteCalibrate:
             if struct.calib.psf is not None:
                 dataRef.put(struct.calib.psf, 'psf')
@@ -137,7 +89,8 @@ class SubaruProcessCcdTask(ProcessCcdTask):
                 normalizedMatches.table.setMetadata(struct.calib.matchMeta)
                 dataRef.put(normalizedMatches, "icMatch")
             if self.config.doWriteUnpackedMatches and  struct.calib.matches is not None and struct.calib.matchMeta is not None:
-                dataRef.put(self.unpackMatches(struct.calib.matches, struct.calib.matchMeta), "icMatchList")
+                dataRef.put(hscMatches.matchesToCatalog(struct.calib.matches, struct.calib.matchMeta),
+                            "icMatchList")
             if self.config.calibrate.doComputeApCorr and struct.calib.apCorr is not None:
                 dataRef.put(struct.calib.apCorr, 'apCorr')
             if struct.calib.sources is not None:
