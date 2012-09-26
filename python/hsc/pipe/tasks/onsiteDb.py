@@ -64,8 +64,7 @@ class SubaruProcessCcdOnsiteDbTask(SubaruProcessCcdOnsiteTask):
             else:
                 print >> sys.stderr, "Given instrument name is not valid: %s" % namespace.camera
                 sys.exit(1)
-
         else:
             id = self.onsiteDbUtils.getRegistryId(visit, ccd)
-                
+
         return id, visit, ccd

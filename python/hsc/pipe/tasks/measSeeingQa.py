@@ -757,7 +757,7 @@ class MeasureSeeingMitakaTask(Task):
             del m
             return psfGridImage
 
-        def getPsfModelGridImage(visit, ccd, psf, exposure, xGridSize=1024, yGridSize=1024, doWriteFits=True, display=True):
+        def getPsfModelGridImage(visit, ccd, psf, exposure, xGridSize=1024, yGridSize=1024, doWriteFits=True, display=False):
             """
             generate an image of psf-model grid map arranged in a mosaic with given grid sizes
             """
@@ -886,7 +886,7 @@ class MeasureSeeingMitakaTask(Task):
         if psfType in ['psfcand', 'both']:
             psfGridImage = getPsfGridImage(visit, ccd, psfCandidateList, exposure,
                                            xGridSize=self.config.gridSize, yGridSize=self.config.gridSize,
-                                           doWriteFits=True, display=True)
+                                           doWriteFits=True, display=False)
             xPsfMapSize, yPsfMapSize = psfGridImage.getWidth(), psfGridImage.getHeight()
             xList, yList, psfGridList = convertImageToNumpyArray(psfGridImage, exposure,
                                                                  xPsfMapSize=xPsfMapSize, yPsfMapSize=yPsfMapSize,
@@ -900,7 +900,7 @@ class MeasureSeeingMitakaTask(Task):
             psfModel = exposure.getPsf()
             psfModelGridImage = getPsfModelGridImage(visit, ccd, psfModel, exposure,
                                            xGridSize=self.config.gridSize, yGridSize=self.config.gridSize,
-                                           doWriteFits=True, display=True)
+                                           doWriteFits=True, display=False)
             xPsfModelMapSize, yPsfModelMapSize = psfModelGridImage.getWidth(), psfModelGridImage.getHeight()
             xList, yList, psfModelGridList = convertImageToNumpyArray(psfModelGridImage, exposure,
                                                                  xPsfMapSize=xPsfModelMapSize, yPsfMapSize=yPsfModelMapSize,

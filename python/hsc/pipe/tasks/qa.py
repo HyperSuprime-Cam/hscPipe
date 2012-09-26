@@ -59,7 +59,7 @@ class QaTask(Task):
         try:
             anaPath = dataRef.getButler().mapper.root
             dataId = dataRef.dataId
-            if dataId.has_key('registryId'):
+            if dataId.has_key('registryId') and dataId['registryId'] >= 0:
                 registryId = dataId['registryId']
             else:
                 registryId = -9999
