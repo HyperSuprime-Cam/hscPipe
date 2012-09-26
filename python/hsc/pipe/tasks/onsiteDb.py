@@ -5,6 +5,7 @@ import sys
 
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
+from lsst.pipe.base.struct import Struct
 import lsst.afw.table as afwTable
 
 from .onsite import SubaruProcessCcdOnsiteTask
@@ -13,23 +14,53 @@ class SubaruProcessCcdOnsiteDbTask(SubaruProcessCcdOnsiteTask):
     """Subclass of SubaruProcessCcdOnsiteTask that uses the database.
     """
 
+    @classmethod
+    def parseAndRun(cls, args=None, config=None, log=None):
+        """
+        Copied from pipe_base.cmdLineTask.CmdLineTask,
+        to add extra options for analysis operation (anaid, registid).
+        """
+        argumentParser = cls._makeArgumentParser()
+        argumentParser.add_argument("--anaid", action="store", type=int, dest="anaId",
+                                    default=0, help="analysis session Id in analysis table.")
+        argumentParser.add_argument("--registid", action="store", type=int, dest="registId",
+                                    default=0, help="primary key Id in registry raw table.")
+
+        if config is None:
+            config = cls.ConfigClass()
+        parsedCmd = argumentParser.parse_args(config=config, args=args, log=log, overrides=cls.overrides)
+        task = cls(name = cls._DefaultName, config = parsedCmd.config, log = parsedCmd.log)
+        task.parsedCmd = parsedCmd
+        task.runDataRefList(parsedCmd.dataRefList, doRaise=parsedCmd.doraise)
+        return Struct(
+            argumentParser = argumentParser,
+            parsedCmd = parsedCmd,
+            task = task,
+            )
+
     def run(self, sensorRef):
         # !!! it is better to db update for frame_analysis_start just before execution of this script
         #     but, to get 'id' on time when this analysis process is invoked, I'm temporarily 
         #     doing this here.
         self.importDbUtils()
-        id, visit, ccd =  self.getDataId()
-        sensorRef.dataId['registryId'] = id
+        if False:
+            registid, visit, ccd =  self.getDataId()
 
-        self.onsiteDbUtils.updateStatusFrameAnalysisStart(id)
+        anaId =  self.parsedCmd.anaId
+        registId = self.parsedCmd.registId
+        sensorRef.dataId['anaId'] = anaId
+        sensorRef.dataId['registId'] = registId 
+        self.log.info("anaid: %d registid: %d" % (sensorRef.dataId['anaId'], sensorRef.dataId['registId']))
+
+        self.onsiteDbUtils.updateStatusFrameAnalysisStart(registId)
         # Run main processing task and QA by calling base class
         result = SubaruProcessCcdOnsiteTask.run(self, sensorRef)
         ## === update onsite Db status
-        self.onsiteDbUtils.updateStatusFrameAnalysisEnd(id)
+        self.onsiteDbUtils.updateStatusFrameAnalysisEnd(registId)
         ## === register CORR data QA values
         filename = sensorRef.get('calexp_filename')[0]
         #registCorrSup.registCorrFrameMetaInfo(filename)
-        self.onsiteDbUtils.registFrameQaMetaInfo(id, filename)
+        self.onsiteDbUtils.registFrameQaMetaInfo(registId, filename)
         return result
 
     def importDbUtils(self):
@@ -65,6 +96,9 @@ class SubaruProcessCcdOnsiteDbTask(SubaruProcessCcdOnsiteTask):
                 print >> sys.stderr, "Given instrument name is not valid: %s" % namespace.camera
                 sys.exit(1)
         else:
-            id = self.onsiteDbUtils.getRegistryId(visit, ccd)
+            registId = self.onsiteDbUtils.getRegistryId(visit, ccd)
 
-        return id, visit, ccd
+        return registId, visit, ccd
+
+
+
