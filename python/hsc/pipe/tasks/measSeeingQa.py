@@ -728,9 +728,13 @@ class MeasureSeeingMitakaTask(Task):
                         else: # psfcand is out of grid or ccd area
                             continue
 
-                    algStat = afwMath.MEANCLIP
-                    sctrl = afwMath.StatisticsControl(3.0, 3)
-                    psfCandImagePerGrid = afwMath.statisticsStack(psfCandImagePerGridList, algStat, sctrl)
+                    if len(psfCandImagePerGridList) > 0:
+                        algStat = afwMath.MEANCLIP
+                        sctrl = afwMath.StatisticsControl(3.0, 3)
+                        psfCandImagePerGrid = afwMath.statisticsStack(psfCandImagePerGridList, algStat, sctrl)
+                    else:
+                        # fill 0 for a grid where no psfcand is available
+                        psfCandImagePerGrid = afwImage.ImageF(psfCandImage.getDimensions(), 0.0)
 
                     m.append(psfCandImagePerGrid, '(%d,%d)' % (xc, yc))
                     if self.debugFlag:
