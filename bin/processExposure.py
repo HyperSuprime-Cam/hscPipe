@@ -63,12 +63,13 @@ def ProcessExposure(instrument, rerun, frame):
     # Scatter: process CCDs independently
     worker = Worker(butler, processor)
     structList = pbasf.ScatterJob(comm, worker.process, dataIdList, root=0)
-    matchLists = [hscMatches.matchesFromCatalog(s.matches, processor.measurement.config.slots)
-                  for s in structList]
-    filterList = [s.filterName for s in structList]
 
     # Together: global WCS solution
     if comm.Get_rank() == 0:
+        matchLists = [hscMatches.matchesFromCatalog(s.matches, processor.measurement.config.slots)
+                      for s in structList]
+        filterList = [s.filterName for s in structList]
+
         wcsList = pbasf.SafeCall(globalWcs, instrument, butler.mapper.camera, matchLists)
         if not wcsList:
             sys.stderr.write("WARNING: Global astrometric solution failed!\n")
