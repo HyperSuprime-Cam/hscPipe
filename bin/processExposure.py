@@ -98,6 +98,7 @@ class Worker(object):
         self.processor.config.isr.doWrite = False
         self.processor.config.doWriteCalibrate = False
         self.processor.config.doWriteSources = False
+        self.processor.config.doFinalWrite = False
 
         try:
             dataRef = hscButler.getDataRef(self.butler, dataId)

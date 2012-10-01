@@ -84,8 +84,7 @@ class SubaruProcessCcdTask(ProcessCcdTask):
         if self.config.doCalibrate:
             if results.calib.psf is not None:
                 dataRef.put(results.calib.psf, 'psf')
-            if (self.config.doWriteCalibrateMatches and results.calib.matches is not None and
-                results.calib.matchMeta is not None):
+            if results.calib.matches is not None and results.calib.matchMeta is not None:
                 dataRef.put(packMatches(results.calib.matches, results.calib.matchMeta), "icMatch")
                 if self.config.doWriteUnpackedMatches:
                     dataRef.put(hscMatches.matchesToCatalog(results.calib.matches, results.calib.matchMeta),
@@ -97,11 +96,9 @@ class SubaruProcessCcdTask(ProcessCcdTask):
 
         if results.exposure is not None:
             dataRef.put(results.exposure, 'calexp')
-
-        if self.config.doWriteSources and not self.config.qa.useIcsources and results.sources is not None:
+        if results.sources is not None:
             dataRef.put(results.sources, 'src')
-        if (self.config.doWriteSourceMatches and self.config.doWriteUnpackedMatches and
-            (not self.config.qa.useIcsources)):
-            sensorRef.put(packMatches(result.matches, result.matchMeta), "srcMatch")
+        if results.matches is not None:
+            dataRef.put(packMatches(results.matches, results.matchMeta), "srcMatch")
             if self.config.doWriteUnpackedMatches:
-                sensorRef.put(hscMatches.matchesToCatalog(result.matches, result.matchMeta), "srcMatchFull")
+                dataRef.put(hscMatches.matchesToCatalog(results.matches, results.matchMeta), "srcMatchFull")
