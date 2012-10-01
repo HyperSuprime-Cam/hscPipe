@@ -27,6 +27,7 @@ from lsst.pipe.base import Task, Struct
 import lsst.afw.display.ds9 as ds9
 
 import numpy
+import errno
 
 #import matplotlib
 #matplotlib.use('Agg')
@@ -979,7 +980,15 @@ def getFilename(dataRef, dataset):
     fname = dataRef.get(dataset + "_filename")[0]
     directory = os.path.dirname(fname)
     if not os.path.exists(directory):
-        os.makedirs(directory)
+        try: # handling a possible race condition
+            os.makedirs(directory)
+        except OSError, e:
+            if e.errno == errno.EEXIST:
+                raise
+        if not os.path.exists(directory):
+            raise RuntimeError, "Unable to create output directory for qa output directory '%s'" % (directory)
+
     return fname
+
 
 measAlg.starSelectorRegistry.register("mitaka", SizeMagnitudeMitakaStarSelector)
