@@ -425,7 +425,7 @@ class MeasureSeeingMitakaTask(Task):
             for xFwhm, yFwhm, fwhm in zip(data.xListPsfLikeRobust, data.yListPsfLikeRobust,
                                           data.fwhmListPsfLikeRobust):
                 if xGridMin <= xFwhm and xFwhm < xGridMax and yGridMin <= yFwhm and yFwhm < yGridMax:
-                    if fwhm is not None:
+                    if fwhm > 0:
                         fwhmsInGrid = numpy.append(fwhmsInGrid, fwhm)
             # taking median to represent the value in a grid mesh
             fwhmList = numpy.append(fwhmList, numpy.median(fwhmsInGrid))
@@ -1126,8 +1126,8 @@ class MeasureSeeingTask(Task):
         self.metadata.set("magLim", numpy.power(10, -0.4*magLim))
 
         if self.debugFlag:
-            self.log.logdebug("QaSeeing: magHist: %s" % magHist)
-            self.log.logdebug("QaSeeing: cummurative magHist: %s" % magCumHist)
+            self.log.logdebug("QaSeeing: magHist: %s" % str(magHist))
+            self.log.logdebug("QaSeeing: cummurative magHist: %s" % str(magCumHist))
 
         if self.config.doPlots:
             fig = figure.Figure()
@@ -1472,7 +1472,7 @@ class MeasureSeeingTask(Task):
             for xFwhm, yFwhm, fwhm in zip(data.xListPsfLikeRobust, data.yListPsfLikeRobust,
                                           data.fwhmListPsfLikeRobust):
                 if xGridMin <= xFwhm and xFwhm < xGridMax and yGridMin <= yFwhm and yFwhm < yGridMax:
-                    if fwhm is not None:
+                    if fwhm > 0:
                         fwhmsInGrid = numpy.append(fwhmsInGrid, fwhm)
             # taking median to represent the value in a grid mesh
             fwhmList = numpy.append(fwhmList, numpy.median(fwhmsInGrid))
