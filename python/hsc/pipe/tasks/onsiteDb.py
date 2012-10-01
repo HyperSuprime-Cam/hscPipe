@@ -25,6 +25,8 @@ class SubaruProcessCcdOnsiteDbTask(SubaruProcessCcdOnsiteTask):
                                     default=0, help="analysis session Id in analysis table.")
         argumentParser.add_argument("--registid", action="store", type=int, dest="registId",
                                     default=0, help="primary key Id in registry raw table.")
+        argumentParser.add_argument("--qa-logdir", action="store", type=str, dest="qaLogDir",
+                                    default='.', help="directory where logging files in QaTasks or DbAccess are stored.")
 
         if config is None:
             config = cls.ConfigClass()
@@ -51,6 +53,8 @@ class SubaruProcessCcdOnsiteDbTask(SubaruProcessCcdOnsiteTask):
         sensorRef.dataId['anaId'] = anaId
         sensorRef.dataId['registId'] = registId 
         self.log.info("anaid: %d registid: %d" % (sensorRef.dataId['anaId'], sensorRef.dataId['registId']))
+
+        qaLogDir = self.parsedCmd.qaLogDir
 
         self.onsiteDbUtils.updateStatusFrameAnalysisStart(registId)
         # Run main processing task and QA by calling base class
