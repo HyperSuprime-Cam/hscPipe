@@ -50,6 +50,7 @@ def main():
     parser.add_option("-m", "--doMatchPsf",
 		      default=False, action='store_true',
 		      help="match PSFs before stacking (default=%default)")
+    parser.add_option("--pid", type=int, default=0, help="process id")
     
     (opts, args) = parser.parse_args()
 
@@ -63,7 +64,7 @@ def main():
         (opts.rerun, opts.instrument, opts.program, opts.filter, opts.dateObs, opts.workDirRoot, opts.destWcs, str(opts.doMatchPsf), sys.argv)
 
     try:
-        ProcessMosaicStack(rerun=opts.rerun, instrument=opts.instrument, program=opts.program, filter=opts.filter, dateObs=opts.dateObs, workDirRoot=opts.workDirRoot, destWcs=opts.destWcs, doMatchPsf=opts.doMatchPsf)
+        ProcessMosaicStack(rerun=opts.rerun, instrument=opts.instrument, program=opts.program, filter=opts.filter, dateObs=opts.dateObs, workDirRoot=opts.workDirRoot, destWcs=opts.destWcs, doMatchPsf=opts.doMatchPsf, pid=opts.pid)
         return 0;
     except:
         pbasf.ReportError("Total catastrophic failure")
@@ -72,7 +73,7 @@ def main():
         return 1
         
 def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None,
-                       dateObs=None, workDirRoot=None, destWcs=None, doMatchPsf=False):
+                       dateObs=None, workDirRoot=None, destWcs=None, doMatchPsf=False, pid=0):
     butler = hscCamera.getButler(instrument, rerun)
     nCCD = hscCamera.getNumCcds(instrument)
 
@@ -93,6 +94,7 @@ def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None,
     stackConfig.program = program
     stackConfig.dateObs = dateObs
     stackConfig.workDirRoot = workDirRoot
+    stackConfig.flistFname = 'fileList%d.txt' % (pid)
 
     comm = mpi.COMM_WORLD
     rank = comm.Get_rank()
@@ -154,7 +156,7 @@ def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None,
 
 def phase1(butler, lFrameId, lCcdId, workDirRoot, mosaicConfig):
     if True:
-        return hscMosaic.mosaic(butler, lFrameId, lCcdId, mosaicConfig, outputDir=workDirRoot)
+        return hscMosaic.mosaic(butler, lFrameId, lCcdId, config=mosaicConfig, outputDir=workDirRoot)
     else:
         lFrameIdExist = []
         for frameId in lFrameId:
@@ -198,7 +200,8 @@ def phase2(butler, lFrameId, lCcdId, instrument, rerun, destWcs, config):
                               workDir=workDir, skipMosaic=config.skipMosaic,
                               rerun=rerun, instrument=instrument,
                               program=config.program, filter=config.filterName,
-                              dateObs=config.dateObs, destWcs=destWcs)
+                              dateObs=config.dateObs, destWcs=destWcs,
+                              flistFname=config.flistFname)
 
 class Phase3aWorker:
     def __init__(self, butler, config=None, wcs=None):
@@ -232,9 +235,10 @@ class Phase3bWorker:
         fileIO = self.config.fileIO
         skipMosaic = self.config.skipMosaic
         workDirRoot = self.config.workDirRoot
+        flistFname = self.config.flistFname
         workDir = os.path.join(workDirRoot, program, filter)
 
-        hscStack.stackExec(self.butler, ix, iy, stackId, subImgSize, imgMargin, fileIO=fileIO, workDir=workDir, skipMosaic=skipMosaic, filter=filter, matchPsf=self.matchPsf)
+        hscStack.stackExec(self.butler, ix, iy, stackId, subImgSize, imgMargin, fileIO=fileIO, workDir=workDir, skipMosaic=skipMosaic, filter=filter, matchPsf=self.matchPsf,flistFname=flistFname)
 
 def phase4(butler, config):
     stackId = config.stackId
@@ -245,9 +249,11 @@ def phase4(butler, config):
     fileIO = config.fileIO
     workDirRoot = config.workDirRoot
     workDir = os.path.join(workDirRoot, program, filter)
+    flistFname = config.flistFname
 
     hscStack.stackEnd(butler, stackId, subImgSize, imgMargin, fileIO=fileIO,
                       workDir=workDir, filter=filter)
+    os.remove(os.path.join(workDir, flistFname))
 
 if __name__ == "__main__":
     print "argv=", sys.argv

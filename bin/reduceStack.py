@@ -22,10 +22,14 @@ if __name__ == "__main__":
 
     command = "python %s/bin/stackExposures.py" % os.environ["HSCPIPE_DIR"]
     command += " --instrument=%s --rerun=%s" % (args.instrument, args.rerun)
-    command += " --program=%s --filter=%s --workDirRoot=%s" % (args.field, args.filter, args.output)
+    if args.output == None:
+        command += " --program=%s --filter=%s --workDirRoot=%s" % (args.field, args.filter, ".")
+    else:
+        command += " --program=%s --filter=%s --workDirRoot=%s" % (args.field, args.filter, args.output)
     if args.doMatchPsf:
         command += " --doMatchPsf"
     if args.wcs is not None:
         command += " --destWcs=%s" % args.wcs
+    command += " --pid=%d" % os.getpid()
 
     pbs.run(command)
