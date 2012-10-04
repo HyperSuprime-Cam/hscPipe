@@ -66,8 +66,9 @@ def ProcessExposure(instrument, rerun, frame):
 
     # Together: global WCS solution
     if comm.Get_rank() == 0:
-        matchLists = [hscMatches.matchesFromCatalog(s.matches, s.slots) for s in structList]
-        filterList = [s.filterName for s in structList]
+        matchLists = [hscMatches.matchesFromCatalog(s.matches, processor.measurement.config.slots)
+                      if s is not None else None for s in structList]
+        filterList = [s.filterName if s is not None else None for s in structList]
 
         wcsList = pbasf.SafeCall(globalWcs, instrument, butler.mapper.camera, matchLists)
         if not wcsList:
@@ -109,23 +110,20 @@ class Worker(object):
 
         if len(results) != 1:
             self.resultCache[ccd] = None
-            return []
+            return None
 
         result = results[0]
         self.resultCache[ccd] = result
         filterName = result.exposure.getFilter().getName()
 
+        matches, numMatches = None, 0
         if result.matches is not None and result.matchMeta is not None:
-            matches, matchMeta = result.matches, result.matchMeta
-            slots = self.processor.measurement.config.slots
-        else:
-            matches, matchMeta = result.calib.matches, result.calib.matchMeta
-            slots = self.processor.calib.measurement.config.slots
-        matches = hscMatches.matchesToCatalog(matches, matchMeta)
+            matches = hscMatches.matchesToCatalog(result.matches, result.matchMeta)
+            numMatches = len(matches)
 
-        print "Finished processing %s on %s with %d matches" % (dataId, thisNode(), len(matches))
+        print "Finished processing %s on %s with %d matches" % (dataId, thisNode(), numMatches)
 
-        return Struct(matches=matches, filterName=filterName, slots=slots)
+        return Struct(matches=matches, filterName=filterName)
 
     def write(self, dataId, struct):
         if not dataId['ccd'] in self.resultCache:
@@ -152,7 +150,7 @@ def globalWcs(instrument, cameraGeom, matchLists):
     config = SolveTansipTask.ConfigClass()
     task = SolveTansipTask(name="solvetansip", config=config)
 
-    solvetansipIn = [task.convert(ml) for ml in matchLists]
+    solvetansipIn = [task.convert(ml) if ml is not None else [] for ml in matchLists]
     return task.solve(instrument, cameraGeom, solvetansipIn)
 
 def globalZeroPoint(processor, filterList, matchLists):
@@ -178,11 +176,17 @@ def globalZeroPoint(processor, filterList, matchLists):
     refNewKeys = [ref.schema.find(k).key for k in refNames]
     srcNewKeys = [src.schema.find(k).key for k in srcNames]
     matches = []
-    for ml in matchLists:
+    for i, ml in enumerate(matchLists):
         if ml is None or len(ml) == 0:
             continue
-        refOldKeys = [ml[0].first.schema.find(k).key for k in refNames]
-        srcOldKeys = [ml[0].second.schema.find(k).key for k in srcNames]
+        try:
+            refOldKeys = [ml[0].first.schema.find(k).key for k in refNames]
+            srcOldKeys = [ml[0].second.schema.find(k).key for k in srcNames]
+        except:
+            # Something's wrong with the schema; punt
+            sys.stderr.write("Error with schema on matchlist %d: ignoring %d matches\n" % (i, len(ml)))
+            continue
+
         for m in ml:
             newRef = ref.makeRecord()
             for old, new in zip(refOldKeys, refNewKeys):
@@ -194,6 +198,7 @@ def globalZeroPoint(processor, filterList, matchLists):
 
     try:
         filterSet = set(filterList)
+        filterSet.discard(None) # Just in case
         if len(filterSet) != 1:
             raise RuntimeError("Multiple filters over exposure: %s" % filterSet)
         filterName = filterSet.pop()
