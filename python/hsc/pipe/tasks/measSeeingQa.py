@@ -110,6 +110,7 @@ class MeasureSeeingMitakaTask(Task):
     """
     """
     ConfigClass = MeasureSeeingMitakaConfig
+    _DefaultName = 'measSeeingMitaka'
 
     def __init__(self, metadata=None, *args, **kwargs):
         super(MeasureSeeingMitakaTask, self).__init__(*args, **kwargs)

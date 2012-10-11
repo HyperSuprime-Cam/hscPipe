@@ -10,6 +10,7 @@ class QaConfig(Config):
 
 class QaTask(Task):
     ConfigClass = QaConfig
+    _DefaultName = 'Qa'
 
     def __init__(self, *args, **kwargs):
         super(QaTask, self).__init__(*args, **kwargs)
