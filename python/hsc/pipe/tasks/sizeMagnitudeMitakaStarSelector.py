@@ -27,6 +27,7 @@ from lsst.pipe.base import Task, Struct
 import lsst.afw.display.ds9 as ds9
 
 import numpy
+import errno
 
 #import matplotlib
 #matplotlib.use('Agg')
@@ -266,6 +267,7 @@ class SizeMagnitudeMitakaStarSelector(object):
             print "Number of catalog sources %d mismatch with gooddata list %d" % (len(catalog), len(dataPsfLike.xListAll))
             return
 
+        xCcdSize, yCcdSize = exposure.getWidth(), exposure.getHeight()
         psfCandidateList = []
 
         with ds9.Buffering():
@@ -273,7 +275,6 @@ class SizeMagnitudeMitakaStarSelector(object):
                 source = catalog[i]
                 try:
                     psfCandidate = measAlg.makePsfCandidate(source, exposure)
-
                     # The setXXX methods are class static, but it's convenient to call them on
                     # an instance as we don't know Exposure's pixel type
                     # (and hence psfCandidate's exact type)
@@ -281,6 +282,13 @@ class SizeMagnitudeMitakaStarSelector(object):
                         psfCandidate.setBorderWidth(self._borderWidth)
                         psfCandidate.setWidth(self._kernelSize + 2*self._borderWidth)
                         psfCandidate.setHeight(self._kernelSize + 2*self._borderWidth)
+
+                    # to check if the psf image sits within the CCD pixel area
+                    xPsf, yPsf = psfCandidate.getXCenter(), psfCandidate.getYCenter()
+                    xPsfSize, yPsfSize = psfCandidate.getWidth(), psfCandidate.getHeight()
+                    if not (xPsfSize*0.5 < xPsf and xPsf <= (xCcdSize-xPsfSize*0.5) and \
+                            yPsfSize*0.5 < yPsf and yPsf <= (yCcdSize-yPsfSize*0.5)):
+                        continue
 
                     im = psfCandidate.getMaskedImage().getImage()
                     maxVal = afwMath.makeStatistics(im, afwMath.MAX).getValue()
@@ -356,12 +364,12 @@ class SizeMagnitudeMitakaStarSelector(object):
                         else: # elongation toward y
                             ellPa = 0.5*(math.atan(tanVal)+math.pi)
                 else: # source is too round to estimate PA of elongation
-                    ellPa = None
+                    ellPa = -9999.0
             else:
-                ell = None
-                ellPa = None
-                aa = None
-                bb = None
+                ell = -9999.0
+                ellPa = -9999.0
+                aa = -9999.0
+                bb = -9999.0
         else: # definition by Kaiser
             # e=sqrt(e1^2+e2^2) where e1=(Ixx-Iyy)/(Ixx+Iyy), e2=2Ixy/(Ixx+Iy)
             # SExtractor's B/A=sqrt((1-e)/(1+e)), ell=1-B/A
@@ -383,12 +391,12 @@ class SizeMagnitudeMitakaStarSelector(object):
                         else: # elongation toward y
                             ellPa = 0.5*(math.atan(tanVal)+math.pi)
                 else: # source is too round to estimate PA of elongation
-                    ellPa = None
+                    ellPa = -9999.0
             else:
-                ell = None
-                ellPa = None
+                ell = -9999.0
+                ellPa = -9999.0
 
-        if ellPa is not None:
+        if -90.0 <= ellPa and ellPa <= 90.0:
             #ellPa = 90. - ellPa ## definition of PA to be confirmed
             ellPa = math.degrees(ellPa)
             pass
@@ -569,23 +577,27 @@ class SizeMagnitudeMitakaStarSelector(object):
             if cumFraction >= fracSrcIni:
                 magLim = magCumHist[1][i] # magLim is the mag which exceeds the cumulative n(m) of 0.15
                 break
-        if not magLim:
+        if magLim is None or numpy.isnan(magLim):
+            magLim = 99.0
+            magLimCalib = 99.0
+            fluxLim = -9999.0
             self.log.log(self.log.WARN, "Error: cumulative magnitude histogram does not exceed fracSrcIni: %f" % fracSrcIni)
-            return None
+        else:
+            fluxLim = numpy.power(10, -0.4*magLim)
+            try:
+                zpFrame = exposure.getCalib().getMagnitude(1.0) # zp(mag/ADU/exptime)
+            except: # photocal yet to be done or failure in photocal
+                zpFrame = None
+            if zpFrame is None or numpy.isnan(zpFrame):
+                magLimCalib = 99.0
+            else:
+                magLimCalib = magLim + zpFrame
 
         #print '*** magLim: ', magLim
+        self.log.info("Mag limit auto-determined: %5.2f (%5.2f by calib) or %f (ADU)" % (magLim, magLimCalib, fluxLim))
         self.metadata.set("magLim", magLim)
-        self.metadata.set("fluxLim", numpy.power(10, -0.4*magLim))
-        try:
-            zpFrame = exposure.getCalib().getMagnitude(1.0) # zp(mag/ADU/exptime)
-        except: # photocal yet to be done or failure in photocal
-            zpFrame = None
-        if zpFrame and not numpy.isnan(zpFrame):
-            magLimCalib = magLim + zpFrame
-        else:
-            magLimCalib = 99.0
-        self.log.info("Mag limit auto-determined: %5.2f (%5.2f by calib) or %f (ADU)" % (magLim, magLimCalib, numpy.power(10, -0.4*magLim)))
         self.metadata.set("magLimCalib", magLimCalib)
+        self.metadata.set("fluxLim", fluxLim)
 
         if self.debugFlag:
             self.log.logdebug("QaSeeing: magHist: %s" % magHist)
@@ -710,6 +722,11 @@ class SizeMagnitudeMitakaStarSelector(object):
             if self.config.doUndistort:
                 fwhmUndistRough = numpy.median(fwhmUndistListPsfLike)
 
+        if fwhmRough is None or numpy.isnan(fwhmRough) or fwhmRough <= 0:
+            fwhmRough = -9999.0
+        if fwhmUndistRough is None or numpy.isnan(fwhmUndistRough) or fwhmUndistRough <= 0:
+            fwhmUndistRough = -9999.0
+
         data.magListPsfLike = magListPsfLike
         data.fwhmListPsfLike = fwhmListPsfLike
         data.fwhmRough = fwhmRough
@@ -782,6 +799,13 @@ class SizeMagnitudeMitakaStarSelector(object):
         fwhmRobust = histFwhm[1][icand] + 0.5*self.config.fwhmBinSize
         ellRobust = numpy.median(data.ellListPsfLikeRobust)
         ellPaRobust = numpy.median(data.ellPaListPsfLikeRobust)
+
+        if fwhmRobust is None or numpy.isnan(fwhmRobust) or fwhmRobust <= 0:
+            fwhmRobust = -9999.0
+        if ellRobust is None or numpy.isnan(ellRobust) or ellRobust <= 0:
+            ellRobust = -9999.0
+        if ellPaRobust is None or numpy.isnan(ellPaRobust) or ellPaRobust < -90 or ellPaRobust > 90:
+            ellPaRobust = -9999.0
 
         self.log.info("Robust quantities: %f %f %f" % (fwhmRobust, ellRobust, ellPaRobust))
         self.metadata.set("fwhmRobust", fwhmRobust)
@@ -956,7 +980,15 @@ def getFilename(dataRef, dataset):
     fname = dataRef.get(dataset + "_filename")[0]
     directory = os.path.dirname(fname)
     if not os.path.exists(directory):
-        os.makedirs(directory)
+        try: # handling a possible race condition
+            os.makedirs(directory)
+        except OSError, e:
+            if e.errno == errno.EEXIST:
+                raise
+        if not os.path.exists(directory):
+            raise RuntimeError, "Unable to create output directory for qa output directory '%s'" % (directory)
+
     return fname
+
 
 measAlg.starSelectorRegistry.register("mitaka", SizeMagnitudeMitakaStarSelector)

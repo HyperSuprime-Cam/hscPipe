@@ -10,6 +10,7 @@ class QaConfig(Config):
 
 class QaTask(Task):
     ConfigClass = QaConfig
+    _DefaultName = 'Qa'
 
     def __init__(self, *args, **kwargs):
         super(QaTask, self).__init__(*args, **kwargs)
@@ -17,6 +18,7 @@ class QaTask(Task):
 
         ## initialization of QA values
         # common
+        self.metadata.set('ANAID', -9999)
         self.metadata.set('REGISTID', -9999)
         self.metadata.set('VISIT', -9999)
         self.metadata.set('CCD_REGISTRY', -9999)
@@ -59,18 +61,23 @@ class QaTask(Task):
         try:
             anaPath = dataRef.getButler().mapper.root
             dataId = dataRef.dataId
-            if dataId.has_key('registryId'):
-                registryId = dataId['registryId']
+            if dataId.has_key('anaId') and dataId['anaId'] >= 0:
+                anaId = dataId['anaId']
             else:
-                registryId = -9999
+                anaId = -9999
+            if dataId.has_key('registId') and dataId['registId'] >= 0:
+                registId = dataId['registId']
+            else:
+                registId = -9999
             visit = dataId['visit']
             ccd = dataId['ccd']
-            self.metadata.set('REGISTID', registryId)
+            self.metadata.set('ANAID', anaId)
+            self.metadata.set('REGISTID', registId)
             self.metadata.set('VISIT', visit)
             self.metadata.set('CCD_REGISTRY', ccd)
             self.metadata.set('ANAPATH', anaPath)
-            
-            print '*** registry info dataRef.dataId: %s (visit, ccd, registryId): %s' % (str(dataId), str((visit, ccd, registryId)))
+
+            self.log.info("registry info dataRef.dataId: %s (visit, ccd, registId, anaId): %s" % (str(dataId), str((visit, ccd, registId, anaId))))
 
         except Exception, e:
             self.log.warn("Could not get registry info (visit, ccd): %s" % str(e))

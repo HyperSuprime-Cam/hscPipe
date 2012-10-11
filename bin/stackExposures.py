@@ -48,10 +48,10 @@ def main():
                       type=str, default=None,
                       help="destination wcs")
     parser.add_option("-m", "--doMatchPsf",
-		      default=False, action='store_true',
-		      help="match PSFs before stacking (default=%default)")
+                      default=False, action='store_true',
+                      help="match PSFs before stacking (default=%default)")
     parser.add_option("--pid", type=int, default=0, help="process id")
-    
+
     (opts, args) = parser.parse_args()
 
     if not opts.rerun or not opts.program or not opts.filter:
@@ -71,7 +71,7 @@ def main():
         print "THIS ERROR SHALL NOT HAVE APPEARED."
         mpi.COMM_WORLD.Abort(1)
         return 1
-        
+
 def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None,
                        dateObs=None, workDirRoot=None, destWcs=None, doMatchPsf=False, pid=0):
     butler = hscCamera.getButler(instrument, rerun)
@@ -122,7 +122,7 @@ def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None,
         dataPack['indexes'] = indexes
         dataPack['fileList'] = fileList
         dataPack['wcs'] = wcs
-        
+
         comm.bcast(dataPack, root=0)
     else:
         dataPack = comm.bcast(dataPack, root=0)
@@ -149,7 +149,7 @@ def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None,
         matchPsf = ['DoubleGaussian', kwid, kwid, sigma1, sigma2, peakRatio]
     phase3b = Phase3bWorker(butler, config=stackConfig, matchPsf=matchPsf)
     pbasf.ScatterJob(comm, phase3b, [index for index in indexes], root=0)
-    
+
     if rank == 0:
         # phase 4
         pbasf.SafeCall(phase4, butler, stackConfig)
@@ -208,7 +208,7 @@ class Phase3aWorker:
         self.butler = butler
         self.config = config
         self.wcs = wcs
-        
+
     def __call__(self, fname):
         print "Started measuring warped PSF for %s in %s, %d" % (fname, os.uname()[1], os.getpid())
         return hscStack.stackMeasureWarpedPsf(fname, self.wcs, butler=self.butler, fileIO=True,
@@ -220,7 +220,7 @@ class Phase3bWorker:
         self.butler = butler
         self.config = config
         self.matchPsf = matchPsf
-    
+
     def __call__(self, t_ix_iy):
         ix = t_ix_iy[0]
         iy = t_ix_iy[1]
