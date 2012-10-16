@@ -735,7 +735,7 @@ class MeasureSeeingMitakaTask(Task):
                         psfCandImagePerGrid = afwMath.statisticsStack(psfCandImagePerGridList, algStat, sctrl)
                     else:
                         # fill 0 for a grid where no psfcand is available
-                        psfCandImagePerGrid = afwImage.ImageF(psfCandImage.getDimensions(), 0.0)
+                        psfCandImagePerGrid = afwImage.ImageF(xPsfSize, yPsfSize, 0.0)
 
                     m.append(psfCandImagePerGrid, '(%d,%d)' % (xc, yc))
                     if self.debugFlag:
