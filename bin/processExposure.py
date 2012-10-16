@@ -41,7 +41,7 @@ def main(instrument, rerun, frameList):
     print "Done on %s" % thisNode()
 
 def ProcessExposure(instrument, rerun, frame):
-    comm = mpi.COMM_WORLD
+    comm = pbasf.Comm()
 
     # We don't need camera-specific ProcessCcdTasks anymore.  But we may want to use
     # one of the onsite variants; in that case we should try to pass an extra argument

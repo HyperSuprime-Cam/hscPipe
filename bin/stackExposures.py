@@ -96,7 +96,7 @@ def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None,
     stackConfig.workDirRoot = workDirRoot
     stackConfig.flistFname = 'fileList%d.txt' % (pid)
 
-    comm = mpi.COMM_WORLD
+    comm = pbasf.Comm()
     rank = comm.Get_rank()
 
     # create ccdId's

@@ -35,7 +35,7 @@ def main(instrument, rerun, root, outputRoot, calibRoot, configFile, frameList):
         return 1
 
 def ProcessExposure(instrument, root, rerun, outputRoot, calibRoot, configFile, frame):
-    comm = mpi.COMM_WORLD
+    comm = pbasf.Comm()
 
     # We don't need camera-specific ProcessCcdTasks anymore.  But we may want to use
     # one of the onsite variants; in that case we should try to pass an extra argument

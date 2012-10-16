@@ -28,7 +28,7 @@ def main(instrument, rerun, lFrameId):
 
 
 def ProcessFrame(instrument, rerun, frameId):
-    comm = mpi.COMM_WORLD
+    comm = pbasf.Comm()
 
     if instrument == "hsc":
         nCCD = 100

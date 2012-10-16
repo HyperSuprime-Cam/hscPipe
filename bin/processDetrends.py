@@ -16,7 +16,7 @@ import hsc.pipe.tasks.detrends as hscDetrends
 
 
 def processDetrends(instrument, rerun, detrend, frameList, outRoot=None, outName=None):
-    comm = mpi.COMM_WORLD
+    comm = pbasf.Comm()
 
     if outName is None:
         outName = detrend + "-" + rerun + "-%d.fits"
