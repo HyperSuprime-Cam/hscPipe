@@ -136,9 +136,9 @@ class ProcessStackTask(ProcessImageTask):
         result.coadd = coadd
 
         if self.config.doWriteUnpackedMatches:
-            dataRef.put(self.unpackMatches(result.calib.matches, result.calib.matchMeta), self.dataPrefix + "icMatchList")
+            dataRef.put(self.unpackMatches(result.calib.matches, result.calib.matchMeta), self.dataPrefix + "icMatchFull")
         if self.config.doWriteSourceMatches and self.config.doWriteUnpackedMatches:
-            dataRef.put(self.unpackMatches(result.matches, result.matchMeta), self.dataPrefix + "srcMatchList")
+            dataRef.put(self.unpackMatches(result.matches, result.matchMeta), self.dataPrefix + "srcMatchFull")
 
         return result
 
