@@ -14,7 +14,8 @@ import lsst.obs.suprimecam as obsSc
 
 import hsc.pipe.base.camera as hscCamera
 import lsst.meas.mosaic.mosaic as hscMosaic
-import hsc.meas.mosaic.config as hscMC
+from lsst.meas.mosaic.config import MosaicConfig
+from hsc.meas.mosaic.config import HscStackConfig
 import hsc.meas.mosaic.stack as hscStack
 
 def sigalrm_handler(signum, frame):
@@ -87,8 +88,8 @@ def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None,
     print lFrameId
     print lPointing
 
-    mosaicConfig = hscMC.HscMosaicConfig()
-    stackConfig = hscMC.HscStackConfig()
+    mosaicConfig = MosaicConfig()
+    stackConfig = HscStackConfig()
     stackConfig.filterName = filter
     stackConfig.stackId = lPointing[0]
     stackConfig.program = program
