@@ -14,7 +14,7 @@ import lsst.obs.suprimecam as obsSc
 
 import hsc.pipe.base.camera as hscCamera
 import lsst.meas.mosaic.mosaic as hscMosaic
-import lsst.meas.mosaic.config as hscMC
+import hsc.meas.mosaic.config as hscMC
 import hsc.meas.mosaic.stack as hscStack
 
 def sigalrm_handler(signum, frame):
