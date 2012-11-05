@@ -14,9 +14,12 @@ import lsst.obs.suprimecam as obsSc
 
 import hsc.pipe.base.camera as hscCamera
 import lsst.meas.mosaic.mosaic as hscMosaic
-from lsst.meas.mosaic.config import MosaicConfig
+#from lsst.meas.mosaic.config import MosaicConfig
 from hsc.meas.mosaic.config import HscStackConfig
 import hsc.meas.mosaic.stack as hscStack
+from lsst.meas.photocal.colorterms import Colorterm
+from lsst.meas.mosaic.mosaicTask import MosaicTask
+from lsst.meas.mosaic.mosaicTask import MosaicConfig
 
 def sigalrm_handler(signum, frame):
     sys.stderr.write('Signal handler called with signal %s\n' % (signum))
@@ -89,6 +92,7 @@ def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None,
     print lPointing
 
     mosaicConfig = MosaicConfig()
+    mosaicTask = MosaicTask(config=MosaicConfig())
     stackConfig = HscStackConfig()
     stackConfig.filterName = filter
     stackConfig.stackId = lPointing[0]
@@ -103,6 +107,19 @@ def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None,
     # create ccdId's
     lCcdId = range(nCCD)
 
+    if instrument == 'suprimecam':
+        from lsst.obs.suprimecam.colorterms import colortermsData
+        Colorterm.setColorterms(colortermsData)
+        Colorterm.setActiveDevice("Hamamatsu")
+        ct = Colorterm.getColorterm(butler.mapper.filters[filter])
+    elif instrument == 'suprimecam-mit':
+        from lsst.obs.suprimecam.colorterms import colortermsData
+        Colorterm.setColorterms(colortermsData)
+        Colorterm.setActiveDevice("MIT")
+        ct = Colorterm.getColorterm(butler.mapper.filters[filter])
+    else:
+        ct = None
+
     dataPack = {
         'indexes' : [],
         'fileList' : [],
@@ -111,7 +128,7 @@ def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None,
     #indexes = []
     if rank == 0:
         # phase 1
-        lFrameIdExist = pbasf.SafeCall(phase1, butler, lFrameId, lCcdId, workDirRoot, mosaicConfig)
+        lFrameIdExist = pbasf.SafeCall(phase1, mosaicTask, butler, lFrameId, lCcdId, ct, workDirRoot, mosaicConfig)
         print lFrameIdExist
 
         # phase 2
@@ -155,9 +172,9 @@ def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None,
         # phase 4
         pbasf.SafeCall(phase4, butler, stackConfig)
 
-def phase1(butler, lFrameId, lCcdId, workDirRoot, mosaicConfig):
+def phase1(task, butler, lFrameId, lCcdId, ct, workDirRoot, mosaicConfig):
     if True:
-        return hscMosaic.mosaic(butler, lFrameId, lCcdId, config=mosaicConfig, outputDir=workDirRoot)
+        return task.mosaic(butler, lFrameId, lCcdId, ct)
     else:
         lFrameIdExist = []
         for frameId in lFrameId:
