@@ -21,6 +21,8 @@ from lsst.meas.photocal.colorterms import Colorterm
 from lsst.meas.mosaic.mosaicTask import MosaicTask
 from lsst.meas.mosaic.mosaicTask import MosaicConfig
 
+os.umask(002)
+
 def sigalrm_handler(signum, frame):
     sys.stderr.write('Signal handler called with signal %s\n' % (signum))
 signal.signal(signal.SIGALRM, sigalrm_handler)

@@ -13,6 +13,7 @@ import hsc.pipe.base.camera as hscCamera
 import hsc.pipe.tasks.processCcd as hscProcessCcd
 import hsc.pipe.tasks.detrends as hscDetrends
 
+os.umask(002)
 
 
 def processDetrends(instrument, rerun, detrend, frameList, outRoot=None, outName=None):

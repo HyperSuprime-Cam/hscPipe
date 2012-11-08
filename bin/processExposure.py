@@ -18,6 +18,8 @@ import hsc.pipe.base.matches as hscMatches
 from lsst.pipe.base import Struct
 from hsc.pipe.tasks.processCcd import SubaruProcessCcdTask
 
+os.umask(002)
+
 def sigalrm_handler(signum, frame):
     sys.stderr.write('Signal handler called with signal %s\n' % (signum))
 signal.signal(signal.SIGALRM, sigalrm_handler)
