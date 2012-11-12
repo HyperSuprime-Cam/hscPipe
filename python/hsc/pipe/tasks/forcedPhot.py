@@ -9,6 +9,7 @@ import lsst.afw.detection as afwDet
 import lsst.ip.isr as ipIsr
 import lsst.pipe.tasks.calibrate as ptCal
 import lsst.meas.algorithms as measAlg
+import lsst.meas.mosaic as measMosaic
 
 from lsst.pipe.tasks.forcedPhot import ForcedPhotTask, ForcedPhotConfig, ReferencesTask, ReferencesConfig
 from lsst.pex.config import Field, ConfigurableField
@@ -42,14 +43,24 @@ class SubaruReferencesTask(ReferencesTask):
         calexp = butler.get("stack_calexp", stackId, immediate=True)
         return calexp.getWcs()
 
+class SubaruForcedPhotConfig(ForcedPhotTask.ConfigClass):
+    useMosaicWcs = Field(dtype=bool, optional=False, default=True,
+                         doc="Whether to use the Wcs saved by meas_mosaic.")
+    useMosaicFluxFit = Field(dtype=bool, optional=False, default=True,
+                             doc="Whether to apply the FluxFitParams saved by meas_mosaic.")
+
 class SubaruForcedPhotTask(ForcedPhotTask):
+
+    ConfigClass = SubaruForcedPhotConfig
 
     def readInputs(self, dataRef, *args, **kwargs):
         struct = super(SubaruForcedPhotTask, self).readInputs(dataRef, *args, **kwargs)
-        try:
-            wcsExp = dataRef.get("wcs")
+        if self.config.useMosaicWcs:
+            wcsExp = dataRef.get("wcs", immediate=True)
             struct.exposure.setWcs(wcsExp.getWcs())
-        except Exception, e:
-            self.log.log(self.log.WARN, "No WCS tweak available (%s); not updating WCS." % e)
-
+        if self.config.useMosaicFluxFit:
+            ffp = measMosaic.FluxFitParams(dataRef.get("fcr_md", immediate=True))
+            mi = struct.exposure.getMaskedImage()
+            fcor = measMosaic.getFCorImg(ffp, mi.getWidth(), mi.getHeight())
+            mi *= fcor
         return struct
