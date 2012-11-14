@@ -7,7 +7,7 @@ from hsc.pipe.tasks.processExposure import ProcessExposureTask
 
 if __name__ == "__main__":
     parent = ProcessExposureTask._makeArgumentParser()
-    parser = hscPbs.PbsArgumentParser(description="Reduce frames using PBS.", parent=parent)
+    parser = PbsArgumentParser(description="Reduce frames using PBS.", parent=parent)
     args = parser.parse_args()
 
     if len(args.parent.dataRefList) == 0:
