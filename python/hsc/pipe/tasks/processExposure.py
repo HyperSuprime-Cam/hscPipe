@@ -112,7 +112,13 @@ class ProcessExposureTask(CmdLineTask):
 
         # Scatter: process CCDs independently
         structList = pbasf.ScatterJob(self.comm, self.process, dataIdList.values(), root=self.root)
-        if sum(1 for s in structList if s is not None) == 0:
+        if self.rank == self.root:
+            numGood = sum(1 for s in structList if s is not None)
+        else:
+            numGood = 0
+        if self.comm.size > 1:
+            numGood = pbasf.Broadcast(self.comm, numGood, root=self.root)
+        if numGood == 0:
             return
 
         # Gathered: global WCS solution
@@ -183,8 +189,7 @@ class ProcessExposureTask(CmdLineTask):
         keyValue = [(s.ccdId, hscMatches.matchesFromCatalog(s.matches,
                                                             self.processCcd.measurement.config.slots))
                     for s in structList if s is not None]
-        return collections.OrderedDict(keyValue)
-
+        return collections.OrderedDict(sorted(keyValue, key=lambda kv: kv[0]))
 
     def astrometricSolution(self, matchLists, cameraGeom):
         """Determine a global astrometric solution for the exposure.
