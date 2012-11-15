@@ -101,7 +101,7 @@ class ProcessExposureTask(CmdLineTask):
         """Process a single exposure, with scatter-gather-scatter using MPI.
 
         All nodes execute this method, though the master and slaves have different
-        routes through it.
+        routes through it.  The expRef is only a DummyDataRef on the slaves.
         """
 
         if self.rank == self.root:
@@ -162,6 +162,10 @@ class ProcessExposureTask(CmdLineTask):
         return Struct(ccdId=ccdId, matches=matches, filterName=filterName)
 
     def getFilterName(self, structList):
+        """Determine the filter name from the list of structs returned by process().
+
+        Only the master executes this method, as the structList is only valid there.
+        """
         filterList = [s.filterName if s is not None else None for s in structList]
         filterSet = set(filterList)
         filterSet.discard(None) # Just in case
@@ -170,6 +174,12 @@ class ProcessExposureTask(CmdLineTask):
         return filterSet.pop()
 
     def getMatchLists(self, structList):
+        """Generate a list of matches for each CCD from the list of structs returned by process().
+
+        The matches are reconsituted from the transfer format.
+
+        Only the master executes this method, as the structList is only valid there.
+        """
         keyValue = [(s.ccdId, hscMatches.matchesFromCatalog(s.matches,
                                                             self.processCcd.measurement.config.slots))
                     for s in structList if s is not None]
@@ -177,6 +187,10 @@ class ProcessExposureTask(CmdLineTask):
 
 
     def astrometricSolution(self, matchLists, cameraGeom):
+        """Determine a global astrometric solution for the exposure.
+
+        Only the master executes this method, as the matchLists is only valid there.
+        """
         try:
             from hsc.meas.tansip.solvetansip import SolveTansipTask
             config = SolveTansipTask.ConfigClass()
@@ -189,6 +203,12 @@ class ProcessExposureTask(CmdLineTask):
         return dict(zip(matchLists.keys(), wcsList))
 
     def photometricSolution(self, matchLists, filterName):
+        """Determine a global photometric solution for the exposure.
+
+        The current implementation simply runs the general 'photocal' to get a single zero-point.
+
+        Only the master executes this method, as the matchLists is only valid there.
+        """
         photocal = self.processCcd.calibrate.photocal
 
         # Ensure all the match lists have the same schema, by copying them into the same table
@@ -248,6 +268,12 @@ class ProcessExposureTask(CmdLineTask):
         return result.calib.getFluxMag0()
 
     def write(self, ccdId, struct):
+        """Write the outputs.
+
+        The cached results are written along with revised astrometric and photometric solutions.
+
+        This method is only executed on the slaves.
+        """
         if not ccdId in self.resultsCache:
             # This node didn't process this CCD, or it failed; either way, nothing we can do
             return
