@@ -7,73 +7,118 @@ import hsc.pipe.tasks.plotSetup
 import lsst.afw.table as afwTable
 import lsst.afw.image as afwImage
 import hsc.pipe.base.matches as hscMatches
+import hsc.pipe.base.butler as hscButler
 from hsc.pipe.base.argumentParser import SubaruArgumentParser
 from lsst.pipe.base import Struct, CmdLineTask
-from lsst.pex.config import Config, ConfigurableField
+from lsst.pex.config import Config, Field, ConfigurableField
 from hsc.pipe.tasks.processCcd import SubaruProcessCcdTask
 from hsc.pipe.base.mpi import abortOnError, thisNode
 
 
+class DummyDataRef(object):
+    """Quacks like a ButlerDataRef (where required), but is picklable."""
+    def __init__(self, dataId):
+        self.dataId = dataId
+    def put(self, *args, **kwargs): pass # Because each node will attempt to write the config
+    def get(self, *args, **kwargs): raise AssertionError("Nodes should not be writing using this dataRef")
+
+
+
 class MpiArgumentParser(SubaruArgumentParser):
+    """ArgumentParser that prevents all the MPI jobs from reading the registry
+
+    Slaves receive the list of dataIds from the master, and set up a dummy
+    list of dataRefs (so that the ProcessExposureTask.run method is called an
+    appropriate number of times).
+    """
     @abortOnError
-    def _makeDataRefList(self, *args, **kwargs):
+    def _makeDataRefList(self, namespace):
         # We don't want all the MPI jobs to go reading the registry at once
         comm = pbasf.Comm()
         rank = comm.rank
         root = 0
         if rank == root:
-            dataRefList = super(MpiArgumentParser, self)._makeDataRefList(*args, **kwargs)
+            super(MpiArgumentParser, self)._makeDataRefList(namespace)
+            dummy = [DummyDataRef(dataRef.dataId) for dataRef in namespace.dataRefList]
         else:
-            dataRefList = None
+            dummy = None
+        # Ensure there's the same entries, except the slaves can't go reading/writing except what they're told
         if comm.size > 1:
-            num = pbasf.Broadcast(len(dataRefList), root=root)
+            dummy = pbasf.Broadcast(comm, dummy, root=root)
             if rank != root:
-                # Ensure there's the same number of entries
-                dataRefList = [None] * num
-        return dataRefList
+                namespace.dataRefList = dummy
 
 class ProcessExposureConfig(Config):
     processCcd = ConfigurableField(target=SubaruProcessCcdTask, doc="CCD processing task")
+    instrument = Field(dtype=str, default="suprimecam", doc="Instrument name, for solvetansip")
 
     def setDefaults(self):
         # We will do persistence ourselves
         self.processCcd.isr.doWrite = False
         self.processCcd.doWriteCalibrate = False
         self.processCcd.doWriteSources = False
+        self.processCcd.doWriteHeavyFootprintsInSources = False
         self.processCcd.doFinalWrite = False
 
 
 class ProcessExposureTask(CmdLineTask):
+    """Process an entire exposure at once.
+
+    We use MPI to gather the match lists for exposure-wide astrometric and
+    photometric solutions.  Note that because of this, different nodes
+    see different parts of the code.
+    """
+
     ConfigClass = ProcessExposureConfig
     _DefaultName = "processExposure"
 
     def __init__(self, **kwargs):
+        """Constructor.
+
+        All nodes execute this method.
+        """
         super(ProcessExposureTask, self).__init__(**kwargs)
         self.comm = pbasf.Comm()
         self.rank = self.comm.rank
         self.root = 0
-        self.processCcd = self.makeSubtask("processCcd")
-        self.resultCache = dict() # Cache to remember results for saving
+        self.makeSubtask("processCcd")
+        self.resultsCache = dict() # Cache to remember results for saving
+
+    def runDataRefList(self, *args, **kwargs):
+        """Save the butler.
+
+        All nodes execute this method.
+        """
+        self.butler = self.parsedCmd.butler
+        super(ProcessExposureTask, self).runDataRefList(*args, **kwargs)
 
     @classmethod
-    def _makeArgumentParser(cls):
-        return MpiArgumentParser(name="processExposure", dataRefLevel="visit")
+    def _makeArgumentParser(cls, *args, **kwargs):
+        return MpiArgumentParser(name="processExposure", dataRefLevel="visit", *args, **kwargs)
 
     @abortOnError
     def run(self, expRef):
+        """Process a single exposure, with scatter-gather-scatter using MPI.
+
+        All nodes execute this method, though the master and slaves have different
+        routes through it.
+        """
+
         if self.rank == self.root:
-            ccdRefList = dict([(ccdRef.get("ccdExposureId"), ccdRef) for ccdRef in expRef.subItems("ccd")
-                               if ccdRef.datasetExists("raw")])
+            dataIdList = dict([(ccdRef.get("ccdExposureId"), ccdRef.dataId)
+                               for ccdRef in expRef.subItems("ccd") if ccdRef.datasetExists("raw")])
         else:
-            ccdRefList = dict()
+            dataIdList = dict()
 
         # Scatter: process CCDs independently
-        structList = pbasf.ScatterJob(comm, self.process, ccdRefList.values(), root=self.root)
+        structList = pbasf.ScatterJob(self.comm, self.process, dataIdList.values(), root=self.root)
+        if sum(1 for s in structList if s is not None) == 0:
+            return
 
         # Gathered: global WCS solution
         if self.rank == self.root:
             matchLists = self.getMatchLists(structList)
-            wcsList = self.astrometricSolution(matchLists, expRef.get("camera"))
+            wcsList = self.astrometricSolution(matchLists, self.butler.mapper.camera)
             fluxMag0 = self.photometricSolution(matchLists.values(), self.getFilterName(structList))
             ccdIdList = None
         else:
@@ -83,26 +128,26 @@ class ProcessExposureTask(CmdLineTask):
             ccdIdList = self.resultsCache.keys()
 
         # Scatter with data from root: save CCDs with update astrometric/photometric solutions
-        query = lambda ccdId: Struct(ccdId=ccdId, wcs=wcsList[ccdId], fluxMag0=calib.fluxMag0,
-                                     dataRef=ccdRefList[ccdId])
-        pbasf.QueryToRoot(comm, self.write, query, ccdIdList, root=self.root)
+        query = lambda ccdId: Struct(wcs=wcsList[ccdId], fluxMag0=fluxMag0, dataId=dataIdList[ccdId])
+        pbasf.QueryToRoot(self.comm, self.write, query, ccdIdList, root=self.root)
 
 
-    def process(self, dataRef):
+    def process(self, dataId):
+        """Process a single CCD and save the results for a later write.
+
+        Only slaves execute this method.
+        """
+        dataRef = hscButler.getDataRef(self.butler, dataId)
         ccdId = dataRef.get("ccdExposureId")
-        print "Started processing %s (ccdId=%d) on %s" % (dataRef.dataId, ccdId, thisNode())
+        print "Started processing %s (ccdId=%d) on %s" % (dataId, ccdId, thisNode())
         try:
-            results = self.processCcd.runDataRefList([dataRef])
+            result = self.processCcd.run(dataRef)
         except Exception, e:
-            sys.stderr.write("Failed to process %s: %s\n" % (dataRef.dataId, e))
+            sys.stderr.write("Failed to process %s: %s\n" % (dataId, e))
             raise
 
         # Cache the results (in particular, the image)
-        if len(results) != 1:
-            self.resultsCache[ccdId] = None
-            return None
-        results = results[0]
-        self.resultCache[ccdId] = results
+        self.resultsCache[ccdId] = result
         filterName = result.exposure.getFilter().getName()
 
         # Reformat the matches for MPI transfer
@@ -112,7 +157,7 @@ class ProcessExposureTask(CmdLineTask):
             numMatches = len(matches)
 
         print ("Finished processing %s (ccdId=%d) on %s with %d matches" %
-               (dataRef.dataId, ccdId, thisNode(), numMatches))
+               (dataId, ccdId, thisNode(), numMatches))
 
         return Struct(ccdId=ccdId, matches=matches, filterName=filterName)
 
@@ -137,7 +182,7 @@ class ProcessExposureTask(CmdLineTask):
             config = SolveTansipTask.ConfigClass()
             task = SolveTansipTask(name="solvetansip", config=config)
             solvetansipIn = [task.convert(ml) if ml is not None else [] for ml in matchLists.values()]
-            wcsList = task.solve(instrument, cameraGeom, solvetansipIn)
+            wcsList = task.solve(self.config.instrument, cameraGeom, solvetansipIn)
         except Exception, e:
             sys.stderr.write("WARNING: Global astrometric solution failed: %s\n" % e)
             wcsList = [None] * len(matchLists)
@@ -202,21 +247,21 @@ class ProcessExposureTask(CmdLineTask):
         self.log.info("Global photometric zero-point: %f" % result.calib.getMagnitude(1.0))
         return result.calib.getFluxMag0()
 
-    def write(self, struct):
-        ccdId = struct.ccdId
-        if not ccdId in self.resultCache:
+    def write(self, ccdId, struct):
+        if not ccdId in self.resultsCache:
             # This node didn't process this CCD, or it failed; either way, nothing we can do
             return
-        dataRef = struct.dataRef
-        print "Start writing %s (ccdId=%d) on %s" % (dataRef.dataId, ccdId, thisNode())
+        dataId = struct.dataId
+        dataRef = hscButler.getDataRef(self.butler, dataId)
+        print "Start writing %s (ccdId=%d) on %s" % (dataId, ccdId, thisNode())
         wcs = struct.wcs
         fluxMag0 = struct.fluxMag0
 
         try:
-            result = self.resultCache[ccdId]
+            result = self.resultsCache[ccdId]
             self.processCcd.write(dataRef, result, wcs=wcs, fluxMag0=fluxMag0)
-            del self.resultCache[ccdId]
+            del self.resultsCache[ccdId]
         except Exception, e:
-            sys.stderr.write('ERROR: Failed to write %s (ccdId=%d): %s\n' % (dataRef.dataId, ccdId, e))
+            sys.stderr.write('ERROR: Failed to write %s (ccdId=%d): %s\n' % (dataId, ccdId, e))
 
-        print "Finished writing CCD %s (ccdId=%d) on %s" % (dataRef.dataId, ccdId, thisNode())
+        print "Finished writing CCD %s (ccdId=%d) on %s" % (dataId, ccdId, thisNode())
