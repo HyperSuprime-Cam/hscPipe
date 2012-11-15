@@ -97,6 +97,7 @@ class SubaruProcessCcdTask(ProcessCcdTask):
         if results.exposure is not None:
             dataRef.put(results.exposure, 'calexp')
         if results.sources is not None:
+            results.sources.setWriteHeavyFootprints(True)
             dataRef.put(results.sources, 'src')
         if results.matches is not None:
             dataRef.put(packMatches(results.matches, results.matchMeta), "srcMatch")
