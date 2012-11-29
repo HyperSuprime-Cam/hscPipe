@@ -22,26 +22,36 @@ class SubaruReferencesTask(ReferencesTask):
 
     def getReferenceSources(self, dataRef, exposure):
         """Get Wcs for reference sources"""
-        butler = dataRef.butlerSubset.butler
-        dataId = dataRef.dataId
+        if not hasattr(self, "_referenceSources"):
+            self._referenceSources = {}
         filterName = self.config.filter if self.config.filter is not None else dataId['filter']
-        stackId = {'stack': dataId['pointing'],
-                   'patch': 999999,
-                   'filter': filterName,
-                   }
-        return butler.get("stack_src", stackId, immediate=True)
+        key = (dataId["pointing"], filterName)
+        if key not in self._referenceSources:
+            butler = dataRef.butlerSubset.butler
+            dataId = dataRef.dataId
+            stackId = {'stack': dataId['pointing'],
+                       'patch': 999999,
+                       'filter': filterName,
+                       }
+            self._referenceSources[key] = butler.get("stack_src", stackId, immediate=True)
+        return self._referenceSources[key]
 
     def getReferenceWcs(self, dataRef, exposure):
-        """Get reference sources on (or close to) exposure"""
-        butler = dataRef.butlerSubset.butler
-        dataId = dataRef.dataId
+        """Get Wcs for reference sources"""
+        if not hasattr(self, "_referenceWcs"):
+            self._referenceWcs = {}
         filterName = self.config.filter if self.config.filter is not None else dataId['filter']
-        stackId = {'stack': dataId['pointing'],
-                   'patch': 999999,
-                   'filter': filterName,
-                   }
-        calexp = butler.get("stack_calexp", stackId, immediate=True)
-        return calexp.getWcs()
+        key = (dataId["pointing"], filterName)
+        if key not in self._referenceWcs:
+            butler = dataRef.butlerSubset.butler
+            dataId = dataRef.dataId
+            stackId = {'stack': dataId['pointing'],
+                       'patch': 999999,
+                       'filter': filterName,
+                       }
+            calexp = butler.get("stack_calexp", stackId, immediate=True)
+            self._referenceWcs[key] = calexp.getWcs()
+        return self._referenceWcs[key]
 
 class SubaruForcedPhotConfig(ForcedPhotTask.ConfigClass):
     useMosaicWcs = Field(dtype=bool, optional=False, default=True,
