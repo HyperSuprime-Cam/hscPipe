@@ -21,14 +21,14 @@ class SubaruReferencesTask(ReferencesTask):
     ConfigClass = SubaruReferencesConfig
 
     def getReferenceSources(self, dataRef, exposure):
-        """Get Wcs for reference sources"""
+        """Get reference sources"""
         if not hasattr(self, "_referenceSources"):
             self._referenceSources = {}
+        butler = dataRef.butlerSubset.butler
+        dataId = dataRef.dataId
         filterName = self.config.filter if self.config.filter is not None else dataId['filter']
         key = (dataId["pointing"], filterName)
         if key not in self._referenceSources:
-            butler = dataRef.butlerSubset.butler
-            dataId = dataRef.dataId
             stackId = {'stack': dataId['pointing'],
                        'patch': 999999,
                        'filter': filterName,
@@ -40,11 +40,11 @@ class SubaruReferencesTask(ReferencesTask):
         """Get Wcs for reference sources"""
         if not hasattr(self, "_referenceWcs"):
             self._referenceWcs = {}
+        butler = dataRef.butlerSubset.butler
+        dataId = dataRef.dataId
         filterName = self.config.filter if self.config.filter is not None else dataId['filter']
         key = (dataId["pointing"], filterName)
         if key not in self._referenceWcs:
-            butler = dataRef.butlerSubset.butler
-            dataId = dataRef.dataId
             stackId = {'stack': dataId['pointing'],
                        'patch': 999999,
                        'filter': filterName,
