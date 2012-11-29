@@ -52,6 +52,7 @@ class DetrendStatsTask(Task):
 
 
 class DetrendCombineConfig(Config):
+    """Configuration for combining detrend images"""
     rows = Field(doc="Number of rows to read at a time", dtype=int, default=128)
     maskDetected = Field(doc="Mask pixels about the detection threshold?", dtype=bool, default=True)
     combine = Field(doc="Statistic to use for combination (from lsst.afw.math)", dtype=int,
@@ -61,13 +62,22 @@ class DetrendCombineConfig(Config):
     stats = ConfigurableField(target=DetrendStatsTask, doc="Background statistics configuration")
 
 class DetrendCombineTask(Task):
+    """Task to combine detrend images"""
     ConfigClass = DetrendCombineConfig
 
     def __init__(self, *args, **kwargs):
         super(DetrendCombineTask, self).__init__(*args, **kwargs)
         self.makeSubtask("stats")
 
-    def run(self, sensorRefList, expScales=None, finalScale=None, outputName="postISRCCD"):
+    def run(self, sensorRefList, expScales=None, finalScale=None, inputName="postISRCCD"):
+        """Combine detrend images for a single sensor
+
+        @param sensorRefList   List of data references to combine (for a single sensor)
+        @param expScales       List of scales to apply for each exposure
+        @param finalScale      Desired scale for final combined image
+        @param inputName       Data set name for inputs
+        @return combined image
+        """
         width, height = self.getDimensions(sensorRefList)
         maskVal = afwImage.MaskU.getPlaneBitMask("DETECTED") if self.config.maskDetected else 0
         stats = afwMath.StatisticsControl(self.config.clip, self.config.iter, maskVal)
@@ -82,7 +92,7 @@ class DetrendCombineTask(Task):
             subCombined = combined.Factory(combined, box)
 
             for i, sensorRef in enumerate(sensorRefList):
-                exposure = sensorRef.get(outputName + "_sub", bbox=box)
+                exposure = sensorRef.get(inputName + "_sub", bbox=box)
                 if expScales is not None:
                     self.applyScale(exposure, expScales[i])
                 imageList[i] = exposure.getMaskedImage()
@@ -97,19 +107,27 @@ class DetrendCombineTask(Task):
 
         return combined
 
-    def getDimensions(self, sensorRefList, outputName="postISRCCD"):
+    def getDimensions(self, sensorRefList, inputName="postISRCCD"):
+        """Get dimensions of the inputs"""
         dimList = []
         for sensorRef in sensorRefList:
-            md = sensorRef.get(outputName + "_md")
+            md = sensorRef.get(inputName + "_md")
             dimList.append(afwGeom.Extent2I(md.get("NAXIS1"), md.get("NAXIS2")))
         return getSize(dimList)
 
     def applyScale(self, exposure, scale=None):
+        """Apply scale to input exposure"""
         if scale is not None:
             mi = exposure.getMaskedImage()
             mi /= scale
 
     def combine(self, target, imageList, stats):
+        """Combine multiple images
+
+        @param target      Target image to receive the combined pixels
+        @param imageList   List of input images
+        @param stats       Statistics control
+        """
         if False:
             # In-place stacks are now supported on LSST's afw, but not yet on HSC
             afwMath.statisticsStack(target, imageList, self.config.combine, stats)
@@ -120,6 +138,16 @@ class DetrendCombineTask(Task):
 
 
 def getCcdName(ccdId, ccdKeys):
+    """Return the 'CCD name' from the data identifier
+
+    The 'CCD name' is a tuple of the values in the data identifier
+    that identify the CCD.  The names in the data identifier that
+    identify the CCD is provided as 'ccdKeys'.
+
+    @param ccdId    Data identifier for CCD
+    @param ccdKeys  Data identifier keys for the 'sensor' level
+    @return ccd name
+    """
     return tuple(ccdId[k] for k in ccdKeys)
 
 def getCcdIdListFromExposures(expRefList, level="sensor"):
@@ -139,6 +167,10 @@ def getCcdIdListFromExposures(expRefList, level="sensor"):
     values of a CCD (usually just the CCD number) and the values are
     lists of dataIds for that CCD in each exposure.  A missing dataId
     is given the value None.
+
+    @param expRefList   List of data references for exposures
+    @param level        Level for the butler to generate CCDs
+    @return CCD keywords, dict of data identifier lists for each CCD
     """
     expIdList = [[ccdRef.dataId for ccdRef in expRef.subItems(level)] for expRef in expRefList]
 
@@ -169,6 +201,7 @@ def getCcdIdListFromExposures(expRefList, level="sensor"):
     return ccdKeys, ccdLists
 
 class DetrendIdAction(argparse.Action):
+    """Split name=value pairs and put the result in a dict"""
     def __call__(self, parser, namespace, values, option_string):
         output = getattr(namespace, self.dest, {})
         for nameValue in values:
@@ -179,6 +212,7 @@ class DetrendIdAction(argparse.Action):
         setattr(namespace, self.dest, output)
 
 class DetrendArgumentParser(MpiArgumentParser):
+    """Add a --detrendId argument to the argument parser"""
     def __init__(self, calibName, *args, **kwargs):
         super(DetrendArgumentParser, self).__init__(*args, **kwargs)
         self.calibName = calibName
@@ -199,6 +233,7 @@ class DetrendArgumentParser(MpiArgumentParser):
         return namespace
 
 class DetrendConfig(Config):
+    """Configuration for constructing detrends"""
     isr = ConfigurableField(target=hscIsr.SubaruIsrTask, doc="ISR configuration")
     dateObs = Field(dtype=str, default="dateObs", doc="Key for observation date in exposure registry")
     dateCalib = Field(dtype=str, default="calibDate", doc="Key for detrend date in calib registry")
@@ -208,7 +243,14 @@ class DetrendConfig(Config):
         self.isr.doWrite = False
 
 class DetrendTask(MpiTask):
-    """Quite abstract (though not completely) base class for combining detrends"""
+    """Base class for constructing detrends.
+
+    This should be subclassed for each of the required detrend types.
+    The subclass should be sure to define the following class variables:
+    * _DefaultName: default name of the task, used by CmdLineTask
+    * calibName: name of the calibration data set in the butler
+    * overrides: a list of functions for setting a configuration, used by CmdLineTask
+    """
     ConfigClass = DetrendConfig
 
     def __init__(self, **kwargs):
@@ -227,7 +269,15 @@ class DetrendTask(MpiTask):
 
     @abortOnError
     def runDataRefList(self, expRefList, doRaise=False):
-        """All nodes execute this"""
+        """Construct a detrend from a list of exposure references
+
+        This is called by CmdLineTask.parseAndRun.
+
+        All nodes execute this method.
+
+        @param expRefList  List of data references at the exposure level
+        @param doRaise     Raise exceptions when there's a problem? (ignored)
+        """
         self.butler = self.parsedCmd.butler
 
         if self.rank == self.root:
@@ -259,6 +309,16 @@ class DetrendTask(MpiTask):
         self.scatterCombine(outputId, ccdKeys, ccdIdLists, scales)
 
     def getOutputId(self, expRefList):
+        """Generate the data identifier for the output detrend
+
+        The mean date and the common filter are included, using keywords
+        from the configuration.  The CCD-specific part is not included
+        in the data identifier.
+
+        Only the root node executes this method (it will share the results with the slaves).
+
+        @param expRefList  List of data references at exposure level
+        """
         expIdList = [expRef.dataId for expRef in expRefList]
         midTime = 0
         filterName = None
@@ -277,8 +337,8 @@ class DetrendTask(MpiTask):
         outputId.update(self.parsedCmd.detrendId)
         return outputId
 
-
     def getMjd(self, dataId):
+        """Determine the Modified Julian Date (MJD) from a data identifier"""
         dateObs = dataId[self.config.dateObs]
         try:
             dt = dafBase.DateTime(dateObs)
@@ -287,6 +347,7 @@ class DetrendTask(MpiTask):
         return dt.get(dafBase.DateTime.MJD)
 
     def getFilter(self, dataId):
+        """Determine the filter from a data identifier"""
         return dataId[self.config.filter]
 
     def scatterProcess(self, ccdKeys, ccdIdLists):
@@ -295,6 +356,12 @@ class DetrendTask(MpiTask):
         We scatter the data wider than the just the number of CCDs, to make
         full use of all available processors.  This necessitates piecing
         everything back together in the same format as ccdIdLists afterwards.
+
+        All nodes execute this method (though with different behaviour).
+
+        @param ccdKeys     Keywords that identify a CCD in the data identifier
+        @param ccdIdLists  Dict of data identifier lists for each CCD name
+        @return Dict of lists of returned data for each CCD name
         """
         if self.rank == self.root:
             dataIdList = sum(ccdIdLists.values(), [])
@@ -304,6 +371,7 @@ class DetrendTask(MpiTask):
         self.log.info("Scatter processing on %s" % thisNode())
         resultList = pbasf.ScatterJob(self.comm, self.process, dataIdList, root=self.root)
         if self.rank == self.root:
+            # Piece everything back together
             data = dict((ccdName, [None] * len(expList)) for ccdName, expList in ccdIdLists.items())
             indices = dict(sum([[(tuple(dataId.values()), (ccdName, expNum))
                                  for expNum, dataId in enumerate(expList)]
@@ -316,6 +384,10 @@ class DetrendTask(MpiTask):
         return data
 
     def process(self, ccdId):
+        """Process a CCD, specified by a data identifier
+
+        Only slave nodes execute this method.
+        """
         self.log.info("Processing %s on %s" % (ccdId, thisNode()))
         sensorRef = hscButler.getDataRef(self.butler, ccdId)
         exposure = self.processSingle(sensorRef)
@@ -323,20 +395,63 @@ class DetrendTask(MpiTask):
         return self.processResult(exposure)
 
     def processSingle(self, dataRef):
+        """Process a single CCD, specified by a data reference
+
+        Only slave nodes execute this method.
+        """
         return self.isr.run(dataRef).exposure
 
     def processWrite(self, dataRef, exposure, outputName="postISRCCD"):
+        """Write the processed CCD
+
+        Only slave nodes execute this method.
+
+        @param dataRef     Data reference
+        @param exposure    CCD exposure to write
+        @param outputName  Data type name for butler.
+        """
         dataRef.put(exposure, outputName)
 
     def processResult(self, exposure):
+        """Extract processing results from a processed exposure
+
+        Only slave nodes execute this method.  This method generates
+        what is gathered by the master node --- it must be picklable!
+        """
         return None
 
     def scale(self, ccdKeys, ccdIdLists, data):
+        """Determine scaling across CCDs and exposures
+
+        This is necessary mainly for flats, so as to determine a
+        consistent scaling across the entire focal plane.
+
+        Only the master node executes this method.
+
+        @param ccdKeys     Keywords that identify a CCD in the data identifier
+        @param ccdIdLists  Dict of data identifier lists for each CCD name
+        @param data        Dict of lists of returned data for each CCD name
+        @return dict of Struct(ccdScale: scaling for CCD,
+                               expScales: scaling for each exposure
+                               ) for each CCD name
+        """
         self.log.info("Scale on %s" % thisNode())
         return dict((name, Struct(ccdScale=None, expScales=[None] * len(ccdIdLists[name])))
                     for name in ccdIdLists.keys())
 
     def scatterCombine(self, outputId, ccdKeys, ccdIdLists, scales):
+        """Scatter the combination across multiple nodes
+
+        In this case, we can only scatter across as many nodes as
+        there are CCDs.
+
+        All nodes execute this method (though with different behaviour).
+
+        @param outputId    Output identifier (exposure part only)
+        @param ccdKeys     Keywords that identify a CCD in the data identifier
+        @param ccdIdLists  Dict of data identifier lists for each CCD name
+        @param scales      Dict of structs with scales, for each CCD name
+        """
         self.log.info("Scatter combination on %s" % thisNode())
         if self.rank == self.root:
             data = [Struct(ccdIdList=ccdIdLists[ccdName], scales=scales[ccdName],
@@ -347,6 +462,16 @@ class DetrendTask(MpiTask):
         pbasf.ScatterJob(self.comm, self.combine, data, root=self.root)
 
     def combine(self, struct):
+        """Combine multiple exposures of a particular CCD and write the output
+
+        Only the slave nodes execute this method.
+
+        The input is a struct consisting of the following components:
+        @param ccdIdList   List of data identifiers for combination
+        @param scales      Scales to apply (expScales are scalings for each exposure,
+                           ccdScale is final scale for combined image)
+        @param outputId    Data identifier for combined image (fully qualified for this CCD)
+        """
         dataRefList = [hscButler.getDataRef(self.butler, dataId) for dataId in struct.ccdIdList]
         self.log.info("Combining %s on %s" % (struct.outputId, thisNode()))
         detrend = self.combination.run(dataRefList, expScales=struct.scales.expScales,
@@ -354,14 +479,27 @@ class DetrendTask(MpiTask):
         self.write(detrend, struct.outputId)
 
     def write(self, exposure, dataId):
+        """Write the final combined detrend
+
+        Only the slave nodes execute this method
+
+        @param exposure  CCD exposure to write
+        @param dataId    Data identifier
+        """
         self.log.info("Writing %s on %s" % (dataId, thisNode()))
         self.butler.put(exposure, self.calibName, dataId)
 
 
 class BiasConfig(DetrendConfig):
+    """Configuration for bias construction.
+
+    No changes required compared to the base class, but
+    subclassed for distinction.
+    """
     pass
 
 def biasOverrides(config):
+    """Overrides to apply for bias construction"""
     config.isr.doBias = False
     config.isr.doDark = False
     config.isr.doFlat = False
@@ -369,47 +507,65 @@ def biasOverrides(config):
 
 
 class BiasTask(DetrendTask):
+    """Bias construction"""
     ConfigClass = BiasConfig
     _DefaultName = "bias"
     overrides = [biasOverrides]
     calibName = "bias"
 
 class DarkConfig(DetrendConfig):
+    """Configuration for dark construction"""
     darkTime = Field(dtype=str, default="DARKTIME", doc="Header keyword for time since last CCD wipe")
 
 def darkOverrides(config):
+    """Overrides to apply for dark construction"""
     config.isr.doDark = False
     config.isr.doFlat = False
 #   config.isr.doFringe = False
 
-class DarkTask(BiasTask):
+class DarkTask(DetrendTask):
+    """Dark construction
+
+    The only major difference from the base class is dividing
+    each image by the dark time to generate images of the
+    dark rate.
+    """
     ConfigClass = DarkConfig
     _DefaultName = "dark"
     overrides = [darkOverrides]
     calibName = "dark"
 
     def processSingle(self, sensorRef):
+        """Divide each processed image by the dark time to generate images of the dark rate"""
         exposure = super(DarkTask, self).processSingle(sensorRef)
         mi = exposure.getMaskedImage()
         mi /= self.getDarkTime(exposure)
         return exposure
 
     def getDarkTime(self, exposure):
+        """Retrieve the dark time"""
         if self.config.darkTime is not None:
             return exposure.getMetadata().get(self.config.darkTime)
         return exposure.getCalib().getExpTime()
 
 
 def flatOverrides(config):
+    """Overrides for flat construction"""
     config.isr.doFlat = False
 #   config.isr.doFringe = False
 
 
 class FlatConfig(DetrendConfig):
+    """Configuration for flat construction"""
     iterations = Field(dtype=int, default=10, doc="Number of iterations for scale determination")
     stats = ConfigurableField(target=DetrendStatsTask, doc="Background statistics configuration")
 
 class FlatTask(DetrendTask):
+    """Flat construction
+
+    The principal change involves gathering the background values from each
+    image and using them to determine the scalings for the final combination.
+    """
     ConfigClass = FlatConfig
     _DefaultName = "flat"
     overrides = [flatOverrides]
@@ -423,6 +579,15 @@ class FlatTask(DetrendTask):
         return self.stats.run(exposure)
 
     def scale(self, ccdKeys, ccdIdLists, data):
+        """Determine the scalings for the final combination
+
+        We have a matrix B_ij = C_i E_j, where C_i is the relative scaling
+        of one CCD to all the others in an exposure, and E_j is the scaling
+        of the exposure.  We determine the C_i and E_j from B_ij by iteration,
+        under the additional constraint that the average CCD scale is unity.
+        We convert everything to logarithms so we can work linearly.  This
+        algorithm comes from Eugene Magnier and Pan-STARRS.
+        """
         # Format background measurements into a matrix
         indices = dict((name, i) for i, name in enumerate(ccdIdLists.keys()))
         bgMatrix = numpy.array([[0] * len(expList) for expList in ccdIdLists.values()])
@@ -463,16 +628,25 @@ class FlatTask(DetrendTask):
 
 
 class FringeConfig(DetrendConfig):
+    """Configuration for fringe construction"""
     stats = ConfigurableField(target=DetrendStatsTask, doc="Background statistics configuration")
     background = ConfigField(dtype=measAlg.BackgroundConfig, doc="Background configuration")
     detection = ConfigurableField(target=measAlg.SourceDetectionTask, doc="Detection configuration")
 
 def fringeOverrides(config):
+    """Overrides for fringe construction"""
     pass
 #    config.isr.doFringe = False
 
 class FringeTask(DetrendTask):
     """Fringe construction task
+
+    The principal change from the base class is that the images are
+    background-subtracted and rescaled by the background.
+
+    XXX This is probably not right for a straight-up combination, as we
+    are currently doing, since the fringe amplitudes need not scale with
+    the continuum.
 
     XXX Would like to have this do PCA and generate multiple images, but
     that will take a bit of work with the persistence code.
@@ -488,6 +662,7 @@ class FringeTask(DetrendTask):
         self.makeSubtask("stats")
 
     def processSingle(self, sensorRef):
+        """Subtract the background and normalise by the background level"""
         exposure = super(FringeTask, self).processSingle(sensorRef)
         bgLevel = self.stats.run(exposure)
         self.subtractBackground(exposure)
@@ -502,11 +677,13 @@ class FringeTask(DetrendTask):
         return exposure
 
     def subtractBackground(self, exposure):
+        """Subtract the background from the provided exposure"""
         mi = exposure.getMaskedImage()
         background = measAlg.getBackground(mi, self.config.background).getImageF()
         mi -= background
 
 def getSize(dimList):
+    """Determine the consistent size, given a list of image sizes"""
     dim = set((w, h) for w,h in dimList)
     dim.discard(None)
     if len(dim) != 1:
@@ -515,15 +692,26 @@ def getSize(dimList):
 
 
 class MaskCombineConfig(Config):
+    """Configuration for generating a mask from individual footprints of discrepant pixels"""
     maskFraction = Field(doc="Minimum fraction of images where bad pixels got flagged", dtype=float,
                          default=0.5)
     maskPlane = Field(doc="Name of mask plane to set", dtype=str, default="BAD")
 
 
 class MaskCombineTask(Task):
+    """Generate a mask from individual footprints of discrepant pixels"""
     ConfigClass = MaskCombineConfig
 
     def run(footprintSetsList, dimList):
+        """Generate a mask
+
+        We are given a set of footprints of discrepant pixels for each image,
+        and identify bad pixels as those which are consistently discrepant.
+
+        @param footprintSetsList    List of footprintSets for each image
+        @param dimList              List of sizes for each image
+        @return Combined image
+        """
         width, height = getSize(dimList)
         combined = afwImage.MaskU(width, height)
         for footprintSets in footprintSetsList:
@@ -542,15 +730,18 @@ class MaskCombineTask(Task):
 
 
 class MaskConfig(DetrendConfig):
+    """Configuration for mask construction"""
     background = ConfigField(dtype=measAlg.BackgroundConfig, doc="Background configuration")
     detection = ConfigurableField(target=measAlg.SourceDetectionTask, doc="Detection configuration")
     def setDefaults(self):
         self.combination.retarget(MaskCombineTask)
 
 def maskOverrides(config):
+    """Overrides for mask construction"""
     pass
 
 class MaskTask(DetrendTask):
+    """Mask construction task"""
     ConfigClass = MaskConfig
     _DefaultName = "mask"
     overrides = [maskOverrides]
@@ -562,23 +753,37 @@ class MaskTask(DetrendTask):
         self.makeSubtask("detection")
 
     def processWrite(self, *args, **kwargs):
-        """Don't write anything --- there's no need"""
+        """Don't write anything
+
+        There's no need to write anything, as all the required information
+        is returned.
+        """
         pass
 
     def processResult(self, exposure):
+        """Return the discrepant pixels
+
+        XXX Not sure if footprintSets will pickle
+        """
         self.subtractBackground(exposure)
         footprintSets = self.detection.detectFootprints(exposure)
         return Struct(dim=exposure.getDimensions(), footprints=footprintSets)
 
     def subtractBackground(self, exposure):
+        """Subtract background from exposure"""
         mi = exposure.getMaskedImage()
         background = measAlg.getBackground(mi, self.config.background).getImageF()
         mi -= background
 
     def scales(self, data):
+        """No scaling required.
+
+        We just want to propagate the data returned from processing.
+        """
         return data
 
     def combine(self, struct):
+        """Combine the lists of discrepant pixels"""
         fpSetsList = [s.footprints for s in struct.scales]
         dimsList = [s.dim for s in struct.scales]
         combined = self.combination.run(fpSetsList, dimsList)
