@@ -30,7 +30,7 @@ import hsc.pipe.base as hscPipeBase
 import lsst.daf.base as dafBase
 import lsst.afw.image as afwImage
 import lsst.afw.table as afwTable
-import lsst.afw.math as afwMath
+import lsst.afw.geom as afwGeom
 from hsc.pipe.tasks.processStack import StackArgumentParser
 
 class MergeStackSourcesConfig(pexConfig.Config):
@@ -42,6 +42,10 @@ class MergeStackSourcesTask(pipeBase.CmdLineTask):
     """
     ConfigClass = MergeStackSourcesConfig
     _DefaultName = "mergeStackSources"
+
+    # Defining these to return None turns off warnings about persisting configs and metadata
+    def _getConfigName(self): return None
+    def _getMetadataName(self): return None
 
     def __init__(self, **kwargs):
         pipeBase.CmdLineTask.__init__(self, **kwargs)
@@ -69,14 +73,15 @@ class MergeStackSourcesTask(pipeBase.CmdLineTask):
         inputCat = dataRef.get("stack_src", immediate=True)
         inputWcs = self.loadWcs(dataRef)
         self.log.info("Shifting sources for %s" % dataRef.dataId)
-        offset = self.outputWcs.getPixelOrigin() - inputWcs.getPixelOrigin()
+        offsetD = self.outputWcs.getPixelOrigin() - inputWcs.getPixelOrigin()
+        offsetI = afwGeom.Extent2I(int(offsetD.getX()), int(offsetD.getY()))
         for record in inputCat:
             footprint = record.getFootprint()
-            footprint.shift(offset)
+            footprint.shift(offsetI)
             record.setFootprint(footprint)
             # Should set other centroids too, but Jim is in a hurry and he knows we don't
             # care about them for forced photometry
-            record.set(inputCat.table.getCentroidKey(), record.getCentroid() + offset)
+            record.set(inputCat.table.getCentroidKey(), record.getCentroid() + offsetD)
         if self.outputCat is None:
             self.outputCat = afwTable.SourceCatalog(inputCat.table.clone())
         self.log.info("Transferring sources for %s" % dataRef.dataId)
@@ -84,7 +89,7 @@ class MergeStackSourcesTask(pipeBase.CmdLineTask):
 
     @pipeBase.timeMethod
     def finish(self, butler):
-        butler.put("stack_src", self.outputCat, self.outputId)
+        butler.put(self.outputCat, "stack_src", self.outputId)
 
     @classmethod
     def _makeArgumentParser(cls):
