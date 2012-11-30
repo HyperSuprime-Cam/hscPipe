@@ -49,8 +49,11 @@ class SubaruReferencesTask(ReferencesTask):
                        'patch': 999999,
                        'filter': filterName,
                        }
-            calexp = butler.get("stack_calexp", stackId, immediate=True)
-            self._referenceWcs[key] = calexp.getWcs()
+            try:
+                exp = butler.get("stack_calexp", stackId, immediate=True)
+            except:
+                exp = butler.get("stack", stackId, immediate=True)
+            self._referenceWcs[key] = exp.getWcs()
         return self._referenceWcs[key]
 
 class SubaruForcedPhotConfig(ForcedPhotTask.ConfigClass):
