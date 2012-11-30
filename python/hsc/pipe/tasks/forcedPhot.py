@@ -16,6 +16,7 @@ from lsst.pex.config import Field, ConfigurableField
 
 class SubaruReferencesConfig(ReferencesConfig):
     filter = Field(dtype=str, doc="Filter name of stack for references", optional=False)
+    pointing= Field(dtype=int, doc="Pointing of stack for references", optional=True)
 
 class SubaruReferencesTask(ReferencesTask):
     ConfigClass = SubaruReferencesConfig
@@ -27,9 +28,10 @@ class SubaruReferencesTask(ReferencesTask):
         butler = dataRef.butlerSubset.butler
         dataId = dataRef.dataId
         filterName = self.config.filter if self.config.filter is not None else dataId['filter']
-        key = (dataId["pointing"], filterName)
+        pointing = self.config.pointing if self.config.pointing is not None else dataId['pointing']
+        key = (pointing, filterName)
         if key not in self._referenceSources:
-            stackId = {'stack': dataId['pointing'],
+            stackId = {'stack': pointing,
                        'patch': 999999,
                        'filter': filterName,
                        }
@@ -43,9 +45,10 @@ class SubaruReferencesTask(ReferencesTask):
         butler = dataRef.butlerSubset.butler
         dataId = dataRef.dataId
         filterName = self.config.filter if self.config.filter is not None else dataId['filter']
-        key = (dataId["pointing"], filterName)
+        pointing = self.config.pointing if self.config.pointing is not None else dataId['pointing']
+        key = (pointing, filterName)
         if key not in self._referenceWcs:
-            stackId = {'stack': dataId['pointing'],
+            stackId = {'stack': pointing,
                        'patch': 999999,
                        'filter': filterName,
                        }
