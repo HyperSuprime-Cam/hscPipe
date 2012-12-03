@@ -14,6 +14,7 @@ import lsst.afw.detection as afwDet
 import lsst.afw.image as afwImage
 import lsst.afw.cameraGeom as cameraGeom
 import lsst.meas.algorithms as measAlg
+import lsst.afw.geom.ellipses as afwEll
 
 import lsst.obs.subaru.isr as hscIsr
 
@@ -549,9 +550,61 @@ class DarkTask(DetrendTask):
         return exposure.getCalib().getExpTime()
 
 
+
+class FlatCombineTask(DetrendCombineTask):
+    """Combination for flat-fields
+
+    The observed flat-field has a constant exposure per unit area.
+    However, distortion in the camera makes the pixel area (the angle
+    on the sky subtended per pixel) larger as one moves away from the
+    optical axis, so that the flux in the observed flat-field drops.
+    But this drop does not mean the detector is less sensitive.  The
+    Jacobian is a rough estimate of the relative area of each pixel.
+    We therefore multiply the observed flat-field by the Jacobian to
+    create a "photometric flat" which has constant exposure per pixel
+    --- a true measure of the point-source sensitivity of the camera
+    as a function of pixel.
+    """
+    def run(self, sensorRefList, expScales=None, finalScale=None):
+        """Multiply the combined flat-field by the Jacobian"""
+        combined = super(FlatCombineTask, self).run(sensorRefList, expScales=expScales, finalScale=finalScale)
+        jacobian = self.getJacobian(sensorRefList[0], combined.getDimensions())
+        combined *= jacobian
+        return combined
+
+    def getJacobian(self, sensorRef, dimensions, inputName="postISRCCD"):
+        """Calculate the Jacobian as a function of position
+
+        @param sensorRef    Data reference for a representative CCD (to get the Detector)
+        @param dimensions   Dimensions of the flat-field
+        @param inputName    Data set name for inputs
+        @return Jacobian image
+        """
+        # Retrieve the detector and distortion
+        # XXX It's unfortunate that we have to read an entire image to get the detector, but there's no
+        # public API in the butler to get the same.
+        image = sensorRef.get(inputName)
+        detector = image.getDetector()
+        distortion = detector.getDistortion()
+        del image
+
+        # Calculate the Jacobian for each pixel
+        # XXX This would be faster in C++, but it's not awfully slow.
+        jacobian = afwImage.ImageF(dimensions)
+        array = jacobian.getArray()
+        width, height = dimensions
+        circle = afwEll.Quadrupole(1.0, 1.0, 0.0)
+        for y in xrange(height):
+            for x in xrange(width):
+                array[y,x] = distortion.distort(afwGeom.Point2D(x, y), circle, detector).getDeterminant()
+
+        return jacobian
+
+
 def flatOverrides(config):
     """Overrides for flat construction"""
     config.isr.doFlat = False
+    config.combination.retarget(FlatCombineTask)
 #   config.isr.doFringe = False
 
 
