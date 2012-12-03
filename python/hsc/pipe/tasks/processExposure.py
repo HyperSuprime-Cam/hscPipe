@@ -8,45 +8,11 @@ import lsst.afw.table as afwTable
 import lsst.afw.image as afwImage
 import hsc.pipe.base.matches as hscMatches
 import hsc.pipe.base.butler as hscButler
-from hsc.pipe.base.argumentParser import SubaruArgumentParser
 from lsst.pipe.base import Struct, CmdLineTask
 from lsst.pex.config import Config, Field, ConfigurableField
 from hsc.pipe.tasks.processCcd import SubaruProcessCcdTask
-from hsc.pipe.base.mpi import abortOnError, thisNode
+from hsc.pipe.base.mpi import abortOnError, thisNode, MpiTask, MpiArgumentParser
 
-
-class DummyDataRef(object):
-    """Quacks like a ButlerDataRef (where required), but is picklable."""
-    def __init__(self, dataId):
-        self.dataId = dataId
-    def put(self, *args, **kwargs): pass # Because each node will attempt to write the config
-    def get(self, *args, **kwargs): raise AssertionError("Nodes should not be writing using this dataRef")
-
-
-
-class MpiArgumentParser(SubaruArgumentParser):
-    """ArgumentParser that prevents all the MPI jobs from reading the registry
-
-    Slaves receive the list of dataIds from the master, and set up a dummy
-    list of dataRefs (so that the ProcessExposureTask.run method is called an
-    appropriate number of times).
-    """
-    @abortOnError
-    def _makeDataRefList(self, namespace):
-        # We don't want all the MPI jobs to go reading the registry at once
-        comm = pbasf.Comm()
-        rank = comm.rank
-        root = 0
-        if rank == root:
-            super(MpiArgumentParser, self)._makeDataRefList(namespace)
-            dummy = [DummyDataRef(dataRef.dataId) for dataRef in namespace.dataRefList]
-        else:
-            dummy = None
-        # Ensure there's the same entries, except the slaves can't go reading/writing except what they're told
-        if comm.size > 1:
-            dummy = pbasf.Broadcast(comm, dummy, root=root)
-            if rank != root:
-                namespace.dataRefList = dummy
 
 class ProcessExposureConfig(Config):
     processCcd = ConfigurableField(target=SubaruProcessCcdTask, doc="CCD processing task")
@@ -61,7 +27,7 @@ class ProcessExposureConfig(Config):
         self.processCcd.doFinalWrite = False
 
 
-class ProcessExposureTask(CmdLineTask):
+class ProcessExposureTask(MpiTask):
     """Process an entire exposure at once.
 
     We use MPI to gather the match lists for exposure-wide astrometric and
@@ -78,9 +44,6 @@ class ProcessExposureTask(CmdLineTask):
         All nodes execute this method.
         """
         super(ProcessExposureTask, self).__init__(**kwargs)
-        self.comm = pbasf.Comm()
-        self.rank = self.comm.rank
-        self.root = 0
         self.makeSubtask("processCcd")
         self.resultsCache = dict() # Cache to remember results for saving
 
