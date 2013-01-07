@@ -550,9 +550,15 @@ class DarkTask(DetrendTask):
         return exposure.getCalib().getExpTime()
 
 
+class FlatCombineConfig(DetrendCombineConfig):
+    """Configuration for flat construction"""
+    doJacobian = Field(dtype=bool, default=False, doc="Apply Jacobian to flat-field?")
+
 
 class FlatCombineTask(DetrendCombineTask):
     """Combination for flat-fields
+
+    We allow the flat-field to be corrected for the Jacobian.
 
     The observed flat-field has a constant exposure per unit area.
     However, distortion in the camera makes the pixel area (the angle
@@ -560,16 +566,27 @@ class FlatCombineTask(DetrendCombineTask):
     optical axis, so that the flux in the observed flat-field drops.
     But this drop does not mean the detector is less sensitive.  The
     Jacobian is a rough estimate of the relative area of each pixel.
-    We therefore multiply the observed flat-field by the Jacobian to
-    create a "photometric flat" which has constant exposure per pixel
-    --- a true measure of the point-source sensitivity of the camera
-    as a function of pixel.
+    The correction is therefore achieved by multiplying the observed
+    flat-field by the Jacobian to create a "photometric flat" which
+    has constant exposure per pixel --- a true measure of the
+    point-source sensitivity of the camera as a function of pixel
+    (modulo contributions from scattered light, which require much
+    more work to account for).
+
+    Note, however, that application of this correction means that
+    images flattened with this (Jacobian-corrected) "photometric flat"
+    will not have a flat sky, potentially making sky subtraction more
+    difficult.  Furthermore, care must be taken to ensure this
+    correction is not applied more than once (e.g., in warping).
     """
+    ConfigClass = FlatCombineConfig
+
     def run(self, sensorRefList, expScales=None, finalScale=None):
         """Multiply the combined flat-field by the Jacobian"""
         combined = super(FlatCombineTask, self).run(sensorRefList, expScales=expScales, finalScale=finalScale)
-        jacobian = self.getJacobian(sensorRefList[0], combined.getDimensions())
-        combined *= jacobian
+        if self.config.doJacobian:
+            jacobian = self.getJacobian(sensorRefList[0], combined.getDimensions())
+            combined *= jacobian
         return combined
 
     def getJacobian(self, sensorRef, dimensions, inputName="postISRCCD"):
