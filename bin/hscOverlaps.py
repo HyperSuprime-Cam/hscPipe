@@ -25,7 +25,7 @@ from lsst.pipe.base import ArgumentParser
 from hsc.meas.mosaic.task import HscOverlapsTask as TaskClass
 
 if __name__ == "__main__":
-    parser = ArgumentParser("hscCoadd", datasetType="calexp")
+    parser = ArgumentParser("hscCoadd", datasetType="raw")
     parser.add_argument("--coadd", type=str, required=True)
 
     try:
