@@ -26,7 +26,7 @@ from hsc.meas.mosaic.task import HscCoaddTask as TaskClass
 
 if __name__ == "__main__":
     coaddName = "deep"
-    parser = ArgumentParser("hscCoadd", datasetType="calexp")
+    parser = ArgumentParser("hscCoadd", datasetType="raw")
     parser.add_argument("--filter", type=str, required=True)
     parser.add_argument("--tract", type=int, required=True)
     parser.add_argument("--patch", type=str, required=True)
@@ -48,7 +48,7 @@ if __name__ == "__main__":
         raise RuntimeError("Non-specific coadd reference list: %s" % coaddRefList)
 
     
-    if namespace.doRaise:
+    if namespace.doraise:
         task.run(coaddRefList[0], namespace.dataRefList)
     else:
         try:
