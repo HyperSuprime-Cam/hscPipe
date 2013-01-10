@@ -21,12 +21,12 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 import sys
-from hsc.pipe.base import HscArgumentParser
-from hsc.meas.mosaic.task import MosaicTask as TaskClass
+from hsc.pipe.base import SubaruArgumentParser
+from lsst.meas.mosaic.mosaicTask import MosaicTask as TaskClass
 
 if __name__ == "__main__":
     coaddName = "deep"
-    parser = HscArgumentParser(datasetType="calexp")
+    parser = SubaruArgumentParser("hscMosaic", datasetType="raw")
     parser.add_argument("--filter", type=str)
     parser.add_argument("--tract", type=int)
 
@@ -41,10 +41,10 @@ if __name__ == "__main__":
     tractId = {}
     if namespace.tract is not None:
         tractId['tract'] = namespace.tract
-    if namespace.doRaise:
+    if namespace.doraise:
         task.run(butler, namespace.dataRefList, tractId, coaddName)
     else:
         try:
             task.run(butler, namespace.dataRefList, tractId, coaddName)
         except Exception, e:
-            task.log.log(task.log.FATAL, "Failed on dataId=%s: %s" % (dataId, e))
+            task.log.log(task.log.FATAL, "Failed: %s" % e)
