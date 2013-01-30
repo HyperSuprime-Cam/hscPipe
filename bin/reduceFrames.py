@@ -1,27 +1,8 @@
 #!/usr/bin/env python
-
 import os
-import hsc.pipe.base.pbs as hscPbs
-
-
+from hsc.pipe.base.pbs import submitPbs
+from hsc.pipe.tasks.processExposure import ProcessExposureTask
 if __name__ == "__main__":
-    parser = hscPbs.PbsArgumentParser(usage="""
-    Reduce frames using PBS.
+    submitPbs(ProcessExposureTask, "Reduce exposures using PBS",
+              os.path.join(os.environ['HSCPIPE_DIR'], 'bin', 'processExposure.py'))
 
-    Command line:
-        reduceFrames [OPTIONS] FRAME_ID [FRAME_ID ...]
-
-    where FRAME_ID are integers identifying frames.
-    """)
-    parser.add_argument("-i", "--instrument", dest="instrument", help="Instrument name", default="hsc")
-    parser.add_argument("-r", "--rerun", dest="rerun", help="Rerun name", default=os.environ["LOGNAME"])
-    parser.add_argument("frame", nargs='*', help="Frame numbers to reduce")
-    pbs, args = parser.parse_args()
-
-    if len(args.frame) == 0:
-        print "No frames provided to process"
-        exit(1)
-
-    command = "python %s/bin/processExposure.py %s %s %s" % (os.environ['HSCPIPE_DIR'], args.instrument,
-                                                             args.rerun, " ".join(args.frame))
-    pbs.run(command, repeats=len(args.frame), threads=10 if args.instrument == "suprimecam" else None)

@@ -47,13 +47,13 @@ class SubaruProcessCcdTask(ProcessCcdTask):
 
     def run(self, sensorRef):
         result = ProcessCcdTask.run(self, sensorRef)
-        if self.config.qa.useIcsources:
+        if self.config.qa.useIcsources and self.config.doCalibrate:
             self.qa.run(sensorRef, result.exposure, result.calib.sources)
-        else:
+        elif self.config.doMeasurement:
             self.qa.run(sensorRef, result.exposure, result.sources)
 
         if self.config.doFinalWrite:
-            self.write(sensorRef, result, wcs=result.exposure.getWcs())
+            self.write(sensorRef, result)
 
         return result
 
@@ -97,6 +97,7 @@ class SubaruProcessCcdTask(ProcessCcdTask):
         if results.exposure is not None:
             dataRef.put(results.exposure, 'calexp')
         if results.sources is not None:
+            results.sources.setWriteHeavyFootprints(True)
             dataRef.put(results.sources, 'src')
         if results.matches is not None:
             dataRef.put(packMatches(results.matches, results.matchMeta), "srcMatch")

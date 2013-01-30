@@ -983,7 +983,7 @@ def getFilename(dataRef, dataset):
         try: # handling a possible race condition
             os.makedirs(directory)
         except OSError, e:
-            if e.errno == errno.EEXIST:
+            if e.errno != errno.EEXIST:
                 raise
         if not os.path.exists(directory):
             raise RuntimeError, "Unable to create output directory for qa output directory '%s'" % (directory)

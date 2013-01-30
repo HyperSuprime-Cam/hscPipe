@@ -21,26 +21,61 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 import sys
+import argparse
+from lsst.pex.config import Config
 from lsst.pipe.base import ArgumentParser
-from hsc.meas.mosaic.task import HscOverlapsTask as TaskClass
+import hsc.pipe.tasks.overlaps as hscOverlaps
+
+class ParseIntInt(argparse.Action):
+    """argparse action callback to parse a '%d,%d' into a tuple"""
+    def __call__(self, parser, namespace, values, option_string):
+        value = values[-1]
+        numbers = value.split(',')
+        if len(numbers) != 2:
+            parser.error("%s value must be two integers separated by a comma, e.g., '1,2'")
+        setattr(namespace, self.dest, tuple(numbers))
+
+def printOverlaps(dataRefList, butler, coadd="deep", tract=None, patch=None, showDataRefs=False, detail=False):
+    skyMap = butler.get(namespace.coadd + "Coadd_skyMap")
+
+    tractDictList = [hscOverlaps.getTractPatchList(dataRef, skyMap) for dataRef in dataRefList]
+    if showDataRefs:
+        print "Tracts for each calexp:"
+        for dataRef, tractDict in zip(dataRefList, tractDictList):
+            hscOverlaps.printDataRef(dataRef, tractDict, doPatches=detail)
+        print
+
+    tractData = hscOverlaps.invert([dataRef.dataId for dataRef in dataRefList], tractDictList)
+    if patch is not None:
+        if tract is None:
+            raise RuntimeError("Tract must be specified if patch is desired.")
+        hscOverlaps.printPatch(tract, patch, tractData, doDataId=detail)
+    else:
+        print "Calexps for each tract/patch:"
+        hscOverlaps.printTracts(tractData, tract=tract, doDataId=detail)
+
 
 if __name__ == "__main__":
-    parser = ArgumentParser("hscCoadd", datasetType="calexp")
+    parser = ArgumentParser("hscOverlaps", datasetType="raw")
     parser.add_argument("--coadd", type=str, required=True)
+    parser.add_argument("--tract", type=int, default=None, help="Tract to print")
+    parser.add_argument("--patch", action=ParseIntInt, default=None, help="Patch to print")
+    parser.add_argument("--showDataRefs", action="store_true", default=False,
+                        help="Show tracts/patches for each dataRef?")
+    parser.add_argument("--detail", action="store_true", default=False, help="Print detail?")
 
     try:
-        namespace = parser.parse_args(config=TaskClass.ConfigClass())
+        namespace = parser.parse_args(Config())
     except Exception, e:
-        print >> sys.stderr, e
+        print >> sys.stderr, "Error parsing arguments: %s" % e
         sys.exit(1)
 
-    task = TaskClass(config=namespace.config)
+    args = []
 
-    skyMap = namespace.butler.get(namespace.coadd + "Coadd_skyMap")
-    if namespace.doraise:
-        task.run(namespace.dataRefList, skyMap)
-    else:
-        try:
-            task.run(namespace.dataRefList, skyMap)
-        except Exception, e:
-            task.log.log(task.log.FATAL, "Failed: %s" % e)
+    try:
+        printOverlaps(namespace.dataRefList, namespace.butler, namespace.coadd,
+                      namespace.tract, namespace.patch, namespace.showDataRefs, namespace.detail)
+    except Exception, e:
+        if namespace.doraise:
+            raise
+        print "Failed: %s" % e
