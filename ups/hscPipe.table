@@ -6,6 +6,7 @@ setupRequired(fitsthumb)
 setupOptional(pbasf2)
 setupOptional(hscMosaic)
 setupOptional(solvetansip)
+setupOptional(runOnsite)
 
 setupOptional(meas_extensions_photometryKron)
 setupOptional(meas_extensions_rotAngle)
