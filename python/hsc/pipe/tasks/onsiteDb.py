@@ -10,44 +10,66 @@ import lsst.afw.table as afwTable
 
 from .onsite import SubaruProcessCcdOnsiteTask
 
+class OnsiteDbTask(Task):
+    def start(self, registId):
+        self.onsiteDbUtils.updateStatusFrameAnalysisStart(registId)
+
+    def end(self, registId):
+        self.onsiteDbUtils.updateStatusFrameAnalysisEnd(registId)
+
+    def frameMetadata(self, registId, filename):
+        self.onsiteDbUtils.registFrameQaMetaInfo(registId, filename)
+
+    def getRegisterId(self, sensorRef):
+        # XXX currently unused?
+        dataId = sensorRef.dataId
+        ccd = int(dataId['ccd'])
+        visit = int(dataId['visit'])
+        return self.onsiteDbUtils.getRegistryId(visit, ccd)
+
+class HscOnsiteDbTask(OnsiteDbTask):
+    def __init__(self, *args, **kwargs):
+        super(HscOnsiteDbTask, self).__init__(*args, **kwargs)
+        import hsc.onsite.onsiteDbUtilsSuprime as onsiteDbUtils
+        self.onsiteDbUtils = onsiteDbUtils
+
+class SuprimecamOnsiteDbTask(OnsiteDbTask):
+    def __init__(self, *args, **kwargs):
+        super(HscOnsiteDbTask, self).__init__(*args, **kwargs)
+        import hsc.onsite.onsiteDbUtilsHsc as onsiteDbUtils
+        self.onsiteDbUtils = onsiteDbUtils
+
+
+class SubaruProcessCcdOnsiteDbConfig(SubaruProcessCcdConfig):
+    onsiteDb = ConfigurableField(target=OnsiteDbTask, doc="Task for onsite database interaction")
+
 class SubaruProcessCcdOnsiteDbTask(SubaruProcessCcdOnsiteTask):
     """Subclass of SubaruProcessCcdOnsiteTask that uses the database.
     """
+    ConfigClass = SubaruProcessCcdOnsiteDbConfig
+    _DefaultName = "processCcdOnsiteDb"
+
+    def __init__(self, *args, **kwargs):
+        super(SubaruProcessCcdOnsiteDbTask, self).__init__(*args, **kwargs)
+        self.makeSubtask("onsiteDb")
 
     @classmethod
-    def parseAndRun(cls, args=None, config=None, log=None):
-        """
-        Copied from pipe_base.cmdLineTask.CmdLineTask,
-        to add extra options for analysis operation (anaid, registid).
-        """
-        argumentParser = cls._makeArgumentParser()
+    def _makeArgumentParser(cls):
+        argumentParser = super(SubaruProcessCcdOnsiteDbTask, cls)._makeArgumentParser()
         argumentParser.add_argument("--anaid", action="store", type=int, dest="anaId",
                                     default=0, help="analysis session Id in analysis table.")
         argumentParser.add_argument("--registid", action="store", type=int, dest="registId",
                                     default=0, help="primary key Id in registry raw table.")
         argumentParser.add_argument("--qa-logdir", action="store", type=str, dest="qaLogDir",
                                     default='.', help="directory where logging files in QaTasks or DbAccess are stored.")
-
-        if config is None:
-            config = cls.ConfigClass()
-        parsedCmd = argumentParser.parse_args(config=config, args=args, log=log, overrides=cls.overrides)
-        task = cls(name = cls._DefaultName, config = parsedCmd.config, log = parsedCmd.log)
-        task.parsedCmd = parsedCmd
-        task.runDataRefList(parsedCmd.dataRefList, doRaise=parsedCmd.doraise)
-        return Struct(
-            argumentParser = argumentParser,
-            parsedCmd = parsedCmd,
-            task = task,
-            )
+        return argumentParser
 
     def run(self, sensorRef):
         # !!! it is better to db update for frame_analysis_start just before execution of this script
         #     but, to get 'id' on time when this analysis process is invoked, I'm temporarily 
         #     doing this here.
-        self.importDbUtils()
-        if False:
-            registid, visit, ccd =  self.getDataId()
 
+        # XXX self.parsedCmd is not available in an upgraded lsst.pipe.base.CmdLineTask; we will need to update
         anaId =  self.parsedCmd.anaId
         registId = self.parsedCmd.registId
         sensorRef.dataId['anaId'] = anaId
@@ -55,54 +77,13 @@ class SubaruProcessCcdOnsiteDbTask(SubaruProcessCcdOnsiteTask):
         self.log.info("anaid: %d registid: %d" % (sensorRef.dataId['anaId'], sensorRef.dataId['registId']))
 
         qaLogDir = self.parsedCmd.qaLogDir
-
-        self.onsiteDbUtils.updateStatusFrameAnalysisStart(registId)
+        
+        self.onsiteDb.start(registId)
         # Run main processing task and QA by calling base class
         result = SubaruProcessCcdOnsiteTask.run(self, sensorRef)
         ## === update onsite Db status
-        self.onsiteDbUtils.updateStatusFrameAnalysisEnd(registId)
+        self.onsiteDb.end(registId)
         ## === register CORR data QA values
         filename = sensorRef.get('calexp_filename')[0]
-        #registCorrSup.registCorrFrameMetaInfo(filename)
-        self.onsiteDbUtils.registFrameQaMetaInfo(registId, filename)
+        self.onsiteDb.frameMetadata(registId, filename)
         return result
-
-    def importDbUtils(self):
-        namespace = self.parsedCmd
-        try:
-            if namespace.camera.lower() in ['suprimecam', 'sc', 'suprimecam-mit', 'mit']:
-                import hsc.onsite.onsiteDbUtilsSuprime as onsiteDbUtils
-            elif namespace.camera.lower() in ['hsc', 'hscsim']:
-                import hsc.onsite.onsiteDbUtilsHsc as onsiteDbUtils
-            else:
-                print >> sys.stderr, "Given instrument name is not valid: %s" % namespace.camera
-                sys.exit(1)
-        except Exception, e:
-            print >> sys.stderr, e
-            sys.exit(1)
-        self.onsiteDbUtils = onsiteDbUtils  # stuff module in self so other methods can use it
-
-    def getDataId(self):
-        namespace = self.parsedCmd
-        dataId = (namespace.dataIdList)[0]
-        ccd = int(dataId['ccd'])
-        visit = int(dataId['visit'])
-
-        # id is obtained from the one place (sup/hscpipe db) rather than being calculated in individual places
-        if False:
-            if namespace.camera.lower() in ['suprimecam', 'sc', 'suprimecam-mit', 'mit']:
-                id = int(visit)*10 + int(ccd)
-            elif namespace.camera.lower() in ['hsc', 'hscsim']:
-                #### !!! TBD how to assign visit for HSC data
-                #id = int(visit)*1000 + int(ccd)  
-                id = int(visit)*100 + int(ccd)
-            else:
-                print >> sys.stderr, "Given instrument name is not valid: %s" % namespace.camera
-                sys.exit(1)
-        else:
-            registId = self.onsiteDbUtils.getRegistryId(visit, ccd)
-
-        return registId, visit, ccd
-
-
-
