@@ -686,7 +686,7 @@ class FlatTask(DetrendTask):
             self.log.logdebug("Iteration %d exposure scales: %s" % (iterate, numpy.exp(expScales)))
             self.log.logdebug("Iteration %d component scales: %s" % (iterate, numpy.exp(compScales)))
 
-        expScales = numpy.apply_along_axis(lambda x: numpy.average(x - compScales), 0, bgMatrix)
+        expScales = numpy.array([(bgMatrix[:,i] - compScales).mean() for i in range(numExps)])
 
         if numpy.any(numpy.isnan(expScales)):
             raise RuntimeError("Bad exposure scales: %s --> %s" % (bgMatrix, expScales))
