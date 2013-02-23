@@ -665,18 +665,22 @@ class FlatTask(DetrendTask):
             i = indices[name]
             bgMatrix[i] = data[name]
 
+        numpyPrint = numpy.get_printoptions()
+        numpy.set_printoptions(threshold='nan')
         self.log.info("Input backgrounds: %s" % bgMatrix)
 
         # Flat-field scaling
         numCcds = len(ccdIdLists)
+        numExps = bgMatrix.shape[1]
         bgMatrix = numpy.log(bgMatrix)      # log(Background) for each exposure/component
+        bgMatrix = numpy.ma.masked_array(bgMatrix, numpy.isnan(bgMatrix))
         compScales = numpy.zeros(numCcds) # Initial guess at log(scale) for each component
-        expScales = numpy.apply_along_axis(lambda x: numpy.average(x - compScales), 0, bgMatrix)
+        expScales = numpy.array([(bgMatrix[:,i] - compScales).mean() for i in range(numExps)])
 
         for iterate in range(self.config.iterations):
-            # XXX use masks for each quantity: maskedarrays
-            compScales = numpy.apply_along_axis(lambda x: numpy.average(x - expScales), 1, bgMatrix)
-            expScales = numpy.apply_along_axis(lambda x: numpy.average(x - compScales), 0, bgMatrix)
+            compScales = numpy.array([(bgMatrix[i,:] - expScales).mean() for i in range(numCcds)])
+            expScales = numpy.array([(bgMatrix[:,i] - compScales).mean() for i in range(numExps)])
+
             avgScale = numpy.average(numpy.exp(compScales))
             compScales -= numpy.log(avgScale)
             self.log.logdebug("Iteration %d exposure scales: %s" % (iterate, numpy.exp(expScales)))
