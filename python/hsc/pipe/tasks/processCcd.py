@@ -7,7 +7,6 @@ import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.afw.table as afwTable
 import hsc.pipe.base.matches as hscMatches
-from hsc.pipe.base import SubaruArgumentParser
 from lsst.pipe.tasks.processCcd import ProcessCcdTask
 from .qa import QaTask
 
@@ -56,14 +55,6 @@ class SubaruProcessCcdTask(ProcessCcdTask):
             self.write(sensorRef, result)
 
         return result
-
-    @classmethod
-    def _makeArgumentParser(cls):
-        """Create an argument parser with --rerun support.
-        """
-        parser = SubaruArgumentParser(name=cls._DefaultName)
-        parser.add_id_argument(name="--id", datasetType="raw", help="data ID, e.g. --id visit=12345 ccd=1,2")
-        return parser
 
     def write(self, dataRef, results, wcs=None, fluxMag0=None):
         if wcs is None:
