@@ -1,12 +1,14 @@
 #!/usr/bin/env python
 
 import os
+import sys
 import numpy
 import argparse
+import traceback
 
 import pbasf2 as pbasf
 from lsst.pex.config import Config, ConfigField, ConfigurableField, Field
-from lsst.pipe.base import Task, Struct
+from lsst.pipe.base import Task, Struct, TaskRunner
 import lsst.daf.base as dafBase
 import lsst.afw.math as afwMath
 import lsst.afw.geom as afwGeom
@@ -19,7 +21,7 @@ import lsst.afw.geom.ellipses as afwEll
 import lsst.obs.subaru.isr as hscIsr
 
 import hsc.pipe.base.butler as hscButler
-from hsc.pipe.base.mpi import MpiTask, MpiArgumentParser, abortOnError, thisNode
+from hsc.pipe.base.mpi import MpiTask, MpiArgumentParser, MpiTaskRunner, abortOnError, thisNode
 from hsc.pipe.base.pbs import PbsArgumentParser, shCommandFromArgs
 
 class DetrendStatsConfig(Config):
@@ -217,7 +219,8 @@ class DetrendArgumentParser(MpiArgumentParser):
     def __init__(self, calibName, *args, **kwargs):
         super(DetrendArgumentParser, self).__init__(*args, **kwargs)
         self.calibName = calibName
-        self.add_id_argument("--id", datasetType="raw", help="input identifiers, e.g., --id visit=123 ccd=4")
+        self.add_id_argument("--id", datasetType="raw", level="visit",
+                             help="input identifiers, e.g., --id visit=123 ccd=4")
         self.add_argument("--detrendId", nargs="*", action=DetrendIdAction, default={},
                           help="identifiers for detrend, e.g., --detrendId version=1",
                           metavar="KEY=VALUE1[^VALUE2[^VALUE3...]")
@@ -244,6 +247,30 @@ class DetrendConfig(Config):
     def setDefaults(self):
         self.isr.doWrite = False
 
+class DetrendTaskRunner(TaskRunner):
+    """Get parsed values into the DetrendTask.run"""
+    @staticmethod
+    def getTargetList(parsedCmd, **kwargs):
+        return [dict(expRefList=parsedCmd.id.refList, butler=parsedCmd.butler, detrendId=parsedCmd.detrendId)]
+
+    def __call__(self, args):
+        task = self.TaskClass(config=self.config, log=self.log)
+        if self.doRaise:
+            result = task.run(**args)
+        else:
+            try:
+                result = task.run(**args)
+            except Exception, e:
+                task.log.fatal("Failed: %s" % e)
+                traceback.print_exc(file=sys.stderr)
+
+        if self.doReturnResults:
+            return Struct(
+                args = args,
+                metadata = task.metadata,
+                result = result,
+            )
+
 class DetrendTask(MpiTask):
     """Base class for constructing detrends.
 
@@ -254,6 +281,7 @@ class DetrendTask(MpiTask):
     * overrides: a list of functions for setting a configuration, used by CmdLineTask
     """
     ConfigClass = DetrendConfig
+    RunnerClass = DetrendTaskRunner
 
     def __init__(self, **kwargs):
         """Constructor.
@@ -269,20 +297,21 @@ class DetrendTask(MpiTask):
         return DetrendArgumentParser(calibName=cls.calibName, name=cls._DefaultName, *args, **kwargs)
 
     @abortOnError
-    def runDataRefList(self, expRefList, doRaise=False):
+    def run(self, expRefList, butler, detrendId):
         """Construct a detrend from a list of exposure references
 
-        This is called by CmdLineTask.parseAndRun.
+        This is the entry point, called by the TaskRunner.__call__
 
         All nodes execute this method.
 
         @param expRefList  List of data references at the exposure level
-        @param doRaise     Raise exceptions when there's a problem? (ignored)
+        @param butler      Data butler
+        @param detrendId   Identifier dict for detrend
         """
-        self.butler = self.parsedCmd.butler
+        self.butler = butler
 
         if self.rank == self.root:
-            outputId = self.getOutputId(expRefList)
+            outputId = self.getOutputId(expRefList, detrendId)
             ccdKeys, ccdIdLists = getCcdIdListFromExposures(expRefList, level="sensor")
 
             # Ensure we can generate filenames for each output
@@ -309,7 +338,7 @@ class DetrendTask(MpiTask):
         # Scatter: combine
         self.scatterCombine(outputId, ccdKeys, ccdIdLists, scales)
 
-    def getOutputId(self, expRefList):
+    def getOutputId(self, expRefList, detrendId):
         """Generate the data identifier for the output detrend
 
         The mean date and the common filter are included, using keywords
@@ -335,7 +364,7 @@ class DetrendTask(MpiTask):
         date = str(dafBase.DateTime(midTime, dafBase.DateTime.MJD).toPython().date())
 
         outputId = {self.config.filter: filterName, self.config.dateCalib: date}
-        outputId.update(self.parsedCmd.detrendId)
+        outputId.update(detrendId)
         return outputId
 
     def getMjd(self, dataId):
@@ -499,30 +528,25 @@ class BiasConfig(DetrendConfig):
     """
     pass
 
-def biasOverrides(config):
-    """Overrides to apply for bias construction"""
-    config.isr.doBias = False
-    config.isr.doDark = False
-    config.isr.doFlat = False
-#   config.isr.doFringe = False
-
 
 class BiasTask(DetrendTask):
     """Bias construction"""
     ConfigClass = BiasConfig
     _DefaultName = "bias"
-    overrides = [biasOverrides]
     calibName = "bias"
+
+    @classmethod
+    def applyOverrides(cls, config):
+        """Overrides to apply for bias construction"""
+        config.isr.doBias = False
+        config.isr.doDark = False
+        config.isr.doFlat = False
+#        config.isr.doFringe = False
+
 
 class DarkConfig(DetrendConfig):
     """Configuration for dark construction"""
     darkTime = Field(dtype=str, default="DARKTIME", doc="Header keyword for time since last CCD wipe")
-
-def darkOverrides(config):
-    """Overrides to apply for dark construction"""
-    config.isr.doDark = False
-    config.isr.doFlat = False
-#   config.isr.doFringe = False
 
 class DarkTask(DetrendTask):
     """Dark construction
@@ -533,8 +557,14 @@ class DarkTask(DetrendTask):
     """
     ConfigClass = DarkConfig
     _DefaultName = "dark"
-    overrides = [darkOverrides]
     calibName = "dark"
+
+    @classmethod
+    def applyOverrides(cls, config):
+        """Overrides to apply for dark construction"""
+        config.isr.doDark = False
+        config.isr.doFlat = False
+#        config.isr.doFringe = False
 
     def processSingle(self, sensorRef):
         """Divide each processed image by the dark time to generate images of the dark rate"""
@@ -618,13 +648,6 @@ class FlatCombineTask(DetrendCombineTask):
         return jacobian
 
 
-def flatOverrides(config):
-    """Overrides for flat construction"""
-    config.isr.doFlat = False
-    config.combination.retarget(FlatCombineTask)
-#   config.isr.doFringe = False
-
-
 class FlatConfig(DetrendConfig):
     """Configuration for flat construction"""
     iterations = Field(dtype=int, default=10, doc="Number of iterations for scale determination")
@@ -638,8 +661,15 @@ class FlatTask(DetrendTask):
     """
     ConfigClass = FlatConfig
     _DefaultName = "flat"
-    overrides = [flatOverrides]
     calibName = "flat"
+
+    @classmethod
+    def applyOverrides(cls, config):
+        """Overrides for flat construction"""
+        config.isr.doFlat = False
+        config.combination.retarget(FlatCombineTask)
+#        config.isr.doFringe = False
+
 
     def __init__(self, **kwargs):
         super(FlatTask, self).__init__(**kwargs)
@@ -707,10 +737,6 @@ class FringeConfig(DetrendConfig):
     background = ConfigField(dtype=measAlg.BackgroundConfig, doc="Background configuration")
     detection = ConfigurableField(target=measAlg.SourceDetectionTask, doc="Detection configuration")
 
-def fringeOverrides(config):
-    """Overrides for fringe construction"""
-    pass
-#    config.isr.doFringe = False
 
 class FringeTask(DetrendTask):
     """Fringe construction task
@@ -727,8 +753,13 @@ class FringeTask(DetrendTask):
     """
     ConfigClass = FringeConfig
     _DefaultName = "fringe"
-    overrides = [fringeOverrides]
     calibName = "fringe"
+
+    @classmethod
+    def applyOverrides(cls, config):
+        """Overrides for fringe construction"""
+#        config.isr.doFringe = False
+        pass
 
     def __init__(self, **kwargs):
         super(FringeTask, self).__init__(**kwargs)
@@ -810,16 +841,16 @@ class MaskConfig(DetrendConfig):
     def setDefaults(self):
         self.combination.retarget(MaskCombineTask)
 
-def maskOverrides(config):
-    """Overrides for mask construction"""
-    pass
-
 class MaskTask(DetrendTask):
     """Mask construction task"""
     ConfigClass = MaskConfig
     _DefaultName = "mask"
-    overrides = [maskOverrides]
     calibName = "mask"
+
+    @classmethod
+    def applyOverrides(cls, config):
+        """Overrides for mask construction"""
+        pass
 
     def __init__(self, **kwargs):
         super(MaskTask, self).__init__(**kwargs)
