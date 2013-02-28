@@ -13,7 +13,7 @@ import lsst.obs.hscSim as obsHsc
 import lsst.obs.suprimecam as obsSc
 
 import hsc.pipe.base.camera as hscCamera
-import lsst.meas.mosaic.mosaic as hscMosaic
+import lsst.meas.mosaic as hscMosaic
 #from lsst.meas.mosaic.config import MosaicConfig
 from hsc.meas.mosaic.config import HscStackConfig
 import hsc.meas.mosaic.stack as hscStack

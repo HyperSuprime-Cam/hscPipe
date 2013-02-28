@@ -57,15 +57,19 @@ class ProcessExposureTask(MpiTask):
 
     @classmethod
     def _makeArgumentParser(cls, *args, **kwargs):
-        return MpiArgumentParser(name="processExposure", dataRefLevel="visit", *args, **kwargs)
+        parser = MpiArgumentParser(name="processExposure", *args, **kwargs)
+        parser.add_id_argument("--id", datasetType="raw", level="visit",
+                               help="data ID, e.g. --id visit=12345 ccd=1,2")
+        return parser
 
     @abortOnError
-    def run(self, expRef):
+    def run(self, expRef, butler):
         """Process a single exposure, with scatter-gather-scatter using MPI.
 
         All nodes execute this method, though the master and slaves have different
         routes through it.  The expRef is only a DummyDataRef on the slaves.
         """
+        self.butler = butler
 
         if self.rank == self.root:
             dataIdList = dict([(ccdRef.get("ccdExposureId"), ccdRef.dataId)

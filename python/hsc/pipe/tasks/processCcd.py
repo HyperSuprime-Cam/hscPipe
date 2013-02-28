@@ -7,7 +7,6 @@ import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.afw.table as afwTable
 import hsc.pipe.base.matches as hscMatches
-from hsc.pipe.base import SubaruArgumentParser
 from lsst.pipe.tasks.processCcd import ProcessCcdTask
 from .qa import QaTask
 
@@ -57,12 +56,6 @@ class SubaruProcessCcdTask(ProcessCcdTask):
 
         return result
 
-    @classmethod
-    def _makeArgumentParser(cls):
-        """Create an argument parser with --rerun support.
-        """
-        return SubaruArgumentParser(name=cls._DefaultName)
-
     def write(self, dataRef, results, wcs=None, fluxMag0=None):
         if wcs is None:
             self.log.warn("WARNING: No new WCS provided")
@@ -93,6 +86,9 @@ class SubaruProcessCcdTask(ProcessCcdTask):
                 dataRef.put(results.calib.apCorr, 'apCorr')
             if results.calib.sources is not None:
                 dataRef.put(results.calib.sources, 'icSrc')
+
+        if results.backgrounds is not None:
+            super(SubaruProcessCcdTask, self).writeBackgrounds(dataRef, results.backgrounds)
 
         if results.exposure is not None:
             dataRef.put(results.exposure, 'calexp')
