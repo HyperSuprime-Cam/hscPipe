@@ -217,6 +217,7 @@ class DetrendArgumentParser(MpiArgumentParser):
     def __init__(self, calibName, *args, **kwargs):
         super(DetrendArgumentParser, self).__init__(*args, **kwargs)
         self.calibName = calibName
+        self.add_id_argument("--id", datasetType="raw", help="input identifiers, e.g., --id visit=123 ccd=4")
         self.add_argument("--detrendId", nargs="*", action=DetrendIdAction, default={},
                           help="identifiers for detrend, e.g., --detrendId version=1",
                           metavar="KEY=VALUE1[^VALUE2[^VALUE3...]")
