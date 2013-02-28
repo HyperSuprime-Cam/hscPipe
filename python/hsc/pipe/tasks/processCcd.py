@@ -61,7 +61,9 @@ class SubaruProcessCcdTask(ProcessCcdTask):
     def _makeArgumentParser(cls):
         """Create an argument parser with --rerun support.
         """
-        return SubaruArgumentParser(name=cls._DefaultName)
+        parser = SubaruArgumentParser(name=cls._DefaultName)
+        parser.add_id_argument(name="--id", datasetType="raw", help="data ID, e.g. --id visit=12345 ccd=1,2")
+        return parser
 
     def write(self, dataRef, results, wcs=None, fluxMag0=None):
         if wcs is None:
@@ -93,6 +95,9 @@ class SubaruProcessCcdTask(ProcessCcdTask):
                 dataRef.put(results.calib.apCorr, 'apCorr')
             if results.calib.sources is not None:
                 dataRef.put(results.calib.sources, 'icSrc')
+
+        if results.backgrounds is not None:
+            super(SubaruProcessCcdTask, self).writeBackgrounds(dataRef, results.backgrounds)
 
         if results.exposure is not None:
             dataRef.put(results.exposure, 'calexp')
