@@ -265,8 +265,7 @@ class DetrendTask(MpiTask):
 
     @classmethod
     def _makeArgumentParser(cls, *args, **kwargs):
-        return DetrendArgumentParser(calibName=cls.calibName, name=cls._DefaultName,
-                                     dataRefLevel="visit", *args, **kwargs)
+        return DetrendArgumentParser(calibName=cls.calibName, name=cls._DefaultName, *args, **kwargs)
 
     @abortOnError
     def runDataRefList(self, expRefList, doRaise=False):
