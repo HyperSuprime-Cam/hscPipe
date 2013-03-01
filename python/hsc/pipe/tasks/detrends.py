@@ -231,7 +231,7 @@ class DetrendArgumentParser(MpiArgumentParser):
         parsed = {}
         for name, value in namespace.detrendId.items():
             if not name in keys:
-                parser.error("%s is not a relevant detrend identifier key (%s)" % (name, keys))
+                self.error("%s is not a relevant detrend identifier key (%s)" % (name, keys))
             parsed[name] = keys[name](value)
         namespace.detrendId = parsed
 
