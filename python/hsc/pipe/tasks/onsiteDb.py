@@ -73,6 +73,10 @@ class SubaruProcessCcdOnsiteDbTask(SubaruProcessCcdOnsiteTask):
         #     doing this here.
 
         # XXX self.parsedCmd is not available in an upgraded lsst.pipe.base.CmdLineTask; we will need to update
+
+        # hack
+        self.parsedCmd = self._makeArgumentParser().parse_args(self.ConfigClass())        
+        
         anaId =  self.parsedCmd.anaId
         registId = self.parsedCmd.registId
         sensorRef.dataId['anaId'] = anaId
