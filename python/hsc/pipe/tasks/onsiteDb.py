@@ -9,6 +9,7 @@ from lsst.pipe.base.struct import Struct
 import lsst.afw.table as afwTable
 
 from .onsite import SubaruProcessCcdOnsiteTask
+from .processCcd import SubaruProcessCcdConfig
 
 class OnsiteDbTask(pipeBase.Task):
     def start(self, registId):
