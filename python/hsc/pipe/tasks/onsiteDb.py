@@ -12,6 +12,8 @@ from .onsite import SubaruProcessCcdOnsiteTask
 from .processCcd import SubaruProcessCcdConfig
 
 class OnsiteDbTask(pipeBase.Task):
+    ConfigClass = pexConfig.Config
+    
     def start(self, registId):
         self.onsiteDbUtils.updateStatusFrameAnalysisStart(registId)
 
