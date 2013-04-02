@@ -42,7 +42,7 @@ class SuprimecamOnsiteDbTask(OnsiteDbTask):
 
 
 class SubaruProcessCcdOnsiteDbConfig(SubaruProcessCcdConfig):
-    onsiteDb = ConfigurableField(target=OnsiteDbTask, doc="Task for onsite database interaction")
+    onsiteDb = pexConfig.ConfigurableField(target=OnsiteDbTask, doc="Task for onsite database interaction")
 
 class SubaruProcessCcdOnsiteDbTask(SubaruProcessCcdOnsiteTask):
     """Subclass of SubaruProcessCcdOnsiteTask that uses the database.
