@@ -10,7 +10,7 @@ import lsst.afw.table as afwTable
 
 from .onsite import SubaruProcessCcdOnsiteTask
 
-class OnsiteDbTask(Task):
+class OnsiteDbTask(pipeBase.Task):
     def start(self, registId):
         self.onsiteDbUtils.updateStatusFrameAnalysisStart(registId)
 
