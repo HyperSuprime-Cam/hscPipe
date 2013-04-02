@@ -82,8 +82,6 @@ class SubaruProcessCcdTask(ProcessCcdTask):
                 if self.config.doWriteUnpackedMatches:
                     dataRef.put(hscMatches.matchesToCatalog(results.calib.matches, results.calib.matchMeta),
                                 "icMatchFull")
-            if self.config.calibrate.doComputeApCorr and results.calib.apCorr is not None:
-                dataRef.put(results.calib.apCorr, 'apCorr')
             if results.calib.sources is not None:
                 dataRef.put(results.calib.sources, 'icSrc')
 
