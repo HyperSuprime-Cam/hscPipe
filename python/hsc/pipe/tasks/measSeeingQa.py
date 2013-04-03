@@ -766,8 +766,7 @@ class MeasureSeeingMitakaTask(Task):
             """
             generate an image of psf-model grid map arranged in a mosaic with given grid sizes
             """
-            #import pudb; pudb.set_trace()
-            psfDimension = psf.getKernel().getDimensions()
+            psfDimension = psf.computeKernelImage().getDimensions()
             xPsfSize = psfDimension.getX()
             yPsfSize = psfDimension.getY()
 
@@ -792,7 +791,9 @@ class MeasureSeeingMitakaTask(Task):
                 for i in range(nx):
                     pointXY = afwGeom.Point2D(xc, yc)
                     psfSize = afwGeom.Extent2I(xPsfSize, yPsfSize)
-                    psfImage = psf.computeImage(pointXY, psfSize, True)
+                    psfImage = psf.computeImage(pointXY)
+                    psfImagePeak = psf.computePeak(pointXY)
+                    psfImage /= psfImagePeak
                     m.append(psfImage, '(%d,%d)' % (xc, yc))
                     if self.debugFlag:
                         print '*** psfModelGrid at [%d,%d] (%d,%d)' % (i, j, xc, yc)
