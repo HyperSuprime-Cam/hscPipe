@@ -652,6 +652,8 @@ class FlatConfig(DetrendConfig):
     """Configuration for flat construction"""
     iterations = Field(dtype=int, default=10, doc="Number of iterations for scale determination")
     stats = ConfigurableField(target=DetrendStatsTask, doc="Background statistics configuration")
+    def setDefaults(self):
+        self.combination.retarget(FlatCombineTask)
 
 class FlatTask(DetrendTask):
     """Flat construction
@@ -667,7 +669,6 @@ class FlatTask(DetrendTask):
     def applyOverrides(cls, config):
         """Overrides for flat construction"""
         config.isr.doFlat = False
-        config.combination.retarget(FlatCombineTask)
 #        config.isr.doFringe = False
 
 
