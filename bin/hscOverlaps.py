@@ -74,7 +74,7 @@ if __name__ == "__main__":
     args = []
 
     try:
-        printOverlaps(namespace.dataRefList, namespace.butler, namespace.coadd,
+        printOverlaps(namespace.id.refList, namespace.butler, namespace.coadd,
                       namespace.tract, namespace.patch, namespace.showDataRefs, namespace.detail)
     except Exception, e:
         if namespace.doraise:
