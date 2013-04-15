@@ -56,7 +56,8 @@ def printOverlaps(dataRefList, butler, coadd="deep", tract=None, patch=None, sho
 
 
 if __name__ == "__main__":
-    parser = ArgumentParser("hscOverlaps", datasetType="raw")
+    parser = ArgumentParser("hscOverlaps")
+    parser.add_id_argument("--id", "raw", help="Data identifier for calexps")
     parser.add_argument("--coadd", type=str, required=True)
     parser.add_argument("--tract", type=int, default=None, help="Tract to print")
     parser.add_argument("--patch", action=ParseIntInt, default=None, help="Patch to print")
