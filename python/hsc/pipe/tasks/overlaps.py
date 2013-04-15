@@ -2,7 +2,7 @@ import lsst.afw.image as afwImage
 import lsst.afw.geom as afwGeom
 
 def getTractPatchList(dataRef, skyMap):
-    md = dataRef.get("calexp_md")
+    md = dataRef.get("calexp_md", immediate=True)
     wcs = afwImage.makeWcs(md)
     width, height = md.get("NAXIS1"), md.get("NAXIS2")
     pointList = [(0,0), (width, 0), (width, height), (0, height)]

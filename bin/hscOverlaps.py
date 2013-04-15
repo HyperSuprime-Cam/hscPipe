@@ -38,7 +38,14 @@ class ParseIntInt(argparse.Action):
 def printOverlaps(dataRefList, butler, coadd="deep", tract=None, patch=None, showDataRefs=False, detail=False):
     skyMap = butler.get(namespace.coadd + "Coadd_skyMap")
 
-    tractDictList = [hscOverlaps.getTractPatchList(dataRef, skyMap) for dataRef in dataRefList]
+    tractDictList = []
+    for dataRef in dataRefList:
+        try:
+            tractPatchList = hscOverlaps.getTractPatchList(dataRef, skyMap)
+        except Exception as e:
+            print "WARNING: unable to determine overlaps for %s: %s" % (dataRef.dataId, e)
+            tractPatchList = []
+        tractDictList.append(tractPatchList)
     if showDataRefs:
         print "Tracts for each calexp:"
         for dataRef, tractDict in zip(dataRefList, tractDictList):
