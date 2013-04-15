@@ -117,7 +117,7 @@ class ProcessExposureTask(MpiTask):
             result = self.processCcd.run(dataRef)
         except Exception, e:
             sys.stderr.write("Failed to process %s: %s\n" % (dataId, e))
-            raise
+            return None
 
         # Cache the results (in particular, the image)
         self.resultsCache[ccdId] = result
@@ -190,7 +190,8 @@ class ProcessExposureTask(MpiTask):
                 template = ml[0]
                 break
         if template is None:
-            raise RuntimeError("No matches provided")
+            self.log.warn("No matches provided; setting crazy zero point")
+            return 0.0
         ref = afwTable.SimpleTable.make(template.first.schema)
         src = afwTable.SourceTable.make(template.second.schema)
         for prop in ("Centroid", "Shape", "PsfFlux", "ApFlux", "ModelFlux", "InstFlux"):
