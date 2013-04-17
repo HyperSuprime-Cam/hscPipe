@@ -13,7 +13,7 @@ from .processCcd import SubaruProcessCcdConfig
 
 class OnsiteDbTask(pipeBase.Task):
     ConfigClass = pexConfig.Config
-    
+
     def start(self, registId):
         self.onsiteDbUtils.updateStatusFrameAnalysisStart(registId)
 
@@ -33,28 +33,50 @@ class OnsiteDbTask(pipeBase.Task):
 class HscOnsiteDbTask(OnsiteDbTask):
     def __init__(self, *args, **kwargs):
         super(HscOnsiteDbTask, self).__init__(*args, **kwargs)
-        import hsc.onsite.onsiteDbUtilsSuprime as onsiteDbUtils
+        import hsc.onsite.onsiteDbUtilsHsc as onsiteDbUtils
         self.onsiteDbUtils = onsiteDbUtils
 
 class SuprimecamOnsiteDbTask(OnsiteDbTask):
     def __init__(self, *args, **kwargs):
-        super(HscOnsiteDbTask, self).__init__(*args, **kwargs)
-        import hsc.onsite.onsiteDbUtilsHsc as onsiteDbUtils
+        super(SuprimecamOnsiteDbTask, self).__init__(*args, **kwargs)
+        import hsc.onsite.onsiteDbUtilsSuprime as onsiteDbUtils
         self.onsiteDbUtils = onsiteDbUtils
 
 
 class SubaruProcessCcdOnsiteDbConfig(SubaruProcessCcdConfig):
     onsiteDb = pexConfig.ConfigurableField(target=OnsiteDbTask, doc="Task for onsite database interaction")
+    hscOnsiteDb = pexConfig.ConfigurableField(target=HscOnsiteDbTask, doc="Task for onsite database interaction for Hsc")
+    suprimecamOnsiteDb = pexConfig.ConfigurableField(target=SuprimecamOnsiteDbTask, doc="Task for onsite database interaction for Suprimecam")
 
 class SubaruProcessCcdOnsiteDbTask(SubaruProcessCcdOnsiteTask):
     """Subclass of SubaruProcessCcdOnsiteTask that uses the database.
     """
     ConfigClass = SubaruProcessCcdOnsiteDbConfig
-    _DefaultName = "processCcdOnsiteDb"
+    #_DefaultName = "processCcdOnsiteDb" # FH: needs confirmation
+    _DefaultName = "processCcd"
 
     def __init__(self, *args, **kwargs):
         super(SubaruProcessCcdOnsiteDbTask, self).__init__(*args, **kwargs)
-        self.makeSubtask("onsiteDb")
+        #self.makeSubtask("onsiteDb")
+
+        # XXX self.parsedCmd is not available in an upgraded lsst.pipe.base.CmdLineTask; we will need to update
+        # hack
+        self.parsedCmd = self._makeArgumentParser().parse_args(self.ConfigClass())
+
+        # initialize onsiteDbUtils for an appropriate camera
+        try:
+            if self.parsedCmd.camera.lower() in ['suprimecam', 'sc', 'suprimecam-mit', 'mit']:
+                self.makeSubtask("suprimecamOnsiteDb")
+                self.onsiteDb = self.suprimecamOnsiteDb
+            elif self.parsedCmd.camera.lower() in ['hsc', 'hscsim']:
+                self.makeSubtask("hscOnsiteDb")
+                self.onsiteDb = self.hscOnsiteDb
+            else:
+                print >> sys.stderr, "Given instrument name is not valid: %s" % self.parsedCmd.camera
+                sys.exit(1)
+        except Exception, e:
+            print >> sys.stderr, e
+
 
     @classmethod
     def _makeArgumentParser(cls):
@@ -72,11 +94,6 @@ class SubaruProcessCcdOnsiteDbTask(SubaruProcessCcdOnsiteTask):
         #     but, to get 'id' on time when this analysis process is invoked, I'm temporarily 
         #     doing this here.
 
-        # XXX self.parsedCmd is not available in an upgraded lsst.pipe.base.CmdLineTask; we will need to update
-
-        # hack
-        self.parsedCmd = self._makeArgumentParser().parse_args(self.ConfigClass())        
-        
         anaId =  self.parsedCmd.anaId
         registId = self.parsedCmd.registId
         sensorRef.dataId['anaId'] = anaId
