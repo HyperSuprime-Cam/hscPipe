@@ -29,11 +29,11 @@ import hsc.pipe.tasks.overlaps as hscOverlaps
 class ParseIntInt(argparse.Action):
     """argparse action callback to parse a '%d,%d' into a tuple"""
     def __call__(self, parser, namespace, values, option_string):
-        value = values[-1]
-        numbers = value.split(',')
+        numbers = values.split(',')
         if len(numbers) != 2:
-            parser.error("%s value must be two integers separated by a comma, e.g., '1,2'")
-        setattr(namespace, self.dest, tuple(numbers))
+            parser.error("%s value (%s) must be two integers separated by a comma, e.g., '1,2'" %
+                         (option_string, values))
+        setattr(namespace, self.dest, tuple(int(n) for n in numbers))
 
 def printOverlaps(dataRefList, butler, coadd="deep", tract=None, patch=None, showDataRefs=False, detail=False):
     skyMap = butler.get(namespace.coadd + "Coadd_skyMap")
@@ -44,8 +44,10 @@ def printOverlaps(dataRefList, butler, coadd="deep", tract=None, patch=None, sho
             tractPatchList = hscOverlaps.getTractPatchList(dataRef, skyMap)
         except Exception as e:
             print "WARNING: unable to determine overlaps for %s: %s" % (dataRef.dataId, e)
-            tractPatchList = []
+            tractPatchList = {}
         tractDictList.append(tractPatchList)
+    if len(tractDictList) == 0:
+        raise RuntimeError("No overlaps")
     if showDataRefs:
         print "Tracts for each calexp:"
         for dataRef, tractDict in zip(dataRefList, tractDictList):
