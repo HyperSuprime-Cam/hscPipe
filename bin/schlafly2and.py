@@ -97,11 +97,11 @@ if __name__ == "__main__":
 
     ps1List = []
     mapSubset = MapFunc(args.threads, subsetSchlafly)
-    for inName in args.input:
-        fd, ps1Name = tempfile.mkstemp(prefix=args.output)
-        os.close(fd)
+    for i, inName in enumerate(args.input):
+        ps1Name = "%s_in_%d.fits" % (args.output, i)
         ps1List.append(ps1Name)
-        mapSubset.add(inName, ps1Name)
+        if not os.path.exists(ps1Name):
+            mapSubset.add(inName, ps1Name)
     mapSubset.run()
     del mapSubset
 
