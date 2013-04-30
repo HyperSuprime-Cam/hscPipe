@@ -17,6 +17,7 @@ from hsc.pipe.base.mpi import abortOnError, thisNode, MpiTask, MpiArgumentParser
 class ProcessExposureConfig(Config):
     processCcd = ConfigurableField(target=SubaruProcessCcdTask, doc="CCD processing task")
     instrument = Field(dtype=str, default="suprimecam", doc="Instrument name, for solvetansip")
+    doSolveTansip = Field(dtype=bool, default=True, doc="Run solvetansip?")
 
     def setDefaults(self):
         # We will do persistence ourselves
@@ -163,15 +164,18 @@ class ProcessExposureTask(MpiTask):
 
         Only the master executes this method, as the matchLists is only valid there.
         """
-        try:
-            from hsc.meas.tansip.solvetansip import SolveTansipTask
-            config = SolveTansipTask.ConfigClass()
-            task = SolveTansipTask(name="solvetansip", config=config)
-            solvetansipIn = [task.convert(ml) if ml is not None else [] for ml in matchLists.values()]
-            wcsList = task.solve(self.config.instrument, cameraGeom, solvetansipIn)
-        except Exception, e:
-            sys.stderr.write("WARNING: Global astrometric solution failed: %s\n" % e)
-            wcsList = [None] * len(matchLists)
+        wcsList = [None] * len(matchLists)
+        if not self.config.doSolveTansip:
+            try:
+                from hsc.meas.tansip.solvetansip import SolveTansipTask
+                config = SolveTansipTask.ConfigClass()
+                task = SolveTansipTask(name="solvetansip", config=config)
+                solvetansipIn = [task.convert(ml) if ml is not None else [] for ml in matchLists.values()]
+                wcsList = task.solve(self.config.instrument, cameraGeom, solvetansipIn)
+            except Exception, e:
+                sys.stderr.write("WARNING: Global astrometric solution failed: %s\n" % e)
+        else:
+            self.log.info("solvetansip disabled in configuration")
         return dict(zip(matchLists.keys(), wcsList))
 
     def photometricSolution(self, matchLists, filterName):
