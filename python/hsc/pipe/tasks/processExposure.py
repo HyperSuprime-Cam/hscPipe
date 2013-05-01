@@ -165,7 +165,7 @@ class ProcessExposureTask(MpiTask):
         Only the master executes this method, as the matchLists is only valid there.
         """
         wcsList = [None] * len(matchLists)
-        if not self.config.doSolveTansip:
+        if self.config.doSolveTansip:
             try:
                 from hsc.meas.tansip.solvetansip import SolveTansipTask
                 config = SolveTansipTask.ConfigClass()
