@@ -21,7 +21,7 @@ class SubaruProcessCcdConfig(ProcessCcdTask.ConfigClass):
         doc=("Write the denormalized match table as well as the normalized match table (in the final write)?")
     )
     qa = pexConfig.ConfigurableField(target = QaTask, doc = "QA analysis")
-    ignoreCcdList = ListField(dtype=int, default=[], doc="List of CCD numbers to ignore")
+    ignoreCcdList = pexConfig.ListField(dtype=int, default=[], doc="List of CCD numbers to ignore")
 
 
 def applyOverrides(root):
