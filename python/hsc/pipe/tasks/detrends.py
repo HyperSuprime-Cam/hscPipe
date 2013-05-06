@@ -759,8 +759,7 @@ class FringeTask(DetrendTask):
     @classmethod
     def applyOverrides(cls, config):
         """Overrides for fringe construction"""
-#        config.isr.doFringe = False
-        pass
+        config.isr.doFringe = False
 
     def __init__(self, **kwargs):
         super(FringeTask, self).__init__(**kwargs)
