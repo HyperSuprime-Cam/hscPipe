@@ -737,7 +737,7 @@ class FringeConfig(DetrendConfig):
     stats = ConfigurableField(target=DetrendStatsTask, doc="Background statistics configuration")
     background = ConfigField(dtype=measAlg.BackgroundConfig, doc="Background configuration")
     detection = ConfigurableField(target=measAlg.SourceDetectionTask, doc="Detection configuration")
-
+    detectSigma = Field(dtype=float, default=1.0, doc="Detection PSF gaussian sigma")
 
 class FringeTask(DetrendTask):
     """Fringe construction task
@@ -774,7 +774,7 @@ class FringeTask(DetrendTask):
         self.subtractBackground(exposure)
         mi = exposure.getMaskedImage()
         mi /= bgLevel
-        footprintSets = self.detection.detectFootprints(exposure)
+        footprintSets = self.detection.detectFootprints(exposure, sigma=self.config.detectSigma)
         mask = exposure.getMaskedImage().getMask()
         detected = mask.addMaskPlane("DETECTED")
         for fpSet in (footprintSets.positive, footprintSets.negative):
