@@ -1,7 +1,8 @@
 # Overrides for ProcessExposure/ProcessCcd
+
 try:
     processCcd = root.processCcd
-except KeyError:
+except AttributeError:
     processCcd = root
 
 # COSMOS catalogue has excess sources around bright stars; increasing numBrightStars cuts through the cruft
