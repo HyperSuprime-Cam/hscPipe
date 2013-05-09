@@ -664,6 +664,10 @@ class MeasureSeeingMitakaTask(Task):
         import lsst.afw.display.ds9 as ds9
         import lsst.afw.math as afwMath
 
+        if len(psfCandidateList) == 0:
+            self.log.warn("No PSF candidate stars for QA plotPsfContourGrid")
+            return
+
         def getPsfGridImage(visit, ccd, psfCandidateList, exposure, xGridSize=1024, yGridSize=1024, doWriteFits=True, display=False):
             """
             generate an image of psf grid map arranged in a mosaic with given grid sizes
