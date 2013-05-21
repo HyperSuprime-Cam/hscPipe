@@ -60,7 +60,7 @@ class ProcessExposureTask(MpiTask):
     def _makeArgumentParser(cls, *args, **kwargs):
         parser = MpiArgumentParser(name="processExposure", *args, **kwargs)
         parser.add_id_argument("--id", datasetType="raw", level="visit",
-                               help="data ID, e.g. --id visit=12345 ccd=1,2")
+                               help="data ID, e.g. --id visit=12345")
         return parser
 
     @abortOnError
