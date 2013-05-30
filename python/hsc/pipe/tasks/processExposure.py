@@ -94,7 +94,7 @@ class ProcessExposureTask(MpiTask):
             matchLists = self.getMatchLists(structList)
             wcsList = self.astrometricSolution(matchLists, self.butler.mapper.camera)
             fluxMag0 = self.photometricSolution(matchLists.values(), self.getFilterName(structList))
-            ccdIdList = None
+            ccdIdList = self.resultsCache.keys()
         else:
             matchLists = None
             wcsList = None
