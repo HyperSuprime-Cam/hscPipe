@@ -2,7 +2,6 @@ import os
 import sys
 import collections
 
-import pbasf2 as pbasf
 import hsc.pipe.tasks.plotSetup
 import lsst.afw.table as afwTable
 import lsst.afw.image as afwImage
@@ -82,13 +81,14 @@ class ProcessExposureTask(MpiTask):
             dataIdList = dict()
 
         # Scatter: process CCDs independently
-        structList = pbasf.ScatterJob(self.comm, self.process, dataIdList.values(), root=self.root)
+        import pbasf2
+        structList = pbasf2.ScatterJob(self.comm, self.process, dataIdList.values(), root=self.root)
         if self.rank == self.root:
             numGood = sum(1 for s in structList if s is not None)
         else:
             numGood = 0
         if self.comm.size > 1:
-            numGood = pbasf.Broadcast(self.comm, numGood, root=self.root)
+            numGood = pbasf2.Broadcast(self.comm, numGood, root=self.root)
         if numGood == 0:
             return
 
@@ -106,7 +106,7 @@ class ProcessExposureTask(MpiTask):
 
         # Scatter with data from root: save CCDs with update astrometric/photometric solutions
         query = lambda ccdId: Struct(wcs=wcsList[ccdId], fluxMag0=fluxMag0, dataId=dataIdList[ccdId])
-        pbasf.QueryToRoot(self.comm, self.write, query, ccdIdList, root=self.root)
+        pbasf2.QueryToRoot(self.comm, self.write, query, ccdIdList, root=self.root)
 
 
     def process(self, dataId):
