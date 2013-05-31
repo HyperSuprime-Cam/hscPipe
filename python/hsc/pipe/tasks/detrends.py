@@ -6,7 +6,6 @@ import numpy
 import argparse
 import traceback
 
-import pbasf2 as pbasf
 from lsst.pex.config import Config, ConfigField, ConfigurableField, Field
 from lsst.pipe.base import Task, Struct, TaskRunner
 import lsst.daf.base as dafBase
@@ -324,7 +323,9 @@ class DetrendTask(MpiTask):
         else:
             outputId = None
             ccdKeys, ccdIdLists = None, {}
-        ccdIdLists = pbasf.Broadcast(self.comm, ccdIdLists, root=self.root)
+
+        import pbasf2
+        ccdIdLists = pbasf2.Broadcast(self.comm, ccdIdLists, root=self.root)
 
         # Scatter: process CCDs independently
         data = self.scatterProcess(ccdKeys, ccdIdLists)
@@ -399,7 +400,8 @@ class DetrendTask(MpiTask):
             dataIdList = None
 
         self.log.info("Scatter processing on %s" % thisNode())
-        resultList = pbasf.ScatterJob(self.comm, self.process, dataIdList, root=self.root)
+        import pbasf2
+        resultList = pbasf2.ScatterJob(self.comm, self.process, dataIdList, root=self.root)
         if self.rank == self.root:
             # Piece everything back together
             data = dict((ccdName, [None] * len(expList)) for ccdName, expList in ccdIdLists.items())
@@ -489,7 +491,8 @@ class DetrendTask(MpiTask):
                     for ccdName in ccdIdLists.keys()]
         else:
             data = None
-        pbasf.ScatterJob(self.comm, self.combine, data, root=self.root)
+        import pbasf2
+        pbasf2.ScatterJob(self.comm, self.combine, data, root=self.root)
 
     def combine(self, struct):
         """Combine multiple exposures of a particular CCD and write the output
