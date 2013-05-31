@@ -11,11 +11,13 @@ import hsc.pipe.base.butler as hscButler
 from lsst.pipe.base import Struct, CmdLineTask
 from lsst.pex.config import Config, Field, ConfigurableField
 from hsc.pipe.tasks.processCcd import SubaruProcessCcdTask
+from hsc.pipe.tasks.photometricSolution import PhotometricSolutionTask
 from hsc.pipe.base.mpi import abortOnError, thisNode, MpiTask, MpiArgumentParser
 
 
 class ProcessExposureConfig(Config):
     processCcd = ConfigurableField(target=SubaruProcessCcdTask, doc="CCD processing task")
+    photometricSolution = ConfigurableField(target=PhotometricSolutionTask, doc="Global photometric solution")
     instrument = Field(dtype=str, default="suprimecam", doc="Instrument name, for solvetansip")
     doSolveTansip = Field(dtype=bool, default=True, doc="Run solvetansip?")
 
@@ -46,6 +48,7 @@ class ProcessExposureTask(MpiTask):
         """
         super(ProcessExposureTask, self).__init__(**kwargs)
         self.makeSubtask("processCcd")
+        self.makeSubtask("photometricSolution")
         self.resultsCache = dict() # Cache to remember results for saving
 
     def runDataRefList(self, *args, **kwargs):
@@ -92,8 +95,8 @@ class ProcessExposureTask(MpiTask):
         # Gathered: global WCS solution
         if self.rank == self.root:
             matchLists = self.getMatchLists(structList)
-            wcsList = self.astrometricSolution(matchLists, self.butler.mapper.camera)
-            fluxMag0 = self.photometricSolution(matchLists.values(), self.getFilterName(structList))
+            wcsList = self.solveAstrometry(matchLists, self.butler.mapper.camera)
+            fluxMag0 = self.solvePhotometry(matchLists.values(), self.getFilterName(structList))
             ccdIdList = self.resultsCache.keys()
         else:
             matchLists = None
@@ -159,7 +162,7 @@ class ProcessExposureTask(MpiTask):
                     for s in structList if s is not None]
         return collections.OrderedDict(sorted(keyValue, key=lambda kv: kv[0]))
 
-    def astrometricSolution(self, matchLists, cameraGeom):
+    def solveAstrometry(self, matchLists, cameraGeom):
         """Determine a global astrometric solution for the exposure.
 
         Only the master executes this method, as the matchLists is only valid there.
@@ -178,71 +181,12 @@ class ProcessExposureTask(MpiTask):
             self.log.info("solvetansip disabled in configuration")
         return dict(zip(matchLists.keys(), wcsList))
 
-    def photometricSolution(self, matchLists, filterName):
-        """Determine a global photometric solution for the exposure.
-
-        The current implementation simply runs the general 'photocal' to get a single zero-point.
-
-        Only the master executes this method, as the matchLists is only valid there.
-        """
-        photocal = self.processCcd.calibrate.photocal
-
-        # Ensure all the match lists have the same schema, by copying them into the same table
-        template = None
-        for ml in matchLists:
-            if ml is not None and len(ml) > 0:
-                template = ml[0]
-                break
-        if template is None:
-            self.log.warn("No matches provided; setting crazy zero point")
-            return 0.0
-        ref = afwTable.SimpleTable.make(template.first.schema)
-        src = afwTable.SourceTable.make(template.second.schema)
-        for prop in ("Centroid", "Shape", "PsfFlux", "ApFlux", "ModelFlux", "InstFlux"):
-            getter = getattr(template.second.table, "get" + prop + "Definition")
-            setter = getattr(src, "define" + prop)
-            setter(getter())
-
-        refNames = ref.schema.getNames()
-        srcNames = src.schema.getNames()
-        refNewKeys = [ref.schema.find(k).key for k in refNames]
-        srcNewKeys = [src.schema.find(k).key for k in srcNames]
-        matches = []
-        for i, ml in enumerate(matchLists):
-            if ml is None or len(ml) == 0:
-                continue
-            try:
-                refOldKeys = [ml[0].first.schema.find(k).key for k in refNames]
-                srcOldKeys = [ml[0].second.schema.find(k).key for k in srcNames]
-            except:
-                # Something's wrong with the schema; punt
-                sys.stderr.write("Error with schema on matchlist %d: ignoring %d matches\n" % (i, len(ml)))
-                continue
-
-            for m in ml:
-                newRef = ref.makeRecord()
-                for old, new in zip(refOldKeys, refNewKeys):
-                    newRef.set(new, m.first.get(old))
-                newSrc = src.makeRecord()
-                for old, new in zip(srcOldKeys, srcNewKeys):
-                    newSrc.set(new, m.second.get(old))
-                matches.append(afwTable.ReferenceMatch(newRef, newSrc, m.distance))
-
+    def solvePhotometry(self, matchLists, filterName):
         try:
-            class DummyExposure(object):
-                """Quacks like an lsst.afw.image.Exposure, for the purposes of PhotoCal."""
-                def __init__(self, filterName):
-                    self._filterName = filterName
-                def getFilter(self):
-                    return afwImage.Filter(filterName)
-
-            result = photocal.run(DummyExposure(filterName), matches)
+            return self.photometricSolution.run(matchLists, filterName)
         except Exception, e:
             self.log.warn("Failed to determine global photometric zero-point: %s" % e)
-            return None
-
-        self.log.info("Global photometric zero-point: %f" % result.calib.getMagnitude(1.0))
-        return result.calib.getFluxMag0()
+        return None
 
     def write(self, ccdId, struct):
         """Write the outputs.
