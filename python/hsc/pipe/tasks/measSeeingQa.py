@@ -178,11 +178,20 @@ class MeasureSeeingMitakaTask(Task):
         ellPaList = data.ellPaListPsfLikeRobust
         AEllList = data.AEllListPsfLikeRobust
         BEllList = data.BEllListPsfLikeRobust
+
+        e1List = data.e1ListPsfLikeRobust
+        e2List = data.e2ListPsfLikeRobust
+        elle1e2List = data.elle1e2ListPsfLikeRobust
+
         fname = getFilename(dataRef, "tableSeeingMap")
         f = open(fname, 'w')
-        f.write('# 1:ccd 2:x 3:y 4:fwhm 5:ell 6:pa 7:a 8:b\n')
-        for (x, y, fwhm, ell, pa, a, b) in zip(xList, yList, fwhmList, ellList, ellPaList, AEllList, BEllList):
-            f.write('%3d %f %f %f %f %f %f %f' % (ccdId, x, y, fwhm, ell, pa, a, b))
+#        f.write('# 1:ccd 2:x 3:y 4:fwhm 5:ell 6:pa 7:a 8:b\n')
+#        for (x, y, fwhm, ell, pa, a, b) in zip(xList, yList, fwhmList, ellList, ellPaList, AEllList, BEllList):
+#            f.write('%3d %f %f %f %f %f %f %f' % (ccdId, x, y, fwhm, ell, pa, a, b))
+#            f.write('\n')
+        f.write('# 1:ccd 2:x 3:y 4:fwhm 5:ell 6:pa 7:a 8:b 9:e1 10:e2 11:ell_e1e2\n')
+        for (x, y, fwhm, ell, pa, a, b, e1, e2, ell_e1e2) in zip(xList, yList, fwhmList, ellList, ellPaList, AEllList, BEllList, e1List, e2List, elle1e2List):
+            f.write('%3d %f %f %f %f %f %f %f %f %f %f' % (ccdId, x, y, fwhm, ell, pa, a, b, e1, e2, ell_e1e2))
             f.write('\n')
         f.close()
 
@@ -196,11 +205,19 @@ class MeasureSeeingMitakaTask(Task):
         AEllList = data.AEllGridList
         BEllList = data.BEllGridList
 
+        e1List = data.e1GridList
+        e2List = data.e2GridList
+        elle1e2List = data.elle1e2GridList
+
         fname = getFilename(dataRef, "tableSeeingGrid")
         f = open(fname, 'w')
-        f.write('# 1:ccd 2:x 3:y 4:fwhm 5:ell 6:pa 7:a 8:b\n')
-        for (x, y, fwhm, ell, pa, a, b) in zip(xList, yList, fwhmList, ellList, ellPaList, AEllList, BEllList):
-            f.write('%3d %f %f %f %f %f %f %f' % (ccdId, x, y, fwhm, ell, pa, a, b))
+#        f.write('# 1:ccd 2:x 3:y 4:fwhm 5:ell 6:pa 7:a 8:b\n')
+#        for (x, y, fwhm, ell, pa, a, b) in zip(xList, yList, fwhmList, ellList, ellPaList, AEllList, BEllList):
+#            f.write('%3d %f %f %f %f %f %f %f' % (ccdId, x, y, fwhm, ell, pa, a, b))
+#            f.write('\n')
+        f.write('# 1:ccd 2:x 3:y 4:fwhm 5:ell 6:pa 7:a 8:b 9:e1 10:e2 11:ell_e1e2\n')
+        for (x, y, fwhm, ell, pa, a, b, e1, e2, ell_e1e2) in zip(xList, yList, fwhmList, ellList, ellPaList, AEllList, BEllList, e1List, e2List, elle1e2List):
+            f.write('%3d %f %f %f %f %f %f %f %f %f %f' % (ccdId, x, y, fwhm, ell, pa, a, b, e1, e2, ell_e1e2))
             f.write('\n')
         f.close()
 
@@ -504,6 +521,8 @@ class MeasureSeeingMitakaTask(Task):
         AEllList = numpy.array([])
         BEllList = numpy.array([])
         ellPaList = numpy.array([])        
+        e1List = numpy.array([])
+        e2List = numpy.array([])
         for xGridCenter, yGridCenter in zip(xGridList, yGridList):
             xGridMin = xGridCenter - xGridSize/2.
             xGridMax = xGridCenter + xGridSize/2.
@@ -512,24 +531,35 @@ class MeasureSeeingMitakaTask(Task):
 
             AEllsInGrid = numpy.array([])
             BEllsInGrid = numpy.array([])        
+            e1InGrid = numpy.array([])
+            e2InGrid = numpy.array([])        
             ellPasInGrid = numpy.array([])
-            for xEllipse, yEllipse, aa, bb, ellPa in zip(data.xListPsfLikeRobust, data.yListPsfLikeRobust,
+            for xEllipse, yEllipse, aa, bb, ellPa, e1, e2 in zip(data.xListPsfLikeRobust, data.yListPsfLikeRobust,
                                                          data.AEllListPsfLikeRobust,
                                                          data.BEllListPsfLikeRobust,
-                                                         data.ellPaListPsfLikeRobust):
+                                                         data.ellPaListPsfLikeRobust,
+                                                         data.e1ListPsfLikeRobust,
+                                                         data.e2ListPsfLikeRobust,
+                                                                 ):
                 if xGridMin <= xEllipse and xEllipse < xGridMax and \
                         yGridMin <= yEllipse and yEllipse < yGridMax:
                     if all([aa, bb, ellPa]):
                         AEllsInGrid = numpy.append(AEllsInGrid, aa)
                         BEllsInGrid = numpy.append(BEllsInGrid, bb)
                         ellPasInGrid = numpy.append(ellPasInGrid, ellPa)
+                        e1InGrid = numpy.append(e1InGrid, e1)
+                        e2InGrid = numpy.append(e2InGrid, e2)
             # taking median to represent the value in a grid mesh
             AEllList = numpy.append(AEllList, numpy.median(AEllsInGrid))
-            BEllList = numpy.append(BEllList, numpy.median(BEllsInGrid))        
-            ellPaList = numpy.append(ellPaList, numpy.median(ellPasInGrid))        
+            BEllList = numpy.append(BEllList, numpy.median(BEllsInGrid))
+            ellPaList = numpy.append(ellPaList, numpy.median(ellPasInGrid))
+            e1List = numpy.append(e1List, numpy.median(e1InGrid))
+            e2List = numpy.append(e2List, numpy.median(e2InGrid))
 
         data.AEllGridList = AEllList
         data.BEllGridList = BEllList
+        data.e1GridList = e1List
+        data.e2GridList = e2List
 
         # 10pix=2arcsec(fwhm)==>A=0.6*gridSize~1200pix(for whole_CCD)
         scaleFactor = (1/10.)*0.8*min(xGridSize, yGridSize)
@@ -592,6 +622,9 @@ class MeasureSeeingMitakaTask(Task):
         ellYList = numpy.array([])
         ellMed = numpy.array([])
         ellPaMed = numpy.array([])
+
+        elle1e2Med = numpy.array([])
+
         # walking through all grid meshes
         for xGridCenter, yGridCenter in zip(xGridList, yGridList):
             xGridMin = xGridCenter - xGridSize/2.
@@ -601,24 +634,32 @@ class MeasureSeeingMitakaTask(Task):
 
             ellsInGrid = numpy.array([])
             ellPasInGrid = numpy.array([])
-            for xEll, yEll, ell, ellPa in zip(data.xListPsfLikeRobust, data.yListPsfLikeRobust,
-                                              data.ellListPsfLikeRobust, data.ellPaListPsfLikeRobust):
+            elle1e2InGrid = numpy.array([])
+            for xEll, yEll, ell, ellPa, ell_e1e2 in zip(data.xListPsfLikeRobust, data.yListPsfLikeRobust,
+                                              data.ellListPsfLikeRobust, data.ellPaListPsfLikeRobust,
+                                                        data.elle1e2ListPsfLikeRobust):
                 if (xGridMin <= xEll) and (xEll < xGridMax) and (yGridMin <= yEll) and (yEll < yGridMax):
                     if all([ell, ellPa]):
                         ellsInGrid = numpy.append(ellsInGrid, ell)
                         ellPasInGrid = numpy.append(ellPasInGrid, ellPa)
+                        elle1e2InGrid = numpy.append(elle1e2InGrid, ell_e1e2)
+
             # taking median to represent the value in a grid mesh
             ellPerGrid = numpy.median(ellsInGrid)
             ellPaPerGrid = numpy.median(ellPasInGrid)
+
+            elle1e2PerGrid = numpy.median(elle1e2InGrid)
 
             ellXList = numpy.append(ellXList, ellPerGrid*numpy.cos(numpy.radians(ellPaPerGrid)))
             ellYList = numpy.append(ellYList, ellPerGrid*numpy.sin(numpy.radians(ellPaPerGrid)))
 
             ellMed = numpy.append(ellMed, ellPerGrid)
-            ellPaMed = numpy.append(ellPaMed, ellPaPerGrid)                
+            ellPaMed = numpy.append(ellPaMed, ellPaPerGrid)
+            elle1e2Med = numpy.append(elle1e2Med, elle1e2PerGrid)
 
         data.ellGridList = ellMed
         data.ellPaGridList = ellPaMed
+        data.elle1e2GridList = elle1e2Med
 
         scaleFactor = min(xGridSize/xSize, yGridSize/ySize)
 
@@ -980,6 +1021,9 @@ class MeasureSeeingTask(Task):
         IxyListAll = []
         AEllListAll = []
         BEllListAll = []        
+        e1ListAll = []
+        e2ListAll = []
+        elle1e2ListAll = []
         objFlagListAll = []
         indicesSourcesFwhmRange = [] # indices of sources in acceptable fwhm range 
 
@@ -1047,21 +1091,18 @@ class MeasureSeeingTask(Task):
                     ellPa = None
                     aa = None
                     bb = None
-            else: # definition by Kaiser
-                # e=sqrt(e1^2+e2^2) where e1=(Ixx-Iyy)/(Ixx+Iyy), e2=2Ixy/(Ixx+Iy)
+            if True: # definition by Kaiser
+                # e=sqrt(e1^2+e2^2) where e1=(Ixx-Iyy)/(Ixx+Iyy), e2=2Ixy/(Ixx+Iyy)
                 # SExtractor's B/A=sqrt((1-e)/(1+e)), ell=1-B/A
                 e1 = (Ixx-Iyy)/(Ixx+Iyy)
-                if e1 > 0: 
+                if e1 > 0:
                     e2 = 2.0*Ixy/(Ixx+Iyy)
-                    ell = math.sqrt(e1*e1 + e2*e2)
-                    fabs_Ixx_Iyy = math.fabs(Ixx-Iyy)
-                    if fabs_Ixx_Iyy > 1.0e-10:
-                        ellPa = 0.5 * math.degrees(math.atan(2*Ixy / fabs_Ixx_Iyy))
-                    else:
-                        ellPa = 0.0
+                    ell_e1e2 = math.sqrt(e1*e1 + e2*e2)
                 else:
-                    ell = None
-                    ellPa = None
+                    e1 = None
+                    e2 = None
+                    ell_e1e2 = None
+
 
             if ellPa is not None:
                 ellPa = 90. - ellPa ## definition of PA to be confirmed
@@ -1074,6 +1115,10 @@ class MeasureSeeingTask(Task):
             ellPaListAll.append( ellPa )
             AEllListAll.append( aa ) # sigma in long axis
             BEllListAll.append( bb ) # sigma in short axis
+            e1ListAll.append(e1)
+            e2ListAll.append(e2)
+            elle1e2ListAll.append(ell_e1e2)
+
             #objFlagListAll.append(objFlag)
 
             if fwhm > self.config.fwhmMin and fwhm < self.config.fwhmMax:
@@ -1088,6 +1133,9 @@ class MeasureSeeingTask(Task):
                       ellPaListAll = numpy.array(ellPaListAll),
                       AEllListAll = numpy.array(AEllListAll),
                       BEllListAll = numpy.array(BEllListAll),
+                      e1ListAll = numpy.array(e1ListAll),
+                      e2ListAll = numpy.array(e2ListAll),
+                      elle1e2ListAll = numpy.array(elle1e2ListAll),
                       xListAll = numpy.array(xListAll),
                       yListAll = numpy.array(yListAll),
                       IxxListAll = numpy.array(IxxListAll),
@@ -1175,6 +1223,11 @@ class MeasureSeeingTask(Task):
         ellPaListPsfLike = data.ellPaListAll[indicesSourcesPsfLike]
         AEllListPsfLike = data.AEllListAll[indicesSourcesPsfLike]
         BEllListPsfLike = data.BEllListAll[indicesSourcesPsfLike]
+
+        e1ListPsfLike = data.e1ListAll[indicesSourcesPsfLike]
+        e2ListPsfLike = data.e2ListAll[indicesSourcesPsfLike]
+        elle1e2ListPsfLike = data.elle1e2ListAll[indicesSourcesPsfLike]
+
         xListPsfLike = data.xListAll[indicesSourcesPsfLike]
         yListPsfLike = data.yListAll[indicesSourcesPsfLike]
         IxxListPsfLike = data.IxxListAll[indicesSourcesPsfLike]
@@ -1239,6 +1292,11 @@ class MeasureSeeingTask(Task):
         ellPaListPsfLikeRobust = data.ellPaListAll[indicesSourcesPsfLikeRobust]
         AEllListPsfLikeRobust = data.AEllListAll[indicesSourcesPsfLikeRobust]
         BEllListPsfLikeRobust = data.BEllListAll[indicesSourcesPsfLikeRobust]
+
+        e1ListPsfLikeRobust = data.e1ListAll[indicesSourcesPsfLikeRobust]
+        e2ListPsfLikeRobust = data.e2ListAll[indicesSourcesPsfLikeRobust]
+        elle1e2ListPsfLikeRobust = data.elle1e2ListAll[indicesSourcesPsfLikeRobust]
+
         xListPsfLikeRobust = data.xListAll[indicesSourcesPsfLikeRobust]
         yListPsfLikeRobust = data.yListAll[indicesSourcesPsfLikeRobust]
         IxxListPsfLikeRobust = data.IxxListAll[indicesSourcesPsfLikeRobust]
@@ -1258,10 +1316,13 @@ class MeasureSeeingTask(Task):
         ellRobust = numpy.median(ellListPsfLikeRobust)
         ellPaRobust = numpy.median(ellPaListPsfLikeRobust)
 
-        self.log.info("Robust quantities: %f %f %f" % (fwhmRobust, ellRobust, ellPaRobust))
+        elle1e2Robust = numpy.median(elle1e2ListPsfLikeRobust)
+
+        self.log.info("Robust quantities: %f %f %f elle1e2: %f" % (fwhmRobust, ellRobust, ellPaRobust, elle1e2Robust))
         self.metadata.set("fwhmRobust", fwhmRobust)
         self.metadata.set("ellRobust", ellRobust)
         self.metadata.set("ellPaRobust", ellPaRobust)
+        self.metadata.set("elle1e2Robust", elle1e2Robust)
 
         if self.config.doPlots:
             fig = figure.Figure()
@@ -1301,6 +1362,9 @@ class MeasureSeeingTask(Task):
             ellPaListPsfLikeRobust = ellPaListPsfLikeRobust,
             AEllListPsfLikeRobust = AEllListPsfLikeRobust,
             BEllListPsfLikeRobust = BEllListPsfLikeRobust,
+            e1ListPsfLikeRobust = e1ListPsfLikeRobust,
+            e2ListPsfLikeRobust = e2ListPsfLikeRobust,
+            elle1e2ListPsfLikeRobust = elle1e2ListPsfLikeRobust,
             xListPsfLikeRobust = xListPsfLikeRobust,
             yListPsfLikeRobust = yListPsfLikeRobust,
             IxxListPsfLikeRobust = IxxListPsfLikeRobust,
@@ -1309,6 +1373,7 @@ class MeasureSeeingTask(Task):
             fwhmRobust = fwhmRobust,
             ellRobust = ellRobust,
             ellPaRobust = ellPaRobust,
+            elle1e2Robust = elle1e2Robust,
             )
 
     def plotSeeingMap(self, dataRef, data, exposure):

@@ -370,31 +370,35 @@ class SizeMagnitudeMitakaStarSelector(object):
                 ellPa = -9999.0
                 aa = -9999.0
                 bb = -9999.0
-        else: # definition by Kaiser
+        if True: # definition by Kaiser
             # e=sqrt(e1^2+e2^2) where e1=(Ixx-Iyy)/(Ixx+Iyy), e2=2Ixy/(Ixx+Iy)
             # SExtractor's B/A=sqrt((1-e)/(1+e)), ell=1-B/A
             e1 = (Ixx-Iyy)/(Ixx+Iyy)
             if e1 > 0:
                 e2 = 2.0*Ixy/(Ixx+Iyy)
-                ell = math.sqrt(e1*e1 + e2*e2)
+                ell_e1e2 = math.sqrt(e1*e1 + e2*e2)
                 fabs_Ixx_Iyy = math.fabs(Ixx-Iyy)
                 if fabs_Ixx_Iyy > VerySmallValue:
                     tanVal = 2.0 * Ixy / Ixx_Iyy
                     if tanVal >= 0:
                         if Ixx_Iyy > 0: # elongation toward x
-                            ellPa = 0.5*math.atan(tanVal)
+                            ellPa_e1e2 = 0.5*math.atan(tanVal)
                         else: # elongation toward y
-                            ellPa = 0.5*(math.atan(tanVal)+math.pi)
+                            ellPa_e1e2 = 0.5*(math.atan(tanVal)+math.pi)
                     else:
                         if Ixx_Iyy > 0: # elongation toward x
-                            ellPa = 0.5*(math.atan(tanVal)+2.0*math.pi)
+                            ellPa_e1e2 = 0.5*(math.atan(tanVal)+2.0*math.pi)
                         else: # elongation toward y
-                            ellPa = 0.5*(math.atan(tanVal)+math.pi)
+                            ellPa_e1e2 = 0.5*(math.atan(tanVal)+math.pi)
                 else: # source is too round to estimate PA of elongation
-                    ellPa = -9999.0
+                    ellPa_e1e2 = -9999.0
             else:
+                e1 = -9999.0
+                e2 = -9999.0
                 ell = -9999.0
-                ellPa = -9999.0
+                ell_e1e2 = -9999
+                ellPa_e1e2 = -9999.0
+
 
         if -90.0 <= ellPa and ellPa <= 90.0:
             #ellPa = 90. - ellPa ## definition of PA to be confirmed
@@ -406,6 +410,9 @@ class SizeMagnitudeMitakaStarSelector(object):
             aa = aa,
             bb = bb,
             ellPa = ellPa,
+            e1 = e1,
+            e2 = e2,
+            ell_e1e2 = ell_e1e2,
             )
 
     def getGoodSources(self, catalog, exposure):
@@ -432,6 +439,10 @@ class SizeMagnitudeMitakaStarSelector(object):
         ellPaListAll = []
         AEllListAll = []
         BEllListAll = []
+
+        e1ListAll = []
+        e2ListAll = []
+        elle1e2ListAll = []
 
         # Undistorting moments when requested
         if self.config.doUndistort:
@@ -504,6 +515,9 @@ class SizeMagnitudeMitakaStarSelector(object):
             ellPaListAll.append(ellRet.ellPa)
             AEllListAll.append(ellRet.aa)
             BEllListAll.append(ellRet.bb)
+            e1ListAll.append(ellRet.e1)
+            e2ListAll.append(ellRet.e2)
+            elle1e2ListAll.append(ellRet.ell_e1e2)
 
             # checking if this source has valid measurements
             if not self.isGoodSource(source, keySaturationCenterFlag, keySaturationFlag):
@@ -529,6 +543,9 @@ class SizeMagnitudeMitakaStarSelector(object):
             ellPaListAll = numpy.array(ellPaListAll),
             AEllListAll = numpy.array(AEllListAll),
             BEllListAll = numpy.array(BEllListAll),
+            e1ListAll = numpy.array(e1ListAll),
+            e2ListAll = numpy.array(e2ListAll),
+            elle1e2ListAll = numpy.array(elle1e2ListAll),
             indicesGoodSources = indicesGoodSources,
             indicesSourcesFwhmRange = indicesSourcesFwhmRange,
             IxxUndistListAll = numpy.array(IxxUndistListAll),
@@ -943,6 +960,11 @@ class SizeMagnitudeMitakaStarSelector(object):
         ellPaListPsfLikeRobust = data.ellPaListAll[indicesSourcesPsfLikeRobust]
         AEllListPsfLikeRobust = data.AEllListAll[indicesSourcesPsfLikeRobust]
         BEllListPsfLikeRobust = data.BEllListAll[indicesSourcesPsfLikeRobust]
+
+        elle1e2ListPsfLikeRobust = data.elle1e2ListAll[indicesSourcesPsfLikeRobust]
+        e1ListPsfLikeRobust = data.e1ListAll[indicesSourcesPsfLikeRobust]
+        e2ListPsfLikeRobust = data.e2ListAll[indicesSourcesPsfLikeRobust]
+
         xListPsfLikeRobust = data.xListAll[indicesSourcesPsfLikeRobust]
         yListPsfLikeRobust = data.yListAll[indicesSourcesPsfLikeRobust]
         IxxListPsfLikeRobust = data.IxxListAll[indicesSourcesPsfLikeRobust]
@@ -956,6 +978,11 @@ class SizeMagnitudeMitakaStarSelector(object):
         data.ellPaListPsfLikeRobust = ellPaListPsfLikeRobust
         data.AEllListPsfLikeRobust = AEllListPsfLikeRobust
         data.BEllListPsfLikeRobust = BEllListPsfLikeRobust
+
+        data.elle1e2ListPsfLikeRobust = elle1e2ListPsfLikeRobust
+        data.e1ListPsfLikeRobust = e1ListPsfLikeRobust
+        data.e2ListPsfLikeRobust = e2ListPsfLikeRobust
+
         data.xListPsfLikeRobust = xListPsfLikeRobust
         data.yListPsfLikeRobust = yListPsfLikeRobust
         data.IxxListPsfLikeRobust = IxxListPsfLikeRobust
