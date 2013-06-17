@@ -20,6 +20,7 @@ import hsc.meas.mosaic.stack as hscStack
 from lsst.meas.photocal.colorterms import Colorterm
 from lsst.meas.mosaic.mosaicTask import MosaicTask
 from lsst.meas.mosaic.mosaicTask import MosaicConfig
+from hsc.pipe.base.butler import getDataRef
 
 os.umask(002)
 
@@ -176,7 +177,11 @@ def ProcessMosaicStack(rerun=None, instrument=None, program=None, filter=None,
 
 def phase1(task, butler, lFrameId, lCcdId, ct, workDirRoot, mosaicConfig):
     if True:
-        return task.mosaic(butler, lFrameId, lCcdId, ct)
+        dataRefList = []
+        for frame in lFrameId:
+            for ccd in lCcdId:
+                dataRefList.append(getDataRef(butler, {'visit': frame, 'ccd': ccd}))
+        return task.mosaic(dataRefList, ct)
     else:
         lFrameIdExist = []
         for frameId in lFrameId:
