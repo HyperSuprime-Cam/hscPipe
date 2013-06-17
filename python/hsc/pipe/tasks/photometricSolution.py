@@ -4,15 +4,18 @@ from lsst.pipe.base import Task
 from lsst.pex.config import Config, ConfigurableField
 from lsst.meas.photocal import PhotoCalTask
 
-class PhotometricSolutionConfig(Config):
+class PhotometricSolutionConfig(PhotoCalTask.ConfigClass):
     photocal = ConfigurableField(target=PhotoCalTask, doc="Photometric calibration")
+
+    def setDefaults(self):
+        self.outputField = "classification.exposure.photometric"
 
 class PhotometricSolutionTask(PhotoCalTask):
     ConfigClass = PhotometricSolutionConfig
 
-    def __init__(self, *args, **kwargs):
-        super(PhotometricSolutionTask, self).__init__(*args, **kwargs)
-        self.makeSubtask("photocal")
+    def __init__(self, schema, **kwargs):
+        super(PhotometricSolutionTask, self).__init__(schema, **kwargs)
+        self.makeSubtask("photocal", schema=schema)
 
     def run(self, matchLists, filterName):
         matches = self.concatenate(matchLists)

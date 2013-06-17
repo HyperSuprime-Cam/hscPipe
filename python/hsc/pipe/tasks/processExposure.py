@@ -47,7 +47,7 @@ class ProcessExposureTask(MpiTask):
         """
         super(ProcessExposureTask, self).__init__(**kwargs)
         self.makeSubtask("processCcd")
-        self.makeSubtask("photometricSolution")
+        self.makeSubtask("photometricSolution", schema=self.processCcd.schema)
         self.resultsCache = dict() # Cache to remember results for saving
 
     def runDataRefList(self, *args, **kwargs):
