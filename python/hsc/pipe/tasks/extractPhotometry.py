@@ -186,7 +186,7 @@ class JoinTask(Task):
         catalog[keys.starGal][:] = numpy.logical_not(refCatalog[self.config.extendedName])
 
     def getJoin(self, refCatalog, otherCatalog):
-        return IndexJoiner(refCatalog["parent"], otherCatalog["parent"])
+        return IndexJoiner(refCatalog["objectId"], otherCatalog["objectId"])
 
 
 class MatchJoinConfig(JoinConfig):
