@@ -20,7 +20,7 @@ import lsst.afw.geom.ellipses as afwEll
 import lsst.obs.subaru.isr as hscIsr
 
 import hsc.pipe.base.butler as hscButler
-from hsc.pipe.base.mpi import MpiTask, MpiArgumentParser, MpiTaskRunner, abortOnError, thisNode
+from hsc.pipe.base.mpi import MpiTask, MpiArgumentParser, abortOnError, thisNode
 from hsc.pipe.base.pbs import PbsArgumentParser, shCommandFromArgs
 
 class DetrendStatsConfig(Config):
