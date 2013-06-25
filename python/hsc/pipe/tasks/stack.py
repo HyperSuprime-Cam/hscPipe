@@ -1,7 +1,12 @@
-from lsst.pex.config import Config, ConfigurableField
-from lsst.pipe.tasks.selectImages import BaseSelectImagesTask, WcsSelectImagesTask
+import lsst.afw.geom as afwGeom
+from lsst.pex.config import Config, Field, ConfigurableField
+from lsst.pipe.tasks.coaddBase import CoaddDataIdContainer, SelectDataIdContainer, CoaddTaskRunner
+from lsst.pipe.tasks.selectImages import BaseSelectImagesTask, WcsSelectImagesTask, BaseExposureInfo
 from lsst.pipe.tasks.makeCoaddTempExp import MakeCoaddTempExpTask
-from lsst.pipe.base import CmdLineTask
+from lsst.pipe.tasks.assembleCoadd import AssembleCoaddTask
+from lsst.pipe.base import Struct, DataIdContainer
+from hsc.pipe.base.pbs import PbsCmdLineTask
+from hsc.pipe.base.mpi import MpiTask, MpiMultiplexTaskRunner, MpiArgumentParser, getComm, thisNode
 
 
 class MpiWcsSelectImagesTask(WcsSelectImagesTask):
@@ -42,7 +47,7 @@ class NullSelectImagesTask(BaseSelectImagesTask):
     previously, and we've been provided a good list.
     """
     def runDataRef(self, patchRef, coordList, makeDataRefList=True, selectDataList=[]):
-        return pipeBase.Struct(
+        return Struct(
             dataRefList = [s.dataRef for s in selectDataList],
             exposureInfoList = [BaseExposureInfo(s.dataRef.dataId, None) for s in selectDataList],
             )
@@ -50,15 +55,15 @@ class NullSelectImagesTask(BaseSelectImagesTask):
 
 class StackConfig(Config):
     coaddName = Field(dtype=str, default="deep", doc="Name for coadd")
-    selectImages = ConfigurableField(target=BaseSelectImagesTask, doc="Select images to process")
+    select = ConfigurableField(target=BaseSelectImagesTask, doc="Select images to process")
     makeCoaddTempExp = ConfigurableField(target=MakeCoaddTempExpTask, doc="Warp images to sky")
     assembleCoadd = ConfigurableField(target=AssembleCoaddTask, doc="Assemble warps into coadd")
     doOverwriteCoadd = Field(dtype=bool, default=False, doc="Overwrite coadd?")
 
     def setDefaults(self):
-        self.selectImages.retarget(MpiWcsSelectImagesTask)
-        self.makeCoaddTempExp.selectImages.retarget(NullSelectImagesTask)
-        self.assembleCoadd.selectImages.retarget(NullSelectImagesTask)
+        self.select.retarget(MpiWcsSelectImagesTask)
+        self.makeCoaddTempExp.select.retarget(NullSelectImagesTask)
+        self.assembleCoadd.select.retarget(NullSelectImagesTask)
         self.makeCoaddTempExp.doOverwrite = False
 
     def validate(self):
@@ -67,19 +72,23 @@ class StackConfig(Config):
         if self.assembleCoadd.coaddName != self.coaddName:
             raise RuntimeError("assembleCoadd.coaddName and coaddName don't match")
 
+class StackTaskRunner(MpiMultiplexTaskRunner, CoaddTaskRunner):
+    """An amalgam: MPI multiplexing, and coadding"""
+    pass
+
 class StackTask(PbsCmdLineTask, MpiTask):
     ConfigClass = StackConfig
     _DefaultName = "stack"
-    RunnerClass = MpiMultiplexTaskRunner
+    RunnerClass = StackTaskRunner
 
     def __init__(self, *args, **kwargs):
         super(StackTask, self).__init__(*args, **kwargs)
-        self.makeSubtask("selectImages")
+        self.makeSubtask("select")
         self.makeSubtask("makeCoaddTempExp")
         self.makeSubtask("assembleCoadd")
 
     @classmethod
-    def _makeArgumentParser(cls, doPbs=False):
+    def _makeArgumentParser(cls, doPbs=False, **kwargs):
         """
         Patch references are cheap, so are defined on all nodes.
         Selection references are not cheap (reads Wcs), so are generated
@@ -95,6 +104,11 @@ class StackTask(PbsCmdLineTask, MpiTask):
                                ContainerClass=SelectContainerClass, rootOnly=True)
         return parser
 
+    @classmethod
+    def pbsWallTime(cls, time, parsedCmd, numNodes):
+        numTargets = len(parsedCmd.selectId.refList)
+        return time*numTargets/numNodes
+
     def run(self, patchRef, selectDataList=[], refDataRef=None):
         """Run the stacking for a single patch
 
@@ -102,9 +116,9 @@ class StackTask(PbsCmdLineTask, MpiTask):
         @param selectDataList: List of SelectStruct for inputs
         @param refDataRef: Data reference for reference exposure; None for no background matching
         """
-        selectDataList = self.selectExposures(selectDataList)
+        selectDataList = self.selectExposures(patchRef, selectDataList)
         self.makeCoaddTempExp.run(patchRef, selectDataList)
-        if self.config.doOverwriteCoadd or not patchRef.datasetExists(self.getCoaddDatasetName()):
+        if self.config.doOverwriteCoadd or not patchRef.datasetExists(self.config.coaddName + "Coadd"):
             coadd = self.assembleCoadd.run(patchRef, selectDataList)
         # XXX Generate and persist summary statistics required for subtracting background over multiple patches
         # XXX Do a basic detection/measurement here? Background subtraction's not the best, but might be useful
@@ -118,12 +132,18 @@ class StackTask(PbsCmdLineTask, MpiTask):
         """
         key = lambda dataRef: tuple(dataRef.dataId[k] for k in sorted(dataRef.dataId.keys()))
         inputs = dict((key(select.dataRef), select) for select in selectDataList)
-        skyInfo = self.getSkyInfo(patchRef)
-        cornerPosList = afwGeom.Box2D(skyInfo.bbox).getCorners()
-        coordList = [skyInfo.wcs.pixelToSky(pos) for pos in cornerPosList]
+        skyMap = patchRef.get(self.config.coaddName + "Coadd_skyMap")
+        tract = skyMap[patchRef.dataId["tract"]]
+        patch = tract[(tuple(int(i) for i in patchRef.dataId["patch"].split(",")))]
+        bbox = patch.getOuterBBox()
+        wcs = tract.getWcs()
+        cornerPosList = afwGeom.Box2D(bbox).getCorners()
+        coordList = [wcs.pixelToSky(pos) for pos in cornerPosList]
         dataRefList = self.select.runDataRef(patchRef, coordList, selectDataList=selectDataList).dataRefList
         return [inputs[key(dataRef)] for dataRef in dataRefList]
 
+    def writeMetadata(self, dataRef):
+        pass
 
 """
 StackLauncher:
