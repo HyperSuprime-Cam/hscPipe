@@ -50,14 +50,6 @@ class ProcessExposureTask(MpiTask):
         self.makeSubtask("photometricSolution", schema=self.processCcd.schema)
         self.resultsCache = dict() # Cache to remember results for saving
 
-    def runDataRefList(self, *args, **kwargs):
-        """Save the butler.
-
-        All nodes execute this method.
-        """
-        self.butler = self.parsedCmd.butler
-        super(ProcessExposureTask, self).runDataRefList(*args, **kwargs)
-
     @classmethod
     def _makeArgumentParser(cls, *args, **kwargs):
         parser = MpiArgumentParser(name="processExposure", *args, **kwargs)
