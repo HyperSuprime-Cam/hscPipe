@@ -37,6 +37,7 @@ class ProcessExposureTask(MpiTask):
     see different parts of the code.
     """
 
+    RunnerClass = hscButler.ButlerTaskRunner
     ConfigClass = ProcessExposureConfig
     _DefaultName = "processExposure"
 
