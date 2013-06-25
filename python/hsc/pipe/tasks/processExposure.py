@@ -1,17 +1,18 @@
-import os
 import sys
 import collections
 
 import hsc.pipe.tasks.plotSetup
 import lsst.afw.table as afwTable
 import lsst.afw.image as afwImage
+import lsst.afw.cameraGeom as afwCg
 import hsc.pipe.base.matches as hscMatches
 import hsc.pipe.base.butler as hscButler
-from lsst.pipe.base import Struct, CmdLineTask
+from lsst.pipe.base import Struct
 from lsst.pex.config import Config, Field, ConfigurableField
 from hsc.pipe.tasks.processCcd import SubaruProcessCcdTask
 from hsc.pipe.tasks.photometricSolution import PhotometricSolutionTask
 from hsc.pipe.base.mpi import abortOnError, thisNode, MpiTask, MpiArgumentParser
+from hsc.pipe.base.pbs import PbsCmdLineTask
 
 
 class ProcessExposureConfig(Config):
@@ -29,7 +30,7 @@ class ProcessExposureConfig(Config):
         self.processCcd.doFinalWrite = False
 
 
-class ProcessExposureTask(MpiTask):
+class ProcessExposureTask(PbsCmdLineTask, MpiTask):
     """Process an entire exposure at once.
 
     We use MPI to gather the match lists for exposure-wide astrometric and
@@ -52,7 +53,15 @@ class ProcessExposureTask(MpiTask):
         self.resultsCache = dict() # Cache to remember results for saving
 
     @classmethod
+    def pbsWallTime(cls, time, parsedCmd, numNodes):
+        numCcds = sum(1 for raft in parsedCmd.butler.get("camera") for ccd in afwCg.cast_Raft(raft))
+        numCycles = int(numCcds/float(numNodes) + 0.5)
+        numExps = len(cls.RunnerClass.getTargetList(parsedCmd))
+        return time*numExps*numCycles
+
+    @classmethod
     def _makeArgumentParser(cls, *args, **kwargs):
+        doPbs = kwargs.pop("doPbs", False)
         parser = MpiArgumentParser(name="processExposure", *args, **kwargs)
         parser.add_id_argument("--id", datasetType="raw", level="visit",
                                help="data ID, e.g. --id visit=12345")
