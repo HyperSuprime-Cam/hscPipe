@@ -9,14 +9,6 @@ from hsc.pipe.base.pbs import PbsCmdLineTask
 from hsc.pipe.base.mpi import MpiTask, MpiMultiplexTaskRunner, MpiArgumentParser, getComm, thisNode
 
 
-class MpiWcsSelectImagesTask(WcsSelectImagesTask):
-    """The selectDataList is only defined properly on the root node, so we need to retrieve it"""
-    def runDataRef(self, patchRef, coordList, makeDataRefList=True, selectDataList=[]):
-        import pbasf2
-        selectDataList = pbasf2.Broadcast(getComm(), selectDataList)
-        return super(MpiWcsSelectImagesTask, self).runDataRef(patchRef, coordList, makeDataRefList,
-                                                              selectDataList)
-
 ###for cls in (MakeCoaddTempExpTask, AssembleCoaddTask):
 ###    cls = wrapTask(cls, globals())
 ###
@@ -61,7 +53,7 @@ class StackConfig(Config):
     doOverwriteCoadd = Field(dtype=bool, default=False, doc="Overwrite coadd?")
 
     def setDefaults(self):
-        self.select.retarget(MpiWcsSelectImagesTask)
+        self.select.retarget(WcsSelectImagesTask)
         self.makeCoaddTempExp.select.retarget(NullSelectImagesTask)
         self.assembleCoadd.select.retarget(NullSelectImagesTask)
         self.makeCoaddTempExp.doOverwrite = False
@@ -116,12 +108,14 @@ class StackTask(PbsCmdLineTask, MpiTask):
         @param selectDataList: List of SelectStruct for inputs
         @param refDataRef: Data reference for reference exposure; None for no background matching
         """
+        self.log.info("%s: Start processing %s" % (thisNode(), patchRef.dataId))
         selectDataList = self.selectExposures(patchRef, selectDataList)
         self.makeCoaddTempExp.run(patchRef, selectDataList)
         if self.config.doOverwriteCoadd or not patchRef.datasetExists(self.config.coaddName + "Coadd"):
             coadd = self.assembleCoadd.run(patchRef, selectDataList)
         # XXX Generate and persist summary statistics required for subtracting background over multiple patches
         # XXX Do a basic detection/measurement here? Background subtraction's not the best, but might be useful
+        self.log.info("%s: Finished processing %s" % (thisNode(), patchRef.dataId))
 
     def selectExposures(self, patchRef, selectDataList):
         """Select exposures to operate upon, via the SelectImagesTask
