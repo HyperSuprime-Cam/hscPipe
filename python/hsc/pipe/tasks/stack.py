@@ -4,6 +4,7 @@ from lsst.pipe.tasks.coaddBase import CoaddDataIdContainer, SelectDataIdContaine
 from lsst.pipe.tasks.selectImages import BaseSelectImagesTask, WcsSelectImagesTask, BaseExposureInfo
 from lsst.pipe.tasks.makeCoaddTempExp import MakeCoaddTempExpTask
 from lsst.pipe.tasks.assembleCoadd import AssembleCoaddTask
+from lsst.pipe.tasks.processCoadd import ProcessCoaddTask
 from lsst.pipe.base import Struct, DataIdContainer
 from hsc.pipe.base.pbs import PbsCmdLineTask
 from hsc.pipe.base.mpi import MpiTask, MpiMultiplexTaskRunner, MpiArgumentParser, getComm, thisNode
@@ -50,7 +51,9 @@ class StackConfig(Config):
     select = ConfigurableField(target=BaseSelectImagesTask, doc="Select images to process")
     makeCoaddTempExp = ConfigurableField(target=MakeCoaddTempExpTask, doc="Warp images to sky")
     assembleCoadd = ConfigurableField(target=AssembleCoaddTask, doc="Assemble warps into coadd")
+    processCoadd = ConfigurableField(target=ProcessCoaddTask, doc="Detection and measurement on coadd")
     doOverwriteCoadd = Field(dtype=bool, default=False, doc="Overwrite coadd?")
+    doOverwriteOutput = Field(dtype=bool, default=False, doc="Overwrite processing outputs?")
 
     def setDefaults(self):
         self.select.retarget(WcsSelectImagesTask)
@@ -78,6 +81,7 @@ class StackTask(PbsCmdLineTask, MpiTask):
         self.makeSubtask("select")
         self.makeSubtask("makeCoaddTempExp")
         self.makeSubtask("assembleCoadd")
+        self.makeSubtask("processCoadd")
 
     @classmethod
     def _makeArgumentParser(cls, doPbs=False, **kwargs):
@@ -111,10 +115,15 @@ class StackTask(PbsCmdLineTask, MpiTask):
         self.log.info("%s: Start processing %s" % (thisNode(), patchRef.dataId))
         selectDataList = self.selectExposures(patchRef, selectDataList)
         self.makeCoaddTempExp.run(patchRef, selectDataList)
-        if self.config.doOverwriteCoadd or not patchRef.datasetExists(self.config.coaddName + "Coadd"):
+        coaddName = self.config.coaddName + "Coadd"
+        if self.config.doOverwriteCoadd or not patchRef.datasetExists(coaddName):
             coadd = self.assembleCoadd.run(patchRef, selectDataList)
-        # XXX Generate and persist summary statistics required for subtracting background over multiple patches
-        # XXX Do a basic detection/measurement here? Background subtraction's not the best, but might be useful
+        elif patchRef.datasetExists(coaddName):
+            coadd = patchRef.get(coaddName, immediate=True)
+        if coadd is not None and (self.config.doOverwriteOutput or
+                                  not patchRef.datasetExists(coaddName + "_src") or
+                                  not patchRef.datasetExists(coaddName + "_calexp")):
+            self.processCoadd.process(patchRef, coadd)
         self.log.info("%s: Finished processing %s" % (thisNode(), patchRef.dataId))
 
     def selectExposures(self, patchRef, selectDataList):
