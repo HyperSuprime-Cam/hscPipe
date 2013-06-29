@@ -21,7 +21,7 @@ import lsst.obs.subaru.isr as hscIsr
 
 import hsc.pipe.base.butler as hscButler
 from hsc.pipe.base.mpi import MpiTask, MpiArgumentParser, abortOnError, thisNode
-from hsc.pipe.base.pbs import PbsArgumentParser, shCommandFromArgs
+from hsc.pipe.base.pbs import PbsCmdLineTask
 
 class DetrendStatsConfig(Config):
     """Parameters controlling background statistics"""
@@ -219,7 +219,7 @@ class DetrendArgumentParser(MpiArgumentParser):
         super(DetrendArgumentParser, self).__init__(*args, **kwargs)
         self.calibName = calibName
         self.add_id_argument("--id", datasetType="raw", level="visit",
-                             help="input identifiers, e.g., --id visit=123 ccd=4")
+                             help="input identifiers, e.g., --id visit=123 ccd=4", rootOnly=False)
         self.add_argument("--detrendId", nargs="*", action=DetrendIdAction, default={},
                           help="identifiers for detrend, e.g., --detrendId version=1",
                           metavar="KEY=VALUE1[^VALUE2[^VALUE3...]")
@@ -270,7 +270,7 @@ class DetrendTaskRunner(TaskRunner):
                 result = result,
             )
 
-class DetrendTask(MpiTask):
+class DetrendTask(PbsCmdLineTask, MpiTask):
     """Base class for constructing detrends.
 
     This should be subclassed for each of the required detrend types.
@@ -292,7 +292,15 @@ class DetrendTask(MpiTask):
         self.makeSubtask("combination")
 
     @classmethod
+    def pbsWallTime(cls, time, parsedCmd, numNodes):
+        numCcds = sum(1 for raft in parsedCmd.butler.get("camera") for ccd in cameraGeom.cast_Raft(raft))
+        numExps = len(cls.RunnerClass.getTargetList(parsedCmd))
+        numCycles = int(numExps/float(numNodes) + 0.5)
+        return time*numCcds*numCycles
+
+    @classmethod
     def _makeArgumentParser(cls, *args, **kwargs):
+        doPbs = kwargs.pop("doPbs", False)
         return DetrendArgumentParser(calibName=cls.calibName, name=cls._DefaultName, *args, **kwargs)
 
     @abortOnError
