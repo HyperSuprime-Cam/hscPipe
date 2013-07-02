@@ -73,7 +73,7 @@ class StackTaskRunner(MpiMultiplexTaskRunner, CoaddTaskRunner):
 
 class StackTask(PbsCmdLineTask, MpiTask):
     ConfigClass = StackConfig
-    _DefaultName = "stack"
+    _DefaultName = "stacker" # "stack" conflicts with hscMosaic's StackTask.
     RunnerClass = StackTaskRunner
 
     def __init__(self, *args, **kwargs):
