@@ -117,7 +117,9 @@ class StackTask(PbsCmdLineTask, MpiTask):
         self.makeCoaddTempExp.run(patchRef, selectDataList)
         coaddName = self.config.coaddName + "Coadd"
         if self.config.doOverwriteCoadd or not patchRef.datasetExists(coaddName):
-            coadd = self.assembleCoadd.run(patchRef, selectDataList).coaddExposure
+            coaddResults = self.assembleCoadd.run(patchRef, selectDataList)
+            if coaddResults is not None:
+                coadd = coaddResults.coaddExposure
         elif patchRef.datasetExists(coaddName):
             coadd = patchRef.get(coaddName, immediate=True)
         if coadd is not None and (self.config.doOverwriteOutput or
