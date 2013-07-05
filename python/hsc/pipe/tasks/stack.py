@@ -7,7 +7,8 @@ from lsst.pipe.tasks.assembleCoadd import AssembleCoaddTask
 from lsst.pipe.tasks.processCoadd import ProcessCoaddTask
 from lsst.pipe.base import Struct, DataIdContainer
 from hsc.pipe.base.pbs import PbsCmdLineTask
-from hsc.pipe.base.mpi import MpiTask, MpiMultiplexTaskRunner, MpiArgumentParser, getComm, thisNode
+from hsc.pipe.base.mpi import (MpiTask, MpiMultiplexTaskRunner, MpiArgumentParser, getComm,
+                               thisNode, abortOnError)
 
 
 ###for cls in (MakeCoaddTempExpTask, AssembleCoaddTask):
@@ -105,6 +106,7 @@ class StackTask(PbsCmdLineTask, MpiTask):
         numTargets = len(parsedCmd.selectId.refList)
         return time*numTargets/numNodes
 
+    @abortOnError
     def run(self, patchRef, selectDataList=[], refDataRef=None):
         """Run the stacking for a single patch
 
