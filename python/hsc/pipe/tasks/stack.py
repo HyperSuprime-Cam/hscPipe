@@ -118,6 +118,7 @@ class StackTask(PbsCmdLineTask, MpiTask):
         selectDataList = self.selectExposures(patchRef, selectDataList)
         self.makeCoaddTempExp.run(patchRef, selectDataList)
         coaddName = self.config.coaddName + "Coadd"
+        coadd = None
         if self.config.doOverwriteCoadd or not patchRef.datasetExists(coaddName):
             coaddResults = self.assembleCoadd.run(patchRef, selectDataList)
             if coaddResults is not None:
