@@ -60,6 +60,7 @@ class StackConfig(Config):
         self.select.retarget(WcsSelectImagesTask)
         self.makeCoaddTempExp.select.retarget(NullSelectImagesTask)
         self.assembleCoadd.select.retarget(NullSelectImagesTask)
+        self.assembleCoadd.doMatchBackgrounds = False # We're not set up to do this yet
         self.makeCoaddTempExp.doOverwrite = False
 
     def validate(self):
