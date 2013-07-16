@@ -374,7 +374,8 @@ class SizeMagnitudeMitakaStarSelector(object):
             # e=sqrt(e1^2+e2^2) where e1=(Ixx-Iyy)/(Ixx+Iyy), e2=2Ixy/(Ixx+Iy)
             # SExtractor's B/A=sqrt((1-e)/(1+e)), ell=1-B/A
             e1 = (Ixx-Iyy)/(Ixx+Iyy)
-            if e1 > 0:
+            ### if e1 > 0: ### XXX need to confirm this condition is unnecessary
+            if True:
                 e2 = 2.0*Ixy/(Ixx+Iyy)
                 ell_e1e2 = math.sqrt(e1*e1 + e2*e2)
                 fabs_Ixx_Iyy = math.fabs(Ixx-Iyy)
@@ -395,7 +396,6 @@ class SizeMagnitudeMitakaStarSelector(object):
             else:
                 e1 = -9999.0
                 e2 = -9999.0
-                ell = -9999.0
                 ell_e1e2 = -9999
                 ellPa_e1e2 = -9999.0
 
