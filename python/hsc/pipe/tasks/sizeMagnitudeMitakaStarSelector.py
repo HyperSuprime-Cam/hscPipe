@@ -373,13 +373,14 @@ class SizeMagnitudeMitakaStarSelector(object):
         if True: # definition by Kaiser
             # e=sqrt(e1^2+e2^2) where e1=(Ixx-Iyy)/(Ixx+Iyy), e2=2Ixy/(Ixx+Iy)
             # SExtractor's B/A=sqrt((1-e)/(1+e)), ell=1-B/A
-            e1 = (Ixx-Iyy)/(Ixx+Iyy)
-            ### if e1 > 0: ### XXX need to confirm this condition is unnecessary
-            if True:
+            fabs_Ixx_p_Iyy = math.fabs(Ixx+Iyy)
+            if fabs_Ixx_p_Iyy > VerySmallValue:
+                e1 = (Ixx-Iyy)/(Ixx+Iyy)
+                ### if e1 > 0: ### XXX need to confirm this condition is unnecessary
                 e2 = 2.0*Ixy/(Ixx+Iyy)
                 ell_e1e2 = math.sqrt(e1*e1 + e2*e2)
-                fabs_Ixx_Iyy = math.fabs(Ixx-Iyy)
-                if fabs_Ixx_Iyy > VerySmallValue:
+                fabs_Ixx_m_Iyy = math.fabs(Ixx-Iyy)
+                if fabs_Ixx_m_Iyy > VerySmallValue:
                     tanVal = 2.0 * Ixy / Ixx_Iyy
                     if tanVal >= 0:
                         if Ixx_Iyy > 0: # elongation toward x
