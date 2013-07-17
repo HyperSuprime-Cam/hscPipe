@@ -61,6 +61,7 @@ class StackConfig(Config):
         self.makeCoaddTempExp.select.retarget(NullSelectImagesTask)
         self.assembleCoadd.select.retarget(NullSelectImagesTask)
         self.assembleCoadd.doMatchBackgrounds = False # We're not set up to do this yet
+        self.makeCoaddTempExp.bgSubtracted = True # We're not background matching, so don't want background
         self.makeCoaddTempExp.doOverwrite = False
 
     def validate(self):
