@@ -96,8 +96,9 @@ class SubaruProcessCcdTask(ProcessCcdTask):
         if results.exposure is not None:
             dataRef.put(results.exposure, 'calexp')
         if results.sources is not None:
-            results.sources.setWriteHeavyFootprints(True)
-            dataRef.put(results.sources, 'src')
+            sourceWriteFlags = (0 if self.config.doWriteHeavyFootprintsInSources
+                                else afwTable.SOURCE_IO_NO_HEAVY_FOOTPRINTS)
+            dataRef.put(results.sources, 'src', flags=sourceWriteFlags)
         if results.matches is not None:
             dataRef.put(packMatches(results.matches, results.matchMeta), "srcMatch")
             if self.config.doWriteUnpackedMatches:
