@@ -5,7 +5,6 @@ import hsc.pipe.tasks.plotSetup
 import lsst.afw.table as afwTable
 import lsst.afw.image as afwImage
 import lsst.afw.cameraGeom as afwCg
-import hsc.pipe.base.matches as hscMatches
 import hsc.pipe.base.butler as hscButler
 from lsst.pipe.base import Struct
 from lsst.pex.config import Config, Field, ConfigurableField
@@ -132,7 +131,7 @@ class ProcessExposureTask(PbsCmdLineTask, MpiTask):
         # Reformat the matches for MPI transfer
         matches, numMatches = None, 0
         if result.matches is not None and result.matchMeta is not None:
-            matches = hscMatches.matchesToCatalog(result.matches, result.matchMeta)
+            matches = afwTable.ReferenceMatchVector(result.matches)
             numMatches = len(matches)
 
         print ("Finished processing %s (ccdId=%d) on %s with %d matches" %
@@ -159,9 +158,7 @@ class ProcessExposureTask(PbsCmdLineTask, MpiTask):
 
         Only the master executes this method, as the structList is only valid there.
         """
-        keyValue = [(s.ccdId, hscMatches.matchesFromCatalog(s.matches,
-                                                            self.processCcd.measurement.config.slots))
-                    for s in structList if s is not None]
+        keyValue = [(s.ccdId, s.matches) for s in structList if s is not None]
         return collections.OrderedDict(sorted(keyValue, key=lambda kv: kv[0]))
 
     def solveAstrometry(self, matchLists, cameraGeom):
