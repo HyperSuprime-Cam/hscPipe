@@ -1,5 +1,8 @@
+import re
+
 import lsst.afw.geom as afwGeom
 from lsst.pex.config import Config, Field, ConfigurableField
+from lsst.pex.exceptions import LsstCppException, InvalidParameterException
 from lsst.pipe.tasks.coaddBase import CoaddDataIdContainer, SelectDataIdContainer, CoaddTaskRunner
 from lsst.pipe.tasks.selectImages import BaseSelectImagesTask, WcsSelectImagesTask, BaseExposureInfo
 from lsst.pipe.tasks.makeCoaddTempExp import MakeCoaddTempExpTask
@@ -130,7 +133,7 @@ class StackTask(PbsCmdLineTask, MpiTask):
         if coadd is not None and (self.config.doOverwriteOutput or
                                   not patchRef.datasetExists(coaddName + "_src") or
                                   not patchRef.datasetExists(coaddName + "_calexp")):
-            self.processCoadd.process(patchRef, coadd)
+            self.process(patchRef, coadd)
         self.log.info("%s: Finished processing %s" % (thisNode(), patchRef.dataId))
 
     def selectExposures(self, patchRef, selectDataList):
@@ -151,6 +154,17 @@ class StackTask(PbsCmdLineTask, MpiTask):
         coordList = [wcs.pixelToSky(pos) for pos in cornerPosList]
         dataRefList = self.select.runDataRef(patchRef, coordList, selectDataList=selectDataList).dataRefList
         return [inputs[key(dataRef)] for dataRef in dataRefList]
+
+    def process(self, patchRef, coadd):
+        try:
+            self.processCoadd.process(patchRef, coadd)
+        except LsstCppException as e:
+            if (isinstance(e.message, InvalidParameterException) and
+                re.search("St. dev. must be > 0:", e.message.what())):
+                # All the good pixels are outside the area of interest
+                self.log.warn("No usable area for detection: %s" % patchRef.dataId)
+                return
+            raise
 
     def writeMetadata(self, dataRef):
         pass
