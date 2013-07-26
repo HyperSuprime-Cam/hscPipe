@@ -2,6 +2,7 @@ from lsst.pex.config import Config, ConfigurableField, Field
 from lsst.pipe.base import Task
 from . import measSeeingQa
 from . import sizeMagnitudeMitakaStarSelector as starSel
+import os
 
 class QaConfig(Config):
     ##seeing = ConfigurableField(target=measSeeingQa.MeasureSeeingTask, doc="Measure seeing")
@@ -42,6 +43,9 @@ class QaTask(Task):
         self.metadata.set("maxFwhmPsfSeq", -9999.0)
         self.metadata.set("numFwhmPsfLikeRobust", -9999)
 
+        # astrometric match
+        self.metadata.set("REFCAT", 'NOT_SET')
+
     def run(self, dataRef, exposure, sources):
         # initial set of exposure metadata
         #metadata = exposure.getMetadata()
@@ -49,7 +53,11 @@ class QaTask(Task):
 
         self.seeing.run(dataRef, sources, exposure)
 
-        # = flags
+        # = info for qa process and result
+        # config
+        self.setRefcatName()
+
+        # flags
         # this part should be done by calculating merit functions somewhere else in a polite manner.
         self.metadata.set('FLAG_AUTO', 0)
         self.metadata.set('FLAG_USR', 0)
@@ -82,7 +90,6 @@ class QaTask(Task):
         except Exception, e:
             self.log.warn("Could not get registry info (visit, ccd): %s" % str(e))
 
-        # rerun; assuming directory tree has the fixed form where 'rerun/' is just followed by '$rerun_name/'
         try:
             rerunName = self.getRerunName(dataRef)
             self.metadata.set('RERUN', rerunName)
@@ -96,6 +103,17 @@ class QaTask(Task):
             #print '*** qa local metadata: %s = %s is set to exposure' % (key, str(self.metadata.get(key)))
 
     def getRerunName(self, sensorRef):
+        """ derive rerun name from the file path, assuming the parent directory 'xxx/rerun' precedes the rerun name """
         # rerun: assuming directory tree has the fixed form where 'rerun/' is just followed by '$rerun_name/'
         corrPath = sensorRef.get('calexp_filename')[0]
         return corrPath[corrPath.find('rerun'):].split('/')[1]
+
+    def setRefcatName(self):
+        """ derive astrometry.net index name from env.variable, and set it to metadata. """
+        try:
+            catalogName = os.path.basename(os.environ.get('ASTROMETRY_NET_DATA_DIR').rstrip('/'))
+            if catalogName == 'None': # for safety
+                catalogName = 'NOT_SET'
+        except:
+            catalogName = 'NOT_SET'
+        self.metadata.set('REFCAT', catalogName)
