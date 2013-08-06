@@ -80,8 +80,6 @@ class SubaruProcessCcdTask(ProcessCcdTask):
             results.exposure.getCalib().setFluxMag0(fluxMag0)
 
         if self.config.doCalibrate:
-            if results.calib.psf is not None:
-                dataRef.put(results.calib.psf, 'psf')
             if results.calib.matches is not None and results.calib.matchMeta is not None:
                 dataRef.put(packMatches(results.calib.matches, results.calib.matchMeta), "icMatch")
                 if self.config.doWriteUnpackedMatches:
