@@ -107,9 +107,9 @@ class StackTask(PbsCmdLineTask, MpiTask):
         return parser
 
     @classmethod
-    def pbsWallTime(cls, time, parsedCmd, numNodes):
+    def pbsWallTime(cls, time, parsedCmd, numNodes, numProcs):
         numTargets = len(parsedCmd.selectId.refList)
-        return time*numTargets/numNodes
+        return time*numTargets/float(numNodes*numProcs)
 
     @abortOnError
     def run(self, patchRef, selectDataList=[], refDataRef=None):

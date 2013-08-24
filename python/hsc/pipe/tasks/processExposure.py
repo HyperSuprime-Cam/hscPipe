@@ -52,9 +52,9 @@ class ProcessExposureTask(PbsCmdLineTask, MpiTask):
         self.resultsCache = dict() # Cache to remember results for saving
 
     @classmethod
-    def pbsWallTime(cls, time, parsedCmd, numNodes):
+    def pbsWallTime(cls, time, parsedCmd, numNodes, numProcs):
         numCcds = sum(1 for raft in parsedCmd.butler.get("camera") for ccd in afwCg.cast_Raft(raft))
-        numCycles = int(numCcds/float(numNodes) + 0.5)
+        numCycles = int(numCcds/float(numNodes*numProcs) + 0.5)
         numExps = len(cls.RunnerClass.getTargetList(parsedCmd))
         return time*numExps*numCycles
 

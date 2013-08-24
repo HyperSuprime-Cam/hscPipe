@@ -292,11 +292,11 @@ class DetrendTask(PbsCmdLineTask, MpiTask):
         self.makeSubtask("combination")
 
     @classmethod
-    def pbsWallTime(cls, time, parsedCmd, numNodes):
+    def pbsWallTime(cls, time, parsedCmd, numNodes, numProcs):
         numCcds = sum(1 for raft in parsedCmd.butler.get("camera") for ccd in cameraGeom.cast_Raft(raft))
-        numExps = len(cls.RunnerClass.getTargetList(parsedCmd))
-        numCycles = int(numExps/float(numNodes) + 0.5)
-        return time*numCcds*numCycles
+        numExps = len(cls.RunnerClass.getTargetList(parsedCmd)[0]['expRefList'])
+        numCycles = int(numCcds/float(numNodes*numProcs) + 0.5)
+        return time*numExps*numCycles
 
     @classmethod
     def _makeArgumentParser(cls, *args, **kwargs):
