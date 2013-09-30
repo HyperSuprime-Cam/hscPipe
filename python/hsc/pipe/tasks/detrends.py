@@ -6,7 +6,7 @@ import numpy
 import argparse
 import traceback
 
-from lsst.pex.config import Config, ConfigField, ConfigurableField, Field
+from lsst.pex.config import Config, ConfigField, ConfigurableField, Field, ListField
 from lsst.pipe.base import Task, Struct, TaskRunner
 import lsst.daf.base as dafBase
 import lsst.afw.math as afwMath
@@ -56,7 +56,7 @@ class DetrendStatsTask(Task):
 class DetrendCombineConfig(Config):
     """Configuration for combining detrend images"""
     rows = Field(doc="Number of rows to read at a time", dtype=int, default=128)
-    maskDetected = Field(doc="Mask pixels about the detection threshold?", dtype=bool, default=True)
+    mask = ListField(doc="Mask planes to respect", dtype=str, default=["SAT", "DETECTED"])
     combine = Field(doc="Statistic to use for combination (from lsst.afw.math)", dtype=int,
                     default=afwMath.MEANCLIP)
     clip = Field(doc="Clipping threshold for combination", dtype=float, default=3.0)
@@ -81,7 +81,9 @@ class DetrendCombineTask(Task):
         @return combined image
         """
         width, height = self.getDimensions(sensorRefList)
-        maskVal = afwImage.MaskU.getPlaneBitMask("DETECTED") if self.config.maskDetected else 0
+        maskVal = 0
+        for mask in self.config.mask:
+            maskVal |= afwImage.MaskU.getPlaneBitMask(mask)
         stats = afwMath.StatisticsControl(self.config.clip, self.config.iter, maskVal)
 
         # Combine images
