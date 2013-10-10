@@ -412,6 +412,93 @@ class BackgroundReferenceIoTask(Task):
         return self._pickle.load(f)
 
 
+class ConstructionConfig(Config):
+    taperStart = Field(dtype=float, doc="Starting radius for taper")
+    taperStop = Field(dtype=float, doc="Stopping radius for taper")
+    minTaperSum = Field(dtype=float, default=1.0e-3, doc="Minimum value for taper sum")
+    makeCoaddTempExp = ConfigurableField(target=MakeCoaddTempExpTask, doc="Warp images to sky")
+    mask = ListField(dtype=str, default=["BAD", "SAT", "EDGE",], doc="Mask planes to mask")
+
+    def validate(self):
+        if self.taperStart < 0 or self.taperStart > self.taperStop:
+            raise RuntimeError("Bad taper radii: %f %f" % (self.taperStart, self.taperStop))
+
+class ConstructionTask(Task):
+    def run(self, patchRef, assignments):
+        """Construct a background reference image from multiple inputs
+
+        @param patchRef: data reference for a patch
+        @param assignments: list of a list of data references for each visit
+        """
+        goodFracList = []
+        dataRefList = []
+        weightList = []
+        for calexpRefList in assignments:
+            warpRef = self.getWarpRef(patchRef, calexpRefList)
+            warpResults = self.warp(warpRef, visitRefList)
+            goodFracList.append(warpResults.goodFrac)
+            dataRefList.append(warpRef)
+            self.generateWeight(warpRef, calexpRefList)
+
+        # Want to work in order of number of good pixels
+        indices = sorted(range(len(assignments)), cmp=lambda i, j: cmp(activeFracList[i], activeFracList[j]))
+        dataRefList = [dataRefList[i] for i in indicies]
+
+        bgRef = Struct(exposure=None, weight=None)
+        for dataRef in dataRefList:
+            bgRef = self.addWarp(bgRef, dataRef)
+
+        bgRef.exposure /= bgRef.weight
+        patchRef.put(bgRef.exposure, "bgRef")
+
+    def warp(self, warpRef, calexpRefList):
+        results = self.makeCoaddTempExp.runOne(warpRef, calexpRefList, doWrite=True)
+        exp = results.exposure
+        mask = exp.getMaskedImage().getMask()
+        bitmask = mask.getPlaneBitMask(self.config.mask)
+        numBad = (mask.getArray() & bitmask).sum()
+        xNum, yNum = exp.getDimensions()
+        goodFrac = numBad/(xNum*yNum)
+        return Struct(warp=exp, goodFrac=goodFrac)
+
+    def generateWeight(self, warpRef, calexpRefList):
+        """Construct a weight and write out for later use"""
+        # For each input, generate weight map in calexp frame:
+        # * Check to see if weighting is completely within taper region: weight=1
+        # * Otherwise, calculate taper
+        # For each input, warp weight to patch frame
+
+        # Choose the single calexp that's closest to the centre of the patch
+
+        # Get a rough (linear?) mapping of warped pixels --> distance from boresight
+        # (Need to transform (x,y)_warp --> (x,y)_calexp --> distance from boresight)
+        # Transform distance --> taper
+
+
+    def getWarpRef(patchRef, calexpRefList):
+        """Generate a warp data reference
+
+        A "warp" is also known as a "coaddTempExp".
+
+        @param patchRef: data reference for the patch
+        @param calexpRefList: list of data references for constituent calexps
+        @return warp data reference
+        """
+        dataId.update(calexpRefList[0].dataId)
+        for calexpRef in calexpRefList[1:]:
+            for key, value in calexpRef.dataId.iteritems():
+                if key in dataId and dataId[key] != value:
+                    del dataId[key]
+        dataId['patch'] = patch
+
+        tempExpName = self.config.coaddName + "Coadd_tempExp"
+        return tractRef.getButler().dataRef(datasetType=tempExpName, dataId=dataId)
+
+
+
+
+
+
 class BackgroundReferenceConfig(Config):
     coaddName = Field(dtype=str, default="deep", doc="Name of coadd of interest")
     io = ConfigurableField(target=BackgroundReferenceIoTask, doc="I/O for background references")
@@ -470,6 +557,16 @@ class BackgroundReferenceTask(CmdLineTask):
         cornerPosList = afwGeom.Box2D(tractInfo.getBBox()).getCorners()
         coordList = [wcs.pixelToSky(pos) for pos in cornerPosList]
         return self.select.runDataRef(tractRef, coordList, selectDataList=selectDataList).dataRefList
+
+    def getPatchRef(self, tractRef, patch):
+        """Generate a patch data reference
+
+        @param tractRef: data reference for the parent tract
+        @param patch: tuple (x,y) for the patch
+        @return patch data reference
+        """
+        tempExpName = self.config.coaddName + "Coadd_tempExp"
+        return tractRef.getButler().dataRef(datasetType=tempExpName, dataId=tractRef.dataId.copy())
 
     def writeMetadata(self, *args, **kwargs):
         pass
