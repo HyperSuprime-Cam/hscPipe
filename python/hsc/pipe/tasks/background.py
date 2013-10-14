@@ -8,6 +8,7 @@ from lsst.pex.exceptions import LsstCppException, DomainErrorException, RuntimeE
 from lsst.pipe.base import Task, CmdLineTask, Struct, ArgumentParser
 from lsst.pipe.tasks.coaddBase import CoaddTaskRunner, CoaddDataIdContainer, SelectDataIdContainer
 from lsst.pipe.tasks.selectImages import WcsSelectImagesTask
+from lsst.pipe.tasks.matchBackgrounds import MatchBackgroundsTask
 from lsst.afw.fits.fitsLib import FitsError
 import lsst.afw.coord as afwCoord
 import lsst.afw.geom as afwGeom
@@ -43,7 +44,11 @@ def imagePoly(dataRef, log=None, imageName="calexp"):
             raise
         if log: log.logdebug("WCS error in testing calexp %s: %s" % (dataRef.dataId, e))
         return None
-    return convexHull([coord.getVector() for coord in imageCorners])
+    return Struct(metadata=md,
+                  wcs=wcs,
+                  box=box,
+                  poly=convexHull([coord.getVector() for coord in imageCorners]),
+                  )
 
 def getDataName(dataRef):
     """Generate a hashable name for a dataRef
@@ -176,7 +181,7 @@ class AssignTask(Task):
         psf = dataRef.get("psf", immediate=True) # requires special handling in Mapper these days
         bgArray = dataRef.get("calexpBackground", immediate=True).getImage().getArray()
         return Struct(dataRef=dataRef,
-                      poly=imagePoly(dataRef, log=self.log),
+                      poly=imagePoly(dataRef, log=self.log).poly,
                       psfWidth=psf.computeShape().getTraceRadius(),
                       bgMean=bgArray.mean(),
                       bgStd=bgArray.std()
@@ -418,38 +423,157 @@ class ConstructionConfig(Config):
     minTaperSum = Field(dtype=float, default=1.0e-3, doc="Minimum value for taper sum")
     makeCoaddTempExp = ConfigurableField(target=MakeCoaddTempExpTask, doc="Warp images to sky")
     mask = ListField(dtype=str, default=["BAD", "SAT", "EDGE",], doc="Mask planes to mask")
+    matchBackgrounds = ConfigurableField(target=MatchBackgroundsTask, doc="Background matching")
+    clobber = Field(dtype=bool, default=False, doc="Clobber existing outputs?")
 
     def validate(self):
         if self.taperStart < 0 or self.taperStart > self.taperStop:
             raise RuntimeError("Bad taper radii: %f %f" % (self.taperStart, self.taperStop))
 
+
+class CoordinateTransformer(object):
+    def ___init__(self, patchWcs, calexpRefList, ccdName="ccd"):
+        self.patchWcs = patchWcs
+        self.polyStructList = [imagePoly(ref) for ref in calexpRefList] 
+        self.polyList = [each.poly for each in self.polyStructList]
+        self.wcsList = [each.wcs for each in self.polyStructList]
+        butler = calexpRefList[0].getButler()
+        camera = butler.get("camera")
+        self.ccdList = [afwCgu.findCcd(camera,
+                                       afwCameraGeom.Id(butler.mapper._extractDetectorName(ref.dataId))) for
+                        ref in calexpRefList]
+
+    def getImageIndex(self, coord):
+        vector = coord.getVector()
+        for i, poly in enumerate(self.polyList):
+            if poly.containsPoint(vector):
+                return i
+        raise LookupError("No image contains coordinate %s" % coord)
+
+    def skyToCalexp(self, coord):
+        index = self.getImageIndex(coord)
+        return index, self.wcsList[index].skyToPixel(coord)
+
+    def calexpToSky(self, index, pixel):
+        return self.wcsList[index].pixelToSky(pixel)
+
+    def skyToPatch(self, coord):
+        return self.patchWcs.skyToPixel(coord)
+
+    def patchToSky(self, pixel):
+        return self.patchWcs.pixelToSky(pixel)
+
+    def patchToCalexp(self, pixel):
+        return self.skyToCalexp(self.patchToSky(coord))
+
+    def calexpToPatch(self, index, pixel):
+        return self.skyToPatch(self.calexpToSky(index, pixel))
+
+    def patchToPosition(self, pixel):
+        index, pixel = self.patchToCalexp(coord)
+        return self.ccdList[index].getPositionFromPixel(pixel).getMm()
+
+class ConstantWeightImage(object):
+    def __init__(self, bbox, constant):
+        self._bbox = bbox
+        self._constant = constant
+    def getImage(self):
+        image = afwImage.ImageF(self._bbox)
+        image.set(self._constant)
+        return image
+
+class TaperWeightImage(object):
+    def __init__(self, bbox, transformer, taperStart, taperStop):
+        self._bbox = bbox
+        self._taperStart = taperStart
+        self._taperStop = taperStop
+        pixels = bbox.getCorners() + [bbox.getCenter()]
+        positions = [transformer.patchToPosition(each) for each in pixels]
+        radii = [numpy.sqrt(each.distanceSquared(afwGeom.Point2D(0,0))) for each in positions]
+
+        x = numpy.array([each.getX() for each in pixels])
+        y = numpy.array([each.getY() for each in pixels])
+        z = numpy.array(radii)
+
+        design = numpy.array([numpy.ones_like(z), x, x**2, y, y**2])
+        self._ls = afwMath.LeastSquares.fromDesignMatrix(design, z)
+        self._solution = self.ls.getSolution()
+
+    def getImage(self):
+        image = self.getRadiusImage()
+        return self.applyTaper(image)
+
+    def getRadiusImage(self):
+        image = afwImage.ImageF(self._bbox)
+        solution = self.solution
+        bbox = image.getBBox()
+        # XXX x,y reversed???
+        y, x = numpy.ogrid[bbox.getMinX():bbox.getMaxX(),bbox.getMinY():bbox.getMaxY()]
+        array = image.getArray()
+        array[:,:] = solution[0] + solution[1]*x + solution[2]*x**2 + solution[3]*y + solution[4]*y**2
+        return image
+
+    def applyTaper(self, image):
+        taper = image.getArray()
+        radius = taper.copy()
+        start, stop = self._taperStart, self._taperStop
+
+        taper[:,:] = 0.5*(1.0 - numpy.cos((radius - start)/(stop - start)*numpy.pi))
+        taper[:,:] = numpy.where(radius < start, 1.0, taper)
+        taper[:,:] = numpy.where(radius > stop, 0.0, taper)
+
+        return image
+
 class ConstructionTask(Task):
-    def run(self, patchRef, assignments):
+    def __init__(self, *args, **kwargs):
+        super(ConstructionTask, self).__init__(*args, **kwargs)
+        self.makeSubtask("makeCoaddTempExp")
+        self.makeSubtask("matchBackgrounds")
+
+    def run(self, patchRef, assignments, coaddName="deep", datasetType="bgRef"):
         """Construct a background reference image from multiple inputs
 
         @param patchRef: data reference for a patch
         @param assignments: list of a list of data references for each visit
         """
+        if patchRef.datasetExists(datasetType):
+            if not self.config.clobber:
+                self.log.warn("Refusing to clobber existing background reference for %s" % (tractRef,))
+                return patchRef.get(datasetType, immediate=False)
+            self.log.warn("Clobbering existing background reference for %s" % (tractRef,))
+
+        bgExposure = self.construct(patchRef, assignments, coaddName=coaddName)
+        self.log.info("Persisting background reference for %s" % patchRef.dataId)
+        patchRef.put(bgExposure, datasetType)
+        return bgExposure
+
+    def construct(self, patchRef, assignments, coaddName="deep"):
         goodFracList = []
-        dataRefList = []
+        warpRefList = []
         weightList = []
+        skyInfo = getSkyInfo(coaddName, patchRef)
         for calexpRefList in assignments:
-            warpRef = self.getWarpRef(patchRef, calexpRefList)
-            warpResults = self.warp(warpRef, visitRefList)
+            warpRef = self.getWarpRef(patchRef, calexpRefList, coaddName=coaddName)
+            try:
+                warpResults = self.warp(warpRef, visitRefList)
+                self.generateWeight(skyInfo, calexpRefList)
+            except Exception as e:
+                self.log.warn("Ignoring warp %s due to %s: %s" % (warpRef.dataId, e.__class__.__name__, e))
+                continue
             goodFracList.append(warpResults.goodFrac)
-            dataRefList.append(warpRef)
-            self.generateWeight(warpRef, calexpRefList)
+            warpRefList.append(warpRef)
+            weightList.append(weight)
 
         # Want to work in order of number of good pixels
         indices = sorted(range(len(assignments)), cmp=lambda i, j: cmp(activeFracList[i], activeFracList[j]))
-        dataRefList = [dataRefList[i] for i in indicies]
 
-        bgRef = Struct(exposure=None, weight=None)
-        for dataRef in dataRefList:
-            bgRef = self.addWarp(bgRef, dataRef)
+        bg = None
+        for index in indices:
+            self.log.info("Adding warp %s" % (warpRef.dataId,))
+            bg = self.addWarp(bg, warpRefList[index], weightList[index], coaddName=coaddName)
 
-        bgRef.exposure /= bgRef.weight
-        patchRef.put(bgRef.exposure, "bgRef")
+        bg.exposure /= bgRef.weight
+        return bg.exposure
 
     def warp(self, warpRef, calexpRefList):
         results = self.makeCoaddTempExp.runOne(warpRef, calexpRefList, doWrite=True)
@@ -461,21 +585,19 @@ class ConstructionTask(Task):
         goodFrac = numBad/(xNum*yNum)
         return Struct(warp=exp, goodFrac=goodFrac)
 
-    def generateWeight(self, warpRef, calexpRefList):
-        """Construct a weight and write out for later use"""
-        # For each input, generate weight map in calexp frame:
-        # * Check to see if weighting is completely within taper region: weight=1
-        # * Otherwise, calculate taper
-        # For each input, warp weight to patch frame
+    def generateWeight(self, skyInfo, calexpRefList):
+        """Construct a weight"""
+        transformer = CoordinateTransformer(skyInfo.wcs, calexpRefList)
+        center = skyInfo.bbox.getCenter()
+        positions = [transformer.patchToPosition(each) for each in skyInfo.bbox.getCorners() + [center]]
+        radii = [numpy.sqrt(each.distanceSquared(afwGeom.Point2D(0,0))) for each in positions]
+        if all(radius < self.config.taperStart for radius in radii):
+            return ConstantWeightImage(skyInfo.bbox, 1.0)
+        if all(radius > self.config.taperStop for radius in radii):
+            raise RuntimeError("Weight is completely zero")
+        return TaperWeightImage(skyInfo.bbox, transformer, self.config.taperStart, self.config.taperStop):
 
-        # Choose the single calexp that's closest to the centre of the patch
-
-        # Get a rough (linear?) mapping of warped pixels --> distance from boresight
-        # (Need to transform (x,y)_warp --> (x,y)_calexp --> distance from boresight)
-        # Transform distance --> taper
-
-
-    def getWarpRef(patchRef, calexpRefList):
+    def getWarpRef(patchRef, calexpRefList, coaddName="deep"):
         """Generate a warp data reference
 
         A "warp" is also known as a "coaddTempExp".
@@ -491,20 +613,42 @@ class ConstructionTask(Task):
                     del dataId[key]
         dataId['patch'] = patch
 
-        tempExpName = self.config.coaddName + "Coadd_tempExp"
+        tempExpName = coaddName + "Coadd_tempExp"
         return tractRef.getButler().dataRef(datasetType=tempExpName, dataId=dataId)
 
+    def addWarp(bg, warpRef, weight, coaddName="deep"):
+        warp = warpRef.get(coaddName + "Coadd_tempExp", immediate=True)
+        if hasattr(weight, "getImage"):
+            weight = getattr(weight, "getImage")()
 
+        # Remove masked pixels
+        mask = warp.getMaskedImage().getMask()
+        bitmask = mask.getPlaneBitMask(self.config.mask)
+        weightArray = weight.getArray()
+        warpArray = warp.getArray()
+        bad = numpy.where(mask & bitmask)
+        weightArray[bad] = 0.0
+        warp[bad] = 0.0
+        del bad
+        # XXX check this works properly (worried about copies vs views)
 
+        if bg is None:
+            return Struct(exposure=warp, weight=weight)
 
+        result = self.matchBackgrounds.matchBackgrounds(bg.exposure, warp)
+        # XXX evaluate results before blindly accepting
 
+        warp *= weight
+        bg.exposure += warp
+        bg.weight += weight
+
+        return bg
 
 class BackgroundReferenceConfig(Config):
     coaddName = Field(dtype=str, default="deep", doc="Name of coadd of interest")
-    io = ConfigurableField(target=BackgroundReferenceIoTask, doc="I/O for background references")
     select = ConfigurableField(target=WcsSelectImagesTask, doc="Task to select input images")
     assign = ConfigurableField(target=AssignTask, doc="Task to assign inputs to patches")
-    clobber = Field(dtype=bool, default=False, doc="Clobber existing assignments?")
+    construct = ConfigurableField(target=ConstructionTask, doc="Task to construct background reference")
 
 class BackgroundReferenceTask(CmdLineTask):
     _DefaultName = "bgRef"
@@ -513,9 +657,9 @@ class BackgroundReferenceTask(CmdLineTask):
 
     def __init__(self, config, **kwargs):
         super(BackgroundReferenceTask, self).__init__(config=config, **kwargs)
-        self.makeSubtask("io")
         self.makeSubtask("select")
         self.makeSubtask("assign")
+        self.makeSubtask("construct")
         self.bgRefName = self.config.coaddName + "Coadd_bgRef"
 
     @classmethod
@@ -530,17 +674,15 @@ class BackgroundReferenceTask(CmdLineTask):
         return parser
 
     def run(self, tractRef, selectDataList=[]):
-        if self.io.exists(tractRef, self.config.coaddName):
-            if not self.config.clobber:
-                self.log.warn("Refusing to clobber existing background reference for %s" % (tractRef,))
-                return
-            self.log.warn("Clobbering existing background reference for %s" % (tractRef,))
-
         skyMap = tractRef.get(self.config.coaddName + "Coadd_skyMap")
         tract = skyMap[tractRef.dataId['tract']]
         dataRefList = self.selectExposures(tractRef, selectDataList, tractInfo=tract)
         assignments = self.assign.run(tract, dataRefList)
-        self.io.write(tractRef, self.config.coaddName, assignments)
+
+        # XXX parallelise this
+        for patch in assignments:
+            patchRef = self.getPatchRef(tractRef, patch)
+            self.construct.run(patchRef, assignments[patch])
 
     def selectExposures(self, tractRef, selectDataList=[], tractInfo=None):
         """Select exposures to include
