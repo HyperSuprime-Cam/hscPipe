@@ -13,6 +13,7 @@ from lsst.pipe.tasks.coaddBase import CoaddTaskRunner, CoaddDataIdContainer, Sel
 from lsst.pipe.tasks.selectImages import WcsSelectImagesTask
 from lsst.pipe.tasks.makeCoaddTempExp import MakeCoaddTempExpTask
 from lsst.pipe.tasks.matchBackgrounds import MatchBackgroundsTask
+from lsst.pipe.tasks.scaleZeroPoint import ScaleZeroPointTask
 from lsst.afw.fits.fitsLib import FitsError
 import lsst.afw.coord as afwCoord
 import lsst.afw.geom as afwGeom
@@ -583,6 +584,7 @@ class ConstructionConfig(Config):
     taper = ConfigurableField(target=RadiusTaperWeightImage, doc="Object to provide tapered weight image")
 #    minTaperSum = Field(dtype=float, default=1.0e-3, doc="Minimum value for taper sum")
     makeCoaddTempExp = ConfigurableField(target=MakeCoaddTempExpTask, doc="Warp images to sky")
+    scaling = ConfigurableField(target=ScaleZeroPointTask, doc="Scale warps to common zero point")
     mask = ListField(dtype=str, default=["BAD", "SAT", "EDGE",], doc="Mask planes to mask")
     matchBackgrounds = ConfigurableField(target=MatchBackgroundsTask, doc="Background matching")
     clobber = Field(dtype=bool, default=False, doc="Clobber existing outputs?")
@@ -593,6 +595,7 @@ class ConstructionTask(Task):
     def __init__(self, *args, **kwargs):
         super(ConstructionTask, self).__init__(*args, **kwargs)
         self.makeSubtask("makeCoaddTempExp")
+        self.makeSubtask("scaling")
         self.makeSubtask("matchBackgrounds")
 
     def run(self, patchRef, assignments, coaddName="deep", datasetType="deepCoadd_bgRef"):
@@ -613,38 +616,28 @@ class ConstructionTask(Task):
         return bgExposure
 
     def construct(self, patchRef, assignments, coaddName="deep"):
-        goodFracList = []
         warpRefList = []
         weightList = []
-
-#        if patchRef.dataId["patch"] == "0,2":
-#            import pdb;pdb.set_trace()
-#        else:
-#            raise RuntimeError()
         skyInfo = getSkyInfo(coaddName, patchRef)
         for calexpRefList in assignments:
             warpRef = self.getWarpRef(patchRef, calexpRefList, coaddName=coaddName)
             try:
-                goodFrac = self.warp(warpRef, calexpRefList, skyInfo)
+                self.warp(warpRef, calexpRefList, skyInfo)
                 weight = self.generateWeight(skyInfo, calexpRefList)
             except RuntimeError as e:
                 self.log.warn("Ignoring warp %s due to %s: %s" % (warpRef.dataId, e.__class__.__name__, e))
                 continue
-            goodFracList.append(goodFrac)
             warpRefList.append(warpRef)
             weightList.append(weight)
 
-        num = len(goodFracList)
+        num = len(warpRefList)
         if num == 0:
             raise RuntimeError("No good input exposures")
 
-        # Want to work in order of number of good pixels
-        indices = sorted(range(num), cmp=lambda i, j: cmp(goodFracList[i], goodFracList[j]))
-
         bg = None
-        for index in indices:
-            self.log.info("Adding warp %s" % (warpRefList[index].dataId,))
-            bg = self.addWarp(bg, warpRefList[index], weightList[index], coaddName=coaddName)
+        for warpRef, weight in zip(warpRefList, weightList):
+            self.log.info("Adding warp %s" % (warpRef.dataId,))
+            bg = self.addWarp(bg, warpRef, weight, coaddName=coaddName)
 
         bgImage = bg.exposure.getMaskedImage()
         bgImage /= bg.weight
@@ -666,15 +659,6 @@ class ConstructionTask(Task):
     def generateWeight(self, skyInfo, calexpRefList):
         """Construct a weight"""
         transformer = CoordinateTransformer(skyInfo.wcs, calexpRefList)
-#        center = afwGeom.Box2D(skyInfo.bbox).getCenter()
-#        pixels = [afwGeom.Point2D(each) for each in skyInfo.bbox.getCorners()] + [center]
-#        positions = [transformer.patchToPosition(each) for each in pixels]
-#        radii = [numpy.sqrt(each.distanceSquared(afwGeom.Point2D(0,0))) for
-#                 each in positions if each is not None]
-#        if all(radius < self.config.taperStart for radius in radii):
-#            return ConstantWeightImage(skyInfo.bbox, 1.0)
-#        if all(radius > self.config.taperStop for radius in radii):
-#            raise RuntimeError("Weight image is completely zero")
         return self.config.taper.apply(skyInfo.bbox, transformer.getCenter())
 
     def getWarpRef(self, patchRef, calexpRefList, coaddName="deep"):
@@ -698,11 +682,9 @@ class ConstructionTask(Task):
 
     def addWarp(self, bg, warpRef, weight, coaddName="deep"):
         warp = warpRef.get(coaddName + "Coadd_tempExp", immediate=True)
+        self.scaling.computeImageScaler(warp, warpRef).scaleMaskedImage(warp.getMaskedImage())
         if hasattr(weight, "getImage"):
             weight = getattr(weight, "getImage")()
-
-        if False:
-            afwImage.makeExposure(afwImage.makeMaskedImage(weight), warp.getWcs()).writeFits("weight-%(patch)s-%(visit)d.fits" % warpRef.dataId)
 
         # Remove masked pixels
         mask = warp.getMaskedImage().getMask()
@@ -714,7 +696,7 @@ class ConstructionTask(Task):
                                numpy.logical_not(numpy.isfinite(warpArray)))
         warpArray[bad] = 0.0
         weightArray[bad] = 0.0
-        varArray[bad] = numpy.nan
+        varArray[bad] = 0.0
         del bad
 
         if bg is None:
