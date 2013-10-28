@@ -588,6 +588,7 @@ class XyTaperWeightImage(object):
         return image
 
 class ConstructionConfig(Config):
+    doWarp = Field(dtype=bool, default=True, doc="Warp images to sky tract/patch?")
     taper = ConfigurableField(target=RadiusTaperWeightImage, doc="Object to provide tapered weight image")
     makeCoaddTempExp = ConfigurableField(target=MakeCoaddTempExpTask, doc="Warp images to sky")
     scaling = ConfigurableField(target=ScaleZeroPointTask, doc="Scale warps to common zero point")
@@ -641,7 +642,8 @@ class ConstructionTask(Task):
         for calexpRefList in assignments:
             warpRef = self.getWarpRef(patchRef, calexpRefList, coaddName=coaddName)
             try:
-                self.warp(warpRef, calexpRefList, skyInfo, coaddName=coaddName)
+                if self.config.doWarp:
+                    self.warp(warpRef, calexpRefList, skyInfo, coaddName=coaddName)
                 weight = self.generateWeight(skyInfo, calexpRefList)
             except RuntimeError as e:
                 self.log.warn("Ignoring warp %s due to %s: %s" % (warpRef.dataId, e.__class__.__name__, e))
@@ -791,8 +793,16 @@ class BackgroundReferenceTask(CmdLineTask):
         tract = skyMap[patchRefList[0].dataId['tract']]
         dataRefList = self.selectExposures(tract, selectDataList)
         assignments = self.assign.run(tract, dataRefList)
+        self.constructBackgrounds(patchRefList, assignments)
 
-        # XXX parallelise this
+    def constructBackgrounds(self, patchRefList, assignments):
+        """Construct background reference images
+
+        This method could be trivially parallelised.
+
+        @param patchRefList: List of patch data references
+        @param assignments: List of a list of data references for each visit
+        """
         for patchRef in patchRefList:
             patch = tuple(map(int, patchRef.dataId["patch"].split(",")))
             try:
@@ -820,3 +830,59 @@ class BackgroundReferenceTask(CmdLineTask):
         pass
     def writeSchemas(self, *args, **kwargs):
         pass
+
+
+class MpiBackgroundReferenceConfig(BackgroundReferenceConfig):
+    """We're using this as part of the super-stacker, so the warps have already
+    been constructed and we don't want to risk regenerating them with a different
+    configuration.
+    """
+    makeCoaddTempExp = None
+    def setDefaults(self):
+        self.construct.doWarp = False
+
+class MpiBackgroundReferenceTask(MpiTask, BackgroundReferenceTask):
+    """MPI-enabled background reference construction, intended for use within the super-stacker"""
+    ConfigClass = MpiBackgroundReferenceConfig
+
+    def run(self, patchRefList, selectDataList=[]):
+        """Construct a set of background references
+
+        All nodes execute this method, though the master and slaves
+        take different routes through it.
+
+        @param patchRefList: List of patch data references
+        @param selectDataList: List of SelectStruct for inputs
+        """
+        if self.rank == self.root:
+            super(MpiBackgroundReferenceTask, self).run(patchRefList, assignments)
+        else:
+            # Must get the slave nodes into the same place the master node ends up
+            self.constructBackgrounds(patchRefList, None)
+
+    def constructBackgrounds(self, patchRefList, assignments):
+        """Farm out the construction of background references
+
+        All nodes execute this method, though the master and slaves
+        take different routes through it.
+
+        @param patchRefList: List of patch data references
+        @param assignments: List of a list of data references for each visit
+        """
+        import pbasf2
+        query = lambda patchRef: assignments[tuple(map(int, patchRef.dataId["patch"].split(",")))]
+        pbasf2.QueryToRoot(self.comm, self.constructSingleBackground, query, patchRefList, root=self.root)
+
+    def constructSingleBackground(self, patchRef, assignment):
+        """Wrapper for ConstructBackgroundTask
+
+        Only slave nodes execute this method.
+
+        @param patchRef: data reference for patch
+        @param assignments: List of data references for each visit
+        """
+        try:
+            self.construct.run(patchRef, assignment, coaddName=self.config.coaddName)
+        except RuntimeError as e:
+            self.log.warn("Unable to construct background reference for %s due to %s: %s" %
+                          (patch, e.__class__.__name__, e))
