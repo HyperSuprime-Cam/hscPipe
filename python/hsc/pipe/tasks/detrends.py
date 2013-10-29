@@ -105,8 +105,8 @@ class DetrendCombineTask(Task):
 
         if finalScale is not None:
             background = self.stats.run(combined)
-            self.log.log(self.log.INFO, "Measured background of stack is %f; adjusting to %f" %
-                         (background, finalScale))
+            self.log.info("%s: Measured background of stack is %f; adjusting to %f" %
+                         (thisNode(), background, finalScale))
             combined *= finalScale / background
 
         return combined
