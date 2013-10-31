@@ -19,6 +19,7 @@ import lsst.afw.image as afwImage
 import lsst.afw.cameraGeom as afwCameraGeom
 import lsst.afw.cameraGeom.utils as afwCgu
 
+from hsc.pipe.base.mpi import MpiTask, thisNode
 
 def imagePoly(dataRef, log=None, imageName="calexp"):
     """Generate a SphericalConvexPolygon from an image
@@ -839,6 +840,7 @@ class MpiBackgroundReferenceConfig(BackgroundReferenceConfig):
     """
     makeCoaddTempExp = None
     def setDefaults(self):
+        super(MpiBackgroundReferenceConfig, self).setDefaults()
         self.construct.doWarp = False
 
 class MpiBackgroundReferenceTask(MpiTask, BackgroundReferenceTask):
@@ -855,7 +857,8 @@ class MpiBackgroundReferenceTask(MpiTask, BackgroundReferenceTask):
         @param selectDataList: List of SelectStruct for inputs
         """
         if self.rank == self.root:
-            super(MpiBackgroundReferenceTask, self).run(patchRefList, assignments)
+            self.log.info("%s: Root node calculating overlaps and assignment" % thisNode())
+            super(MpiBackgroundReferenceTask, self).run(patchRefList, selectDataList=selectDataList)
         else:
             # Must get the slave nodes into the same place the master node ends up
             self.constructBackgrounds(patchRefList, None)
@@ -870,19 +873,50 @@ class MpiBackgroundReferenceTask(MpiTask, BackgroundReferenceTask):
         @param assignments: List of a list of data references for each visit
         """
         import pbasf2
-        query = lambda patchRef: assignments[tuple(map(int, patchRef.dataId["patch"].split(",")))]
-        pbasf2.QueryToRoot(self.comm, self.constructSingleBackground, query, patchRefList, root=self.root)
+        if self.rank == self.root:
+            args = [Struct(patchRef=patchRef,
+                           assignment=assignments.get(tuple(map(int, patchRef.dataId["patch"].split(","))),
+                                                      None),
+                           ) for patchRef in patchRefList]
+        else:
+            args = None
+        self.log.info("%s: Ready to construct backgrounds" % thisNode())
+        pbasf2.ScatterJob(self.comm, self.constructSingleBackground, args, root=self.root)
 
-    def constructSingleBackground(self, patchRef, assignment):
+    def constructSingleBackground(self, struct):
         """Wrapper for ConstructBackgroundTask
 
         Only slave nodes execute this method.
 
+        Because only one argument may be passed, it is expected to
+        contain multiple elements, which are:
         @param patchRef: data reference for patch
         @param assignments: List of data references for each visit
         """
+        patchRef = struct.patchRef
+        assignment = struct.assignment
+        self.log.info("%s: Start constructing background for %s" % (thisNode(), patchRef.dataId))
+        if assignment is None:
+            self.log.warn("%s: No inputs assigned for %s" % (thisNode(), patchRef.dataId))
+            return
         try:
             self.construct.run(patchRef, assignment, coaddName=self.config.coaddName)
         except RuntimeError as e:
             self.log.warn("Unable to construct background reference for %s due to %s: %s" %
-                          (patch, e.__class__.__name__, e))
+                          (patchRef.dataId, e.__class__.__name__, e))
+        self.log.info("%s: Finished constructing background for %s" % (thisNode(), patchRef.dataId))
+
+
+"""
+This doesn't work as I've approached it: the matching is being performed patch by patch instead of
+consistently over the entire tract.  For example, an edge patch that doesn't have the same first warp as the
+others will end up matching to a different warp, resulting in a discontinuity across the patch boundary.  More
+subtle discontinuities will result from slightly different and discontinuous background matching solutions for
+neighbouring patches.
+
+What is required is to do the background matching solution over the entire tract at once.  The subtraction
+should be performed patch by patch on the slaves, and the background-difference samples returned to the master
+node for a single, continuous background-difference model to be constructed and returned to the slaves for
+application.  This is likely going to require some extra hooks in the background model code to merge multiple
+models from different parts of a larger image, and to allow pickling.
+"""

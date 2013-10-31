@@ -1,4 +1,5 @@
 import re
+import argparse
 
 import lsst.afw.geom as afwGeom
 from lsst.pex.config import Config, Field, ConfigurableField
@@ -10,8 +11,7 @@ from lsst.pipe.tasks.assembleCoadd import AssembleCoaddTask
 from lsst.pipe.tasks.processCoadd import ProcessCoaddTask
 from lsst.pipe.base import Struct, DataIdContainer
 from hsc.pipe.base.pbs import PbsCmdLineTask
-from hsc.pipe.base.mpi import (MpiTask, MpiMultiplexTaskRunner, MpiArgumentParser, getComm,
-                               thisNode, abortOnError)
+from hsc.pipe.base.mpi import (MpiTask, MpiMultiplexTaskRunner, MpiArgumentParser, thisNode, abortOnError)
 from hsc.pipe.tasks.background import MpiBackgroundReferenceTask
 
 ###for cls in (MakeCoaddTempExpTask, AssembleCoaddTask):
@@ -64,30 +64,38 @@ class StackConfig(Config):
     def setDefaults(self):
         self.select.retarget(WcsSelectImagesTask)
         self.makeCoaddTempExp.select.retarget(NullSelectImagesTask)
+        self.backgroundReference.construct.doWarp = False
         self.backgroundReference.select.retarget(NullSelectImagesTask)
         self.assembleCoadd.select.retarget(NullSelectImagesTask)
-        self.assembleCoadd.doMatchBackgrounds = False # We're not set up to do this yet
-#        self.makeCoaddTempExp.bgSubtracted = True # We're not background matching, so don't want background
         self.makeCoaddTempExp.doOverwrite = False
+
+        # Not quite ready for background matching yet
+        self.assembleCoadd.doMatchBackgrounds = False
+        self.makeCoaddTempExp.bgSubtracted = True
 
     def validate(self):
         if self.makeCoaddTempExp.coaddName != self.coaddName:
             raise RuntimeError("makeCoaddTempExp.coaddName and coaddName don't match")
         if self.assembleCoadd.coaddName != self.coaddName:
             raise RuntimeError("assembleCoadd.coaddName and coaddName don't match")
-        if self.backgroundReference.coaddName != self.coaddname:
+        if self.backgroundReference.coaddName != self.coaddName:
             raise RuntimeError("backgroundReference.coaddName and coaddName don't match")
-
-class StackTaskRunner(MpiMultiplexTaskRunner):
-    """An amalgam: MPI multiplexing, and coadding"""
-    pass
 
 class TractDataIdContainer(CoaddDataIdContainer):
     def makeDataRefList(self, namespace):
         """Make self.refList from self.idList
+
+        It's difficult to make a data reference that merely points to an entire
+        tract: there is no data product solely at the tract level.  Instead, we
+        generate a list of data references for patches within the tract.
         """
         datasetType = namespace.config.coaddName + "Coadd"
         validKeys = set(["tract", "filter"])
+
+        getPatchRefList = lambda tract: [namespace.butler.dataRef(datasetType=datasetType, tract=tract.getId(),
+                                                                  filter=dataId["filter"],
+                                                                  patch="%d,%d" % patch.getIndex()) for
+                                         patch in tract]
 
         for dataId in self.idList:
             for key in validKeys:
@@ -97,20 +105,19 @@ class TractDataIdContainer(CoaddDataIdContainer):
                 if key not in dataId:
                     raise argparse.ArgumentError(None, "--id must include " + key)
 
-            # tract and patch are required; iterate over them if not provided
-            if not "tract" in dataId:
-                addList = [dict(tract=tract.getId(), **dataId)
-                           for tract in self.getSkymap(namespace, datasetType) for patch in tract]
-            else:
-                addList = [dataId]
+            skymap = self.getSkymap(namespace, datasetType)
 
-            self.refList += [namespace.butler.dataRef(datasetType=datasetType, dataId=addId)
-                             for addId in addList
+            # tract is required; iterate over it if not provided
+            if not "tract" in dataId:
+                addList = [getPatchRefList(tract) for tract in skymap]
+            else:
+                addList = [getPatchRefList(skymap[dataId["tract"]])]
+            self.refList += addList
 
 class StackTask(PbsCmdLineTask, MpiTask):
     ConfigClass = StackConfig
     _DefaultName = "stacker" # "stack" conflicts with hscMosaic's StackTask.
-    RunnerClass = StackTaskRunner
+    RunnerClass = CoaddTaskRunner
 
     def __init__(self, *args, **kwargs):
         super(StackTask, self).__init__(*args, **kwargs)
@@ -130,7 +137,7 @@ class StackTask(PbsCmdLineTask, MpiTask):
         """
         parser = MpiArgumentParser(name=cls._DefaultName)
         parser.add_id_argument("--id", "deepCoadd", help="data ID, e.g. --id tract=12345 patch=1,2",
-                               ContainerClass=CoaddDataIdContainer, rootOnly=False)
+                               ContainerClass=TractDataIdContainer, rootOnly=False)
         # We don't want to be reading all the WCSes if we're only in the act of submitting to PBS
         SelectContainerClass = DataIdContainer if doPbs else SelectDataIdContainer
         parser.add_id_argument("--selectId", "raw", help="data ID, e.g. --selectId visit=6789 ccd=0..9",
@@ -143,7 +150,7 @@ class StackTask(PbsCmdLineTask, MpiTask):
         return time*numTargets/float(numNodes*numProcs)
 
     @abortOnError
-    def run(self, tractRef, selectDataList=[]):
+    def run(self, patchRefList, selectDataList=[]):
         """Run stacking on a tract
 
         All nodes execute this method, though the master and slaves
@@ -154,34 +161,20 @@ class StackTask(PbsCmdLineTask, MpiTask):
         """
         import pbasf2
         if self.rank == self.root:
-            patchRefList = self.getPatchRefList(tractRef)
             warpData = [Struct(patchRef=patchRef, selectDataList=selectDataList) for patchRef in patchRefList]
         else:
-            patchRefList = None
             warpData = None
         selectedData = pbasf2.ScatterJob(self.comm, self.warp, warpData, root=self.root)
-        self.log.info("%s: Start background reference %s" % (thisNode(), patchRef.dataId))
-        self.backgroundReference(patchRefList, selectDataList)
-        self.log.info("%s: Finished background reference %s" % (thisNode(), patchRef.dataId))
+#        self.backgroundReference.run(patchRefList, selectDataList)
 
         if self.rank == self.root:
             refNamer = lambda patchRef: tuple(map(int, patchRef.dataId["patch"].split(",")))
             lookup = dict(zip(map(refNamer, patchRefList), selectedData))
-            query = lambda patchRef: lookup[refNamer(patchRef)]
+            coaddData = [Struct(patchRef=patchRef, selectDataList=lookup[refNamer(patchRef)]) for
+                         patchRef in patchRefList]
         else:
-            query = None
-        pbasf2.QueryToRoot(self.comm, self.coadd, query, patchRefList, root=self.root)
-
-    def getPatchRefList(self, tractRef):
-        """Generate a list of patch references for a tract"""
-        coaddName = self.config.coaddName + "Coadd"
-        skyMap = patchRef.get(coaddName + "_skyMap")
-        tractId = patchRef.dataId["tract"]
-        tractInfo = skyMap[tractId]
-        xNum, yNum = tractInfo.getNumPatches()
-        butler = tractRef.getButler()
-        return [butler.dataRef(coaddName, tractRef.dataId, patch="%d,%d" % (x, y)) for
-                x in range(xNum) for y in range(yNum)]
+            coaddData = None
+        pbasf2.ScatterJob(self.comm, self.coadd, coaddData, root=self.root)
 
     def warp(self, data):
         """Warp all images for a patch
@@ -202,14 +195,18 @@ class StackTask(PbsCmdLineTask, MpiTask):
         self.log.info("%s: Finished warping %s" % (thisNode(), patchRef.dataId))
         return selectDataList
 
-    def coadd(self, patchRef, selectDataList):
+    def coadd(self, data):
         """Construct coadd for a patch and measure
 
         Only slave nodes execute this method.
 
+        Because only one argument may be passed, it is expected to
+        contain multiple elements, which are:
         @param patchRef: data reference for patch
         @param selectDataList: List of SelectStruct for inputs
         """
+        patchRef = data.patchRef
+        selectDataList = data.selectDataList
         self.log.info("%s: Start coadding %s" % (thisNode(), patchRef.dataId))
         coaddName = self.config.coaddName + "Coadd"
         coadd = None
@@ -220,12 +217,10 @@ class StackTask(PbsCmdLineTask, MpiTask):
         elif patchRef.datasetExists(coaddName):
             coadd = patchRef.get(coaddName, immediate=True)
         self.log.info("%s: Finished coadding %s" % (thisNode(), patchRef.dataId))
-        self.log.info("%s: Start processing %s" % (thisNode(), patchRef.dataId))
         if coadd is not None and (self.config.doOverwriteOutput or
                                   not patchRef.datasetExists(coaddName + "_src") or
                                   not patchRef.datasetExists(coaddName + "_calexp")):
             self.process(patchRef, coadd)
-        self.log.info("%s: Finished processing %s" % (thisNode(), patchRef.dataId))
 
     def selectExposures(self, patchRef, selectDataList):
         """Select exposures to operate upon, via the SelectImagesTask
@@ -247,6 +242,7 @@ class StackTask(PbsCmdLineTask, MpiTask):
         return [inputs[key(dataRef)] for dataRef in dataRefList]
 
     def process(self, patchRef, coadd):
+        self.log.info("%s: Start processing %s" % (thisNode(), patchRef.dataId))
         try:
             self.processCoadd.process(patchRef, coadd)
         except LsstCppException as e:
@@ -256,6 +252,7 @@ class StackTask(PbsCmdLineTask, MpiTask):
                 self.log.warn("No usable area for detection: %s" % patchRef.dataId)
                 return
             raise
+        self.log.info("%s: Finished processing %s" % (thisNode(), patchRef.dataId))
 
     def writeMetadata(self, dataRef):
         pass
