@@ -563,7 +563,8 @@ class BiasTask(DetrendTask):
 
 class DarkConfig(DetrendConfig):
     """Configuration for dark construction"""
-    darkTime = Field(dtype=str, default="DARKTIME", doc="Header keyword for time since last CCD wipe")
+    darkTime = Field(dtype=str, default="DARKTIME", doc="Header keyword for time since last CCD wipe, or None",
+                     optional=True)
 
 class DarkTask(DetrendTask):
     """Dark construction
@@ -594,7 +595,7 @@ class DarkTask(DetrendTask):
         """Retrieve the dark time"""
         if self.config.darkTime is not None:
             return exposure.getMetadata().get(self.config.darkTime)
-        return exposure.getCalib().getExpTime()
+        return exposure.getCalib().getExptime()
 
 
 class FlatCombineConfig(DetrendCombineConfig):
