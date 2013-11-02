@@ -68,6 +68,7 @@ class StackConfig(Config):
         self.backgroundReference.select.retarget(NullSelectImagesTask)
         self.assembleCoadd.select.retarget(NullSelectImagesTask)
         self.makeCoaddTempExp.doOverwrite = False
+        self.processCoadd.detection.thresholdType = "pixel_stdev"
 
         # Not quite ready for background matching yet
         self.assembleCoadd.doMatchBackgrounds = False
