@@ -240,6 +240,7 @@ class DetrendArgumentParser(MpiArgumentParser):
 
 class DetrendConfig(Config):
     """Configuration for constructing detrends"""
+    clobber = Field(dtype=bool, default=True, doc="Clobber existing processed images?")
     isr = ConfigurableField(target=hscIsr.SubaruIsrTask, doc="ISR configuration")
     dateObs = Field(dtype=str, default="dateObs", doc="Key for observation date in exposure registry")
     dateCalib = Field(dtype=str, default="calibDate", doc="Key for detrend date in calib registry")
@@ -425,15 +426,18 @@ class DetrendTask(PbsCmdLineTask, MpiTask):
             data = None
         return data
 
-    def process(self, ccdId):
+    def process(self, ccdId, outputName="postISRCCD"):
         """Process a CCD, specified by a data identifier
 
         Only slave nodes execute this method.
         """
         self.log.info("Processing %s on %s" % (ccdId, thisNode()))
         sensorRef = hscButler.getDataRef(self.butler, ccdId)
-        exposure = self.processSingle(sensorRef)
-        self.processWrite(sensorRef, exposure)
+        if not sensorRef.datasetExists(outputName) or self.config.clobber:
+            exposure = self.processSingle(sensorRef)
+            self.processWrite(sensorRef, exposure)
+        else:
+            exposure = sensorRef.get(outputName, immediate=True)
         return self.processResult(exposure)
 
     def processSingle(self, dataRef):
