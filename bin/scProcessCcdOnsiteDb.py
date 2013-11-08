@@ -22,6 +22,10 @@
 #
 from hsc.pipe.tasks import plotSetup # needed to enable non-gui matplotlib when DISPLAY is not set
 
+from hsc.pipe.tasks.deprecated import deprecated
+deprecated("scProcessCcdOnsiteDb.py", "hscProcessCcdOnsiteDb.py")
+
+
 from hsc.pipe.tasks.onsiteDb import SubaruProcessCcdOnsiteDbTask
 
 # Note from Jim: the code that was previously here has been moved

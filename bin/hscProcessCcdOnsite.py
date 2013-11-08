@@ -21,9 +21,8 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 
-from hsc.pipe.tasks.deprecated import deprecated
-deprecated("scProcessCcd.py", "hscProcessCcd.py")
+from hsc.pipe.tasks import plotSetup # needed to enable non-gui matplotlib when DISPLAY is not set
 
-from hsc.pipe.tasks.processCcd import SubaruProcessCcdTask
+from hsc.pipe.tasks.onsite import SubaruProcessCcdOnsiteTask
 
-SubaruProcessCcdTask.parseAndRun()
+SubaruProcessCcdOnsiteTask.parseAndRun()

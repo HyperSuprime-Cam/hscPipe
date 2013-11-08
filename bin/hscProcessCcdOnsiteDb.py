@@ -20,10 +20,16 @@
 # the GNU General Public License along with this program.  If not,
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
+from hsc.pipe.tasks import plotSetup # needed to enable non-gui matplotlib when DISPLAY is not set
 
-from hsc.pipe.tasks.deprecated import deprecated
-deprecated("scProcessCcd.py", "hscProcessCcd.py")
+from hsc.pipe.tasks.onsiteDb import SubaruProcessCcdOnsiteDbTask
 
-from hsc.pipe.tasks.processCcd import SubaruProcessCcdTask
+# Note from Jim: the code that was previously here has been moved
+# into the task class in python/hsc/pipe/tasks/onsiteDb.py, so we
+# don't have to duplicate the parse-and-run code in pipe_base.
+# This means the database is notified and filled each time a new
+# CCD is processed, rather than once for all CCDs.  But a comment
+# in the original code said that this script is only run on one
+# CCD at a time, so I think it doesn't matter.
 
-SubaruProcessCcdTask.parseAndRun()
+SubaruProcessCcdOnsiteDbTask.parseAndRun()

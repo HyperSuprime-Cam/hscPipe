@@ -21,9 +21,7 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 
-from hsc.pipe.tasks.deprecated import deprecated
-deprecated("scProcessCcd.py", "hscProcessCcd.py")
+from hsc.pipe.tasks.mergeStackSources import MergeStackSourcesTask
 
-from hsc.pipe.tasks.processCcd import SubaruProcessCcdTask
-
-SubaruProcessCcdTask.parseAndRun()
+result = MergeStackSourcesTask.parseAndRun()
+result.task.finish(result.parsedCmd.butler)

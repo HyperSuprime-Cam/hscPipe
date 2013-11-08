@@ -21,6 +21,9 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 
+from hsc.pipe.tasks.deprecated import deprecated
+deprecated("scProcessStack.py", "hscProcessStack.py")
+
 from hsc.pipe.tasks.processStack import ProcessStackTask
 
 ProcessStackTask.parseAndRun()

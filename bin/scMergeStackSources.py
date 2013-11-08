@@ -21,7 +21,9 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 
-from hsc.pipe.tasks.mergeStackSources import MergeStackSourcesTask
+from hsc.pipe.tasks.deprecated import deprecated
+deprecated("scMergeStackSources.py", "hscMergeStackSources.py")
 
+from hsc.pipe.tasks.mergeStackSources import MergeStackSourcesTask
 result = MergeStackSourcesTask.parseAndRun()
 result.task.finish(result.parsedCmd.butler)
