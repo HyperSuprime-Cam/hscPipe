@@ -7,7 +7,7 @@ import argparse
 import traceback
 
 from lsst.pex.config import Config, ConfigField, ConfigurableField, Field, ListField
-from lsst.pipe.base import Task, Struct, TaskRunner
+from lsst.pipe.base import Task, Struct, TaskRunner, ArgumentParser
 import lsst.daf.base as dafBase
 import lsst.afw.math as afwMath
 import lsst.afw.geom as afwGeom
@@ -20,8 +20,9 @@ import lsst.afw.geom.ellipses as afwEll
 import lsst.obs.subaru.isr as hscIsr
 
 import hsc.pipe.base.butler as hscButler
-from hsc.pipe.base.mpi import MpiTask, MpiArgumentParser, abortOnError, thisNode
-from hsc.pipe.base.pbs import PbsCmdLineTask
+from hsc.pipe.base.mpi import thisNode
+from hsc.pipe.base.pbs import PbsPoolTask
+from hsc.pipe.base.pool import Pool
 
 class DetrendStatsConfig(Config):
     """Parameters controlling background statistics"""
@@ -215,13 +216,13 @@ class DetrendIdAction(argparse.Action):
             output[name] = valueStr
         setattr(namespace, self.dest, output)
 
-class DetrendArgumentParser(MpiArgumentParser):
+class DetrendArgumentParser(ArgumentParser):
     """Add a --detrendId argument to the argument parser"""
     def __init__(self, calibName, *args, **kwargs):
         super(DetrendArgumentParser, self).__init__(*args, **kwargs)
         self.calibName = calibName
         self.add_id_argument("--id", datasetType="raw", level="visit",
-                             help="input identifiers, e.g., --id visit=123 ccd=4", rootOnly=False)
+                             help="input identifiers, e.g., --id visit=123 ccd=4")
         self.add_argument("--detrendId", nargs="*", action=DetrendIdAction, default={},
                           help="identifiers for detrend, e.g., --detrendId version=1",
                           metavar="KEY=VALUE1[^VALUE2[^VALUE3...]")
@@ -273,7 +274,7 @@ class DetrendTaskRunner(TaskRunner):
                 result = result,
             )
 
-class DetrendTask(PbsCmdLineTask, MpiTask):
+class DetrendTask(PbsPoolTask):
     """Base class for constructing detrends.
 
     This should be subclassed for each of the required detrend types.
@@ -306,7 +307,6 @@ class DetrendTask(PbsCmdLineTask, MpiTask):
         doPbs = kwargs.pop("doPbs", False)
         return DetrendArgumentParser(calibName=cls.calibName, name=cls._DefaultName, *args, **kwargs)
 
-    @abortOnError
     def run(self, expRefList, butler, detrendId):
         """Construct a detrend from a list of exposure references
 
@@ -318,37 +318,28 @@ class DetrendTask(PbsCmdLineTask, MpiTask):
         @param butler      Data butler
         @param detrendId   Identifier dict for detrend
         """
-        self.butler = butler
+        outputId = self.getOutputId(expRefList, detrendId)
+        ccdKeys, ccdIdLists = getCcdIdListFromExposures(expRefList, level="sensor")
 
-        if self.rank == self.root:
-            outputId = self.getOutputId(expRefList, detrendId)
-            ccdKeys, ccdIdLists = getCcdIdListFromExposures(expRefList, level="sensor")
+        # Ensure we can generate filenames for each output
+        for ccdName in ccdIdLists:
+            dataId = dict(outputId.items() + [(k, ccdName[i]) for i, k in enumerate(ccdKeys)])
+            try:
+                filename = butler.get(self.calibName + "_filename", dataId)
+            except Exception, e:
+                raise RuntimeError("Unable to determine output filename from %s: %s" % (dataId, e))
 
-            # Ensure we can generate filenames for each output
-            for ccdName in ccdIdLists:
-                dataId = dict(outputId.items() + [(k, ccdName[i]) for i, k in enumerate(ccdKeys)])
-                try:
-                    filename = self.butler.get(self.calibName + "_filename", dataId)
-                except Exception, e:
-                    raise RuntimeError("Unable to determine output filename from %s: %s" % (dataId, e))
-        else:
-            outputId = None
-            ccdKeys, ccdIdLists = None, {}
-
-        import pbasf2
-        ccdIdLists = pbasf2.Broadcast(self.comm, ccdIdLists, root=self.root)
+        pool = Pool()
+        pool.storeSet("butler", butler)
 
         # Scatter: process CCDs independently
-        data = self.scatterProcess(ccdKeys, ccdIdLists)
+        data = self.scatterProcess(pool, ccdKeys, ccdIdLists)
 
         # Gather: determine scalings
-        if self.rank == self.root:
-            scales = self.scale(ccdKeys, ccdIdLists, data)
-        else:
-            scales = None, None
+        scales = self.scale(ccdKeys, ccdIdLists, data)
 
         # Scatter: combine
-        self.scatterCombine(outputId, ccdKeys, ccdIdLists, scales)
+        self.scatterCombine(pool, outputId, ccdKeys, ccdIdLists, scales)
 
     def getOutputId(self, expRefList, detrendId):
         """Generate the data identifier for the output detrend
@@ -392,7 +383,7 @@ class DetrendTask(PbsCmdLineTask, MpiTask):
         """Determine the filter from a data identifier"""
         return dataId[self.config.filter]
 
-    def scatterProcess(self, ccdKeys, ccdIdLists):
+    def scatterProcess(self, pool, ccdKeys, ccdIdLists):
         """Scatter the processing among the nodes
 
         We scatter the data wider than the just the number of CCDs, to make
@@ -405,34 +396,29 @@ class DetrendTask(PbsCmdLineTask, MpiTask):
         @param ccdIdLists  Dict of data identifier lists for each CCD name
         @return Dict of lists of returned data for each CCD name
         """
-        if self.rank == self.root:
-            dataIdList = sum(ccdIdLists.values(), [])
-        else:
-            dataIdList = None
+        dataIdList = sum(ccdIdLists.values(), [])
+        self.log.info("Scatter processing")
 
-        self.log.info("Scatter processing on %s" % thisNode())
-        import pbasf2
-        resultList = pbasf2.ScatterJob(self.comm, self.process, dataIdList, root=self.root)
-        if self.rank == self.root:
-            # Piece everything back together
-            data = dict((ccdName, [None] * len(expList)) for ccdName, expList in ccdIdLists.items())
-            indices = dict(sum([[(tuple(dataId.values()), (ccdName, expNum))
-                                 for expNum, dataId in enumerate(expList)]
-                                for ccdName, expList in ccdIdLists.items()], []))
-            for dataId, result in zip(dataIdList, resultList):
-                ccdName, expNum = indices[tuple(dataId.values())]
-                data[ccdName][expNum] = result
-        else:
-            data = None
+        resultList = pool.scatterGather(self.process, True, dataIdList)
+
+        # Piece everything back together
+        data = dict((ccdName, [None] * len(expList)) for ccdName, expList in ccdIdLists.items())
+        indices = dict(sum([[(tuple(dataId.values()), (ccdName, expNum))
+                             for expNum, dataId in enumerate(expList)]
+                            for ccdName, expList in ccdIdLists.items()], []))
+        for dataId, result in zip(dataIdList, resultList):
+            ccdName, expNum = indices[tuple(dataId.values())]
+            data[ccdName][expNum] = result
+
         return data
 
-    def process(self, ccdId, outputName="postISRCCD"):
+    def process(self, cache, ccdId, outputName="postISRCCD"):
         """Process a CCD, specified by a data identifier
 
         Only slave nodes execute this method.
         """
         self.log.info("Processing %s on %s" % (ccdId, thisNode()))
-        sensorRef = hscButler.getDataRef(self.butler, ccdId)
+        sensorRef = hscButler.getDataRef(cache.butler, ccdId)
         if not sensorRef.datasetExists(outputName) or self.config.clobber:
             exposure = self.processSingle(sensorRef)
             self.processWrite(sensorRef, exposure)
@@ -485,7 +471,7 @@ class DetrendTask(PbsCmdLineTask, MpiTask):
         return dict((name, Struct(ccdScale=None, expScales=[None] * len(ccdIdLists[name])))
                     for name in ccdIdLists.keys())
 
-    def scatterCombine(self, outputId, ccdKeys, ccdIdLists, scales):
+    def scatterCombine(self, pool, outputId, ccdKeys, ccdIdLists, scales):
         """Scatter the combination across multiple nodes
 
         In this case, we can only scatter across as many nodes as
@@ -498,17 +484,13 @@ class DetrendTask(PbsCmdLineTask, MpiTask):
         @param ccdIdLists  Dict of data identifier lists for each CCD name
         @param scales      Dict of structs with scales, for each CCD name
         """
-        self.log.info("Scatter combination on %s" % thisNode())
-        if self.rank == self.root:
-            data = [Struct(ccdIdList=ccdIdLists[ccdName], scales=scales[ccdName],
-                           outputId=dict(outputId.items() + [(k,ccdName[i]) for i, k in enumerate(ccdKeys)]))
-                    for ccdName in ccdIdLists.keys()]
-        else:
-            data = None
-        import pbasf2
-        pbasf2.ScatterJob(self.comm, self.combine, data, root=self.root)
+        self.log.info("Scatter combination")
+        data = [Struct(ccdIdList=ccdIdLists[ccdName], scales=scales[ccdName],
+                       outputId=dict(outputId.items() + [(k,ccdName[i]) for i, k in enumerate(ccdKeys)]))
+                for ccdName in ccdIdLists.keys()]
+        pool.scatterGather(self.combine, True, data)
 
-    def combine(self, struct):
+    def combine(self, cache, struct):
         """Combine multiple exposures of a particular CCD and write the output
 
         Only the slave nodes execute this method.
@@ -519,13 +501,13 @@ class DetrendTask(PbsCmdLineTask, MpiTask):
                            ccdScale is final scale for combined image)
         @param outputId    Data identifier for combined image (fully qualified for this CCD)
         """
-        dataRefList = [hscButler.getDataRef(self.butler, dataId) for dataId in struct.ccdIdList]
+        dataRefList = [hscButler.getDataRef(cache.butler, dataId) for dataId in struct.ccdIdList]
         self.log.info("Combining %s on %s" % (struct.outputId, thisNode()))
         detrend = self.combination.run(dataRefList, expScales=struct.scales.expScales,
                                        finalScale=struct.scales.ccdScale)
-        self.write(detrend, struct.outputId)
+        self.write(cache.butler, detrend, struct.outputId)
 
-    def write(self, exposure, dataId):
+    def write(self, butler, exposure, dataId):
         """Write the final combined detrend
 
         Only the slave nodes execute this method
@@ -534,7 +516,7 @@ class DetrendTask(PbsCmdLineTask, MpiTask):
         @param dataId    Data identifier
         """
         self.log.info("Writing %s on %s" % (dataId, thisNode()))
-        self.butler.put(exposure, self.calibName, dataId)
+        butler.put(exposure, self.calibName, dataId)
 
 
 class BiasConfig(DetrendConfig):
