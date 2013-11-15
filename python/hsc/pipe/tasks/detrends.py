@@ -399,7 +399,7 @@ class DetrendTask(PbsPoolTask):
         dataIdList = sum(ccdIdLists.values(), [])
         self.log.info("Scatter processing")
 
-        resultList = pool.scatterGather(self.process, True, dataIdList)
+        resultList = pool.map(self.process, True, dataIdList)
 
         # Piece everything back together
         data = dict((ccdName, [None] * len(expList)) for ccdName, expList in ccdIdLists.items())
@@ -488,7 +488,7 @@ class DetrendTask(PbsPoolTask):
         data = [Struct(ccdIdList=ccdIdLists[ccdName], scales=scales[ccdName],
                        outputId=dict(outputId.items() + [(k,ccdName[i]) for i, k in enumerate(ccdKeys)]))
                 for ccdName in ccdIdLists.keys()]
-        pool.scatterGather(self.combine, True, data)
+        pool.map(self.combine, True, data)
 
     def combine(self, cache, struct):
         """Combine multiple exposures of a particular CCD and write the output
