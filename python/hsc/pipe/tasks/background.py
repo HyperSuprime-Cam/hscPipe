@@ -19,7 +19,8 @@ import lsst.afw.image as afwImage
 import lsst.afw.cameraGeom as afwCameraGeom
 import lsst.afw.cameraGeom.utils as afwCgu
 
-from hsc.pipe.base.mpi import MpiTask, thisNode
+from hsc.pipe.base.mpi import thisNode
+from hsc.pipe.base.pool import Pool
 
 def imagePoly(dataRef, log=None, imageName="calexp"):
     """Generate a SphericalConvexPolygon from an image
@@ -606,28 +607,57 @@ class ConstructionTask(Task):
         self.makeSubtask("scaling")
         self.makeSubtask("matchBackgrounds")
 
-    def run(self, patchRef, assignments, coaddName="deep"):
+    def run(self, patchRefList, visitList, overlaps, coaddName="deep"):
         """Construct and write a background reference image from multiple inputs
 
         This is a persistence layer over the main construction
         method, 'construct'.
 
-        @param patchRef: data reference for a patch
-        @param assignments: list of a list of data references for each visit
+        @param patchRefList: List of patch data references
+        @param assignmentsList: Embedded lists: patches holding visits holding CCD data references
         @param coaddName: name of coadd
         @return background reference
         """
+        pool = Pool()
         datasetType = coaddName + "Coadd_bgRef"
-        if patchRef.datasetExists(datasetType):
-            if not self.config.clobber:
-                self.log.warn("Refusing to clobber existing background reference for %s" % (patchRef.dataId,))
-                return patchRef.get(datasetType, immediate=False)
-            self.log.warn("Clobbering existing background reference for %s" % (patchRef.dataId,))
+        patchIdList = [patchRef.dataId for patchRef in patchRefList]
 
-        bgExposure = self.construct(patchRef, assignments, coaddName=coaddName)
-        self.log.info("Persisting background reference for %s" % patchRef.dataId)
-        patchRef.put(bgExposure, datasetType)
-        return bgExposure
+        # Check for existing data
+        if not self.config.clobber:
+            self.log.info("Checking for existing %s data" % datasetType)
+            # XXX does this need to be parallel?
+            pool.scatterGather(self.checkExisting, True, patchIdList, datasetType)
+
+        # Start with the first visit
+        visit = visitList.pop(0)
+        pool.scatterGather(self.firstVisit, True, patchIdList, visit=visit, overlaps=overlaps,
+                           coaddName=coaddName)
+
+        # Add in each visit one by one
+        for visit in visitList:
+            # Generate background matching model
+            bgModelList = pool.scatterGatherToPrevious(self.matchNextVisit, patchIdList, visit=visit,
+                                                       overlaps=overlaps, coaddName=coaddName)
+
+            # Merge background models
+            bgModel = self.mergeBackgroundModels(bgModelList)
+
+            # Use common background model when adding the next visit
+            pool.scatterGatherToPrevious(self.addNextVisit, patchIdList, visit=visit, overlaps=overlaps,
+                                         cooadName=coaddName)
+
+        # Finish up and write
+        pool.scatterGatherToPrevious(self.finalize, patchIdList, datasetType=datasetType)
+
+    def checkExisting(self, cache, patchId, datasetType):
+        butler = cache.butler
+        patchRef = getDataRef(butler, patchId)
+        if patchRef.datasetExists(datasetType):
+            raise RuntimeError("Background reference exists for %s" % (patchRef.dataId,))
+
+    def firstVisit(self, cache, patchId, visit, overlaps, coaddName):
+        patchRef = getDataRef(cache.butler, patchId)
+        XXXX
 
     def construct(self, patchRef, assignments, coaddName="deep"):
         """Construct a background reference image from multiple inputs
@@ -712,17 +742,13 @@ class ConstructionTask(Task):
         tempExpName = coaddName + "Coadd_tempExp"
         return patchRef.getButler().dataRef(datasetType=tempExpName, dataId=dataId)
 
-    def addWarp(self, bg, warpRef, weight, coaddName="deep"):
-        """Add a warp into the background reference
+    def matchWarp(self, bg, warpRef, weight, coaddName="deep"):
+        """Match a new warp to the background reference
 
-        We match the warp to the background reference first.  Note that
-        the order in which warps are added is important, and must be
-        constant across all patches.
-
-        @param bg: background reference struct (exposure,weight elements), or None
+        @param bg: background reference struct (exposure,weight elements)
         @param warpRef: warp data reference
         @param weight: weight image (or lightweight version)
-        @return background reference struct
+        @return background model
         """
         warp = warpRef.get(coaddName + "Coadd_tempExp", immediate=True)
         self.scaling.computeImageScaler(warp, warpRef).scaleMaskedImage(warp.getMaskedImage())
@@ -742,22 +768,18 @@ class ConstructionTask(Task):
         varArray[bad] = 0.0
         del bad
 
-        if bg is None:
-            warpImage = warp.getMaskedImage()
-            warpImage *= weight
-            return Struct(exposure=warp, weight=weight)
+        # Chop off overlaps so we don't step on other patches' toes
+        bbox = patchInfo.getInnerBBox()
+        bgImage = afwImage.MaskedImageF(bg.exposure.getMaskedImage(), bbox).clone()
+        subWeight = afwImage.ImageF(bg.weight, bbox)
 
-        bgExposure = bg.exposure.clone()
-        bgImage = bgExposure.getMaskedImage()
-        bgImage /= bg.weight
-        result = self.matchBackgrounds.matchBackgrounds(bgExposure, warp)
-        # XXX evaluate results before blindly accepting
+        # Undo weighting of background, so we can match
+        bgImage /= subWeight
 
-        warp.getMaskedImage().__imul__(weight)
-        bg.exposure.getMaskedImage().__iadd__(warp.getMaskedImage())
-        bg.weight += weight
+        bgImage.__isub__(warp.getMaskedImage())
+        bgModel = afwMath.BackgroundMIF(bgImage, bgCtrl)
+        return bgModel
 
-        return bg
 
 
 class BackgroundReferenceConfig(Config):
