@@ -90,13 +90,16 @@ class DetrendCombineTask(Task):
         # Combine images
         combined = afwImage.ImageF(width, height)
         numImages = len(sensorRefList)
-        imageList = afwImage.vectorMaskedImageF(numImages)
+        imageList = [None]*numImages
         for start in range(0, height, self.config.rows):
             rows = min(self.config.rows, height - start)
             box = afwGeom.Box2I(afwGeom.Point2I(0, start), afwGeom.Extent2I(width, rows))
             subCombined = combined.Factory(combined, box)
 
             for i, sensorRef in enumerate(sensorRefList):
+                if sensorRef is None:
+                    imageList[i] = None
+                    continue
                 exposure = sensorRef.get(inputName + "_sub", bbox=box)
                 if expScales is not None:
                     self.applyScale(exposure, expScales[i])
@@ -116,6 +119,8 @@ class DetrendCombineTask(Task):
         """Get dimensions of the inputs"""
         dimList = []
         for sensorRef in sensorRefList:
+            if sensorRef is None:
+                continue
             md = sensorRef.get(inputName + "_md")
             dimList.append(afwGeom.Extent2I(md.get("NAXIS1"), md.get("NAXIS2")))
         return getSize(dimList)
@@ -133,6 +138,7 @@ class DetrendCombineTask(Task):
         @param imageList   List of input images
         @param stats       Statistics control
         """
+        imageList = afwImage.vectorMaskedImageF([image for image in imageList if image is not None])
         if False:
             # In-place stacks are now supported on LSST's afw, but not yet on HSC
             afwMath.statisticsStack(target, imageList, self.config.combine, stats)
@@ -403,10 +409,12 @@ class DetrendTask(PbsPoolTask):
 
         # Piece everything back together
         data = dict((ccdName, [None] * len(expList)) for ccdName, expList in ccdIdLists.items())
-        indices = dict(sum([[(tuple(dataId.values()), (ccdName, expNum))
+        indices = dict(sum([[(tuple(dataId.values()) if dataId is not None else None, (ccdName, expNum))
                              for expNum, dataId in enumerate(expList)]
                             for ccdName, expList in ccdIdLists.items()], []))
         for dataId, result in zip(dataIdList, resultList):
+            if dataId is None:
+                continue
             ccdName, expNum = indices[tuple(dataId.values())]
             data[ccdName][expNum] = result
 
@@ -417,9 +425,12 @@ class DetrendTask(PbsPoolTask):
 
         Only slave nodes execute this method.
         """
+        if ccdId is None:
+            self.log.warn("Null identifier received on %s" % thisNode())
+            return None
         self.log.info("Processing %s on %s" % (ccdId, thisNode()))
         sensorRef = hscButler.getDataRef(cache.butler, ccdId)
-        if not sensorRef.datasetExists(outputName) or self.config.clobber:
+        if self.config.clobber or not sensorRef.datasetExists(outputName):
             exposure = self.processSingle(sensorRef)
             self.processWrite(sensorRef, exposure)
         else:
@@ -501,7 +512,8 @@ class DetrendTask(PbsPoolTask):
                            ccdScale is final scale for combined image)
         @param outputId    Data identifier for combined image (fully qualified for this CCD)
         """
-        dataRefList = [hscButler.getDataRef(cache.butler, dataId) for dataId in struct.ccdIdList]
+        dataRefList = [hscButler.getDataRef(cache.butler, dataId) if dataId is not None else None for
+                       dataId in struct.ccdIdList]
         self.log.info("Combining %s on %s" % (struct.outputId, thisNode()))
         detrend = self.combination.run(dataRefList, expScales=struct.scales.expScales,
                                        finalScale=struct.scales.ccdScale)
@@ -615,7 +627,10 @@ class FlatCombineTask(DetrendCombineTask):
         """Multiply the combined flat-field by the Jacobian"""
         combined = super(FlatCombineTask, self).run(sensorRefList, expScales=expScales, finalScale=finalScale)
         if self.config.doJacobian:
-            jacobian = self.getJacobian(sensorRefList[0], combined.getDimensions())
+            dataRef = next((dataRef for dataref in sensorRefList if dataRef is not None), None)
+            if dataRef is None:
+                raise RuntimeError("No non-None data references: %s" % sensorRefList)
+            jacobian = self.getJacobian(dataRef, combined.getDimensions())
             combined *= jacobian
         return combined
 
