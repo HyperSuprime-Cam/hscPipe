@@ -2,6 +2,7 @@
 
 import os
 import sys
+import math
 import numpy
 import argparse
 import traceback
@@ -16,6 +17,7 @@ import lsst.afw.image as afwImage
 import lsst.afw.cameraGeom as cameraGeom
 import lsst.meas.algorithms as measAlg
 import lsst.afw.geom.ellipses as afwEll
+from lsst.pipe.tasks.repair import RepairTask
 
 import lsst.obs.subaru.isr as hscIsr
 
@@ -559,8 +561,17 @@ class BiasTask(DetrendTask):
 
 class DarkConfig(DetrendConfig):
     """Configuration for dark construction"""
+    doRepair = Field(dtype=bool, default=True, doc="Repair artifacts?")
+    psfFwhm = Field(dtype=float, default=3.0, doc="Repair PSF FWHM (pixels)")
+    psfSize = Field(dtype=int, default=21, doc="Repair PSF size (pixels)")
+    crGrow = Field(dtype=int, default=2, doc="Grow radius for CR (pixels)")
+    repair = ConfigurableField(target=RepairTask, doc="Task to repair artifacts")
     darkTime = Field(dtype=str, default="DARKTIME", doc="Header keyword for time since last CCD wipe, or None",
                      optional=True)
+
+    def setDefaults(self):
+        super(DarkConfig, self).setDefaults()
+        self.combination.mask.append("CR")
 
 class DarkTask(DetrendTask):
     """Dark construction
@@ -574,6 +585,10 @@ class DarkTask(DetrendTask):
     calibName = "dark"
     FilterName = "NONE"
 
+    def __init__(self, *args, **kwargs):
+        super(DarkTask, self).__init__(*args, **kwargs)
+        self.makeSubtask("repair")
+
     @classmethod
     def applyOverrides(cls, config):
         """Overrides to apply for dark construction"""
@@ -584,6 +599,19 @@ class DarkTask(DetrendTask):
     def processSingle(self, sensorRef):
         """Divide each processed image by the dark time to generate images of the dark rate"""
         exposure = super(DarkTask, self).processSingle(sensorRef)
+
+        if self.config.doRepair:
+            psf = measAlg.DoubleGaussianPsf(self.config.psfSize, self.config.psfSize,
+                                            self.config.psfFwhm/(2*math.sqrt(2*math.log(2))))
+            exposure.setPsf(psf)
+            self.repair.run(exposure, keepCRs=False)
+            if self.config.crGrow > 0:
+                mask = exposure.getMaskedImage().getMask().clone()
+                mask &= mask.getPlaneBitMask("CR")
+                fpSet = afwDet.FootprintSet(mask.convertU(), afwDet.Threshold(0.5))
+                fpSet = afwDet.FootprintSet(fpSet, self.config.crGrow, True)
+                fpSet.setMask(exposure.getMaskedImage().getMask(), "CR")
+
         mi = exposure.getMaskedImage()
         mi /= self.getDarkTime(exposure)
         return exposure
