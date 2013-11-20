@@ -291,6 +291,7 @@ class DetrendTask(PbsPoolTask):
     """
     ConfigClass = DetrendConfig
     RunnerClass = DetrendTaskRunner
+    FilterName = None
 
     def __init__(self, **kwargs):
         """Constructor.
@@ -363,7 +364,7 @@ class DetrendTask(PbsPoolTask):
         filterName = None
         for expId in expIdList:
             midTime += self.getMjd(expId)
-            thisFilter = self.getFilter(expId)
+            thisFilter = self.getFilter(expId) if self.FilterName is None else self.FilterName
             if filterName is None:
                 filterName = thisFilter
             elif filterName != thisFilter:
@@ -545,6 +546,7 @@ class BiasTask(DetrendTask):
     ConfigClass = BiasConfig
     _DefaultName = "bias"
     calibName = "bias"
+    FilterName = "NONE"
 
     @classmethod
     def applyOverrides(cls, config):
@@ -570,6 +572,7 @@ class DarkTask(DetrendTask):
     ConfigClass = DarkConfig
     _DefaultName = "dark"
     calibName = "dark"
+    FilterName = "NONE"
 
     @classmethod
     def applyOverrides(cls, config):
@@ -861,6 +864,7 @@ class MaskTask(DetrendTask):
     ConfigClass = MaskConfig
     _DefaultName = "mask"
     calibName = "mask"
+    FilterName = "NONE"
 
     @classmethod
     def applyOverrides(cls, config):
