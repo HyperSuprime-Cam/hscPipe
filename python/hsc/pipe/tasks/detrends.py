@@ -339,7 +339,7 @@ class DetrendTask(PbsPoolTask):
                 raise RuntimeError("Unable to determine output filename from %s: %s" % (dataId, e))
 
         pool = Pool()
-        pool.storeSet("butler", butler)
+        pool.storeSet(butler=butler)
 
         # Scatter: process CCDs independently
         data = self.scatterProcess(pool, ccdKeys, ccdIdLists)
