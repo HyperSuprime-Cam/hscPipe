@@ -9,12 +9,12 @@ from lsst.pipe.tasks.selectImages import BaseSelectImagesTask, WcsSelectImagesTa
 from lsst.pipe.tasks.makeCoaddTempExp import MakeCoaddTempExpTask
 from lsst.pipe.tasks.assembleCoadd import AssembleCoaddTask
 from lsst.pipe.tasks.processCoadd import ProcessCoaddTask
-from lsst.pipe.base import Struct, DataIdContainer
-from hsc.pipe.base.pbs import PbsCmdLineTask
-from hsc.pipe.base.pool import Pool
-from hsc.pipe.base.mpi import thisNode, abortOnError
+from lsst.pipe.base import Struct, DataIdContainer, ArgumentParser
+from hsc.pipe.base.pbs import PbsPoolTask
+from hsc.pipe.base.pool import Pool, abortOnError
+from hsc.pipe.base.mpi import thisNode
 from hsc.pipe.base.butler import getDataRef
-from hsc.pipe.tasks.background import MpiBackgroundReferenceTask
+from hsc.pipe.tasks.background import BackgroundReferenceTask
 
 ###for cls in (MakeCoaddTempExpTask, AssembleCoaddTask):
 ###    cls = wrapTask(cls, globals())
@@ -117,6 +117,7 @@ class TractDataIdContainer(CoaddDataIdContainer):
             self.refList += addList
 
 class StackTaskRunner(CoaddTaskRunner):
+    @staticmethod
     def getTargetList(parsedCmd, **kwargs):
         """Get bare butler into Task"""
         return CoaddTaskRunner.getTargetList(parsedCmd, butler=parsedCmd.butler, **kwargs)
@@ -142,11 +143,11 @@ class StackTask(PbsPoolTask):
         """
         parser = ArgumentParser(name=cls._DefaultName)
         parser.add_id_argument("--id", "deepCoadd", help="data ID, e.g. --id tract=12345 patch=1,2",
-                               ContainerClass=TractDataIdContainer, rootOnly=False)
+                               ContainerClass=TractDataIdContainer)
         # We don't want to be reading all the WCSes if we're only in the act of submitting to PBS
         SelectContainerClass = DataIdContainer if doPbs else SelectDataIdContainer
         parser.add_id_argument("--selectId", "raw", help="data ID, e.g. --selectId visit=6789 ccd=0..9",
-                               ContainerClass=SelectContainerClass, rootOnly=True)
+                               ContainerClass=SelectContainerClass)
         return parser
 
     @classmethod
@@ -155,7 +156,7 @@ class StackTask(PbsPoolTask):
         return time*numTargets/float(numNodes*numProcs)
 
     @abortOnError
-    def run(self, butler, patchRefList, selectDataList=[]):
+    def run(self, patchRefList, butler, selectDataList=[]):
         """Run stacking on a tract
 
         All nodes execute this method, though the master and slaves
@@ -165,17 +166,18 @@ class StackTask(PbsPoolTask):
         @param selectDataList: List of SelectStruct for inputs
         """
         pool = Pool()
-        pool.store("butler", butler)
-        warpData = [Struct(patchId=patchRef.dataId, selectDataList=selectDataList) for
+        pool.storeSet(warpType=self.config.coaddName + "Coadd_tempExp",
+                      coaddType=self.config.coaddName + "Coadd")
+        warpData = [Struct(patchRef=patchRef, selectDataList=selectDataList) for
                     patchRef in patchRefList]
-        selectedData = pool.scatterGather(self.warp, True, warpData)
+        selectedData = pool.map(self.warp, True, warpData)
 #        self.backgroundReference.run(patchRefList, selectDataList)
 
         refNamer = lambda patchRef: tuple(map(int, patchRef.dataId["patch"].split(",")))
         lookup = dict(zip(map(refNamer, patchRefList), selectedData))
-        coaddData = [Struct(patchId=patchRef.dataId, selectDataList=lookup[refNamer(patchRef)]) for
+        coaddData = [Struct(patchRef=patchRef, selectDataList=lookup[refNamer(patchRef)]) for
                      patchRef in patchRefList]
-        pool.scatterGather(self.coadd, True, coaddData)
+        pool.map(self.coadd, True, coaddData)
 
     def warp(self, cache, data):
         """Warp all images for a patch
@@ -184,14 +186,12 @@ class StackTask(PbsPoolTask):
 
         Because only one argument may be passed, it is expected to
         contain multiple elements, which are:
-        @param patchId: data reference for patch
+        @param patchRef: data reference for patch
         @param selectDataList: List of SelectStruct for inputs
         @return selectDataList with non-overlapping elements removed
         """
-        patchId = data.patchId
+        patchRef = data.patchRef
         selectDataList = data.selectDataList
-        butler = cache.butler
-        patchRef = getDataRef(butler, patchId)
         self.log.info("%s: Start warping %s" % (thisNode(), patchRef.dataId))
         selectDataList = self.selectExposures(patchRef, selectDataList)
         self.makeCoaddTempExp.run(patchRef, selectDataList)
@@ -208,23 +208,21 @@ class StackTask(PbsPoolTask):
         @param patchRef: data reference for patch
         @param selectDataList: List of SelectStruct for inputs
         """
-        patchId = data.patchId
+        patchRef = data.patchRef
         selectDataList = data.selectDataList
         butler = cache.butler
-        patchRef = getDataRef(butler, patchId)
         self.log.info("%s: Start coadding %s" % (thisNode(), patchRef.dataId))
-        coaddName = self.config.coaddName + "Coadd"
         coadd = None
-        if self.config.doOverwriteCoadd or not patchRef.datasetExists(coaddName):
+        if self.config.doOverwriteCoadd or not patchRef.datasetExists(cache.coaddType):
             coaddResults = self.assembleCoadd.run(patchRef, selectDataList)
             if coaddResults is not None:
                 coadd = coaddResults.coaddExposure
-        elif patchRef.datasetExists(coaddName):
-            coadd = patchRef.get(coaddName, immediate=True)
+        elif patchRef.datasetExists(cache.coaddType):
+            coadd = patchRef.get(cache.coaddType, immediate=True)
         self.log.info("%s: Finished coadding %s" % (thisNode(), patchRef.dataId))
         if coadd is not None and (self.config.doOverwriteOutput or
-                                  not patchRef.datasetExists(coaddName + "_src") or
-                                  not patchRef.datasetExists(coaddName + "_calexp")):
+                                  not patchRef.datasetExists(cache.coaddType + "_src") or
+                                  not patchRef.datasetExists(cache.coaddType + "_calexp")):
             self.process(patchRef, coadd)
 
     def selectExposures(self, patchRef, selectDataList):
