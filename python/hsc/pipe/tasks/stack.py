@@ -165,19 +165,19 @@ class StackTask(PbsPoolTask):
         @param tractRef: Data reference for tract
         @param selectDataList: List of SelectStruct for inputs
         """
-        pool = Pool()
+        pool = Pool("stacker")
         pool.storeSet(warpType=self.config.coaddName + "Coadd_tempExp",
                       coaddType=self.config.coaddName + "Coadd")
         warpData = [Struct(patchRef=patchRef, selectDataList=selectDataList) for
                     patchRef in patchRefList]
-        selectedData = pool.map(self.warp, True, warpData)
+        selectedData = pool.map(self.warp, warpData)
 #        self.backgroundReference.run(patchRefList, selectDataList)
 
         refNamer = lambda patchRef: tuple(map(int, patchRef.dataId["patch"].split(",")))
         lookup = dict(zip(map(refNamer, patchRefList), selectedData))
         coaddData = [Struct(patchRef=patchRef, selectDataList=lookup[refNamer(patchRef)]) for
                      patchRef in patchRefList]
-        pool.map(self.coadd, True, coaddData)
+        pool.map(self.coadd, coaddData)
 
     def warp(self, cache, data):
         """Warp all images for a patch
@@ -210,7 +210,6 @@ class StackTask(PbsPoolTask):
         """
         patchRef = data.patchRef
         selectDataList = data.selectDataList
-        butler = cache.butler
         self.log.info("%s: Start coadding %s" % (thisNode(), patchRef.dataId))
         coadd = None
         if self.config.doOverwriteCoadd or not patchRef.datasetExists(cache.coaddType):
@@ -260,6 +259,7 @@ class StackTask(PbsPoolTask):
 
     def writeMetadata(self, dataRef):
         pass
+
 
 """
 StackLauncher:
