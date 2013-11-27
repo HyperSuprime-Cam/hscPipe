@@ -24,7 +24,7 @@ import lsst.afw.cameraGeom.utils as afwCgu
 import lsst.meas.algorithms as measAlg
 
 from hsc.pipe.base.mpi import thisNode
-from hsc.pipe.base.pool import Pool
+from hsc.pipe.base.pool import Pool, Debugger
 from hsc.pipe.base.pbs import PbsPoolTask
 
 def imagePoly(dataRef, log=None, imageName="calexp"):
@@ -633,22 +633,16 @@ class ConstructionTask(Task):
 
         butler = patchRefList[0].getButler()
 
-        pool = Pool()
+        pool = Pool("background")
         pool.storeSet(butler=butler, coaddName=coaddName, visitKeys=visitKeys,
-                      warpType=warpType, bgRefType=bgRefType,
-                      skyInfo={}, bgRef={}, bgWeight={}, warp={})
-
-
-        # XXX debugging
-#        patchRefList = [patchRef for patchRef in patchRefList if patchRef.dataId["patch"] in ("1,1", "1,2")]
-
-
+                      warpType=warpType, bgRefType=bgRefType)
 
         # Check for existing data
         if not self.config.clobber:
             self.log.info("Checking for existing %s data" % bgRefType)
-            # XXX does this need to be parallel?
-            pool.map(self.checkExisting, True, [patchRef.dataId for patchRef in patchRefList])
+            for patchRef in patchRefList:
+                if patchRef.datasetExists(bgRefType):
+                    raise RuntimeError("Background reference exists for %s" % (patchRef.dataId,))
 
 
         def extractPatchData(visit):
@@ -664,7 +658,7 @@ class ConstructionTask(Task):
         # Start with the first visit
         patchIdList = [patchRef.dataId for patchRef in patchRefList]
         visit = visitList.pop(0)
-        pool.map(self.firstVisit, True, extractPatchData(visit), visit)
+        pool.map(self.firstVisit, extractPatchData(visit), visit)
 
         # Add in each visit one by one
         for visit in visitList:
@@ -680,25 +674,22 @@ class ConstructionTask(Task):
         # Finish up and write
         pool.mapToPrevious(self.finalize, patchRefList)
 
-    def checkExisting(self, cache, patchId):
-        if cache.butler.datasetExists(cache.bgRefType, patchId):
-            raise RuntimeError("Background reference exists for %s" % (patchId,))
-
     def firstVisit(self, cache, patchData, visit):
         patchRef = patchData.patchRef
         calexpRefList = patchData.calexpRefList
         patchIndex = getPatchIndex(patchRef.dataId)
         skyInfo = getSkyInfo(cache.coaddName, patchRef)
-        cache.skyInfo[patchIndex] = skyInfo
+        cache.skyInfo = skyInfo
         dataId = dict(zip(cache.visitKeys, visit))
         if patchRef.datasetExists(cache.warpType, **dataId):
-            self.log.info("Creating background reference for %s from %s" % (patchIndex, dataId))
+            self.log.info("%s: Creating background reference for %s from %s" %
+                          (thisNode(), patchIndex, dataId))
             warp = self.getWarp(patchRef, dataId, cache.warpType)
             weight = self.generateWeight(skyInfo, calexpRefList, warp)
             warp.getMaskedImage().__imul__(weight)
         else:
             # Create a blank image we can use as a base
-            self.log.info("Creating blank background reference for %s" % (patchIndex,))
+            self.log.info("%s: Creating blank background reference for %s" % (thisNode(), patchIndex))
             image = afwImage.MaskedImageF(skyInfo.bbox)
             image.setXY0(skyInfo.bbox.getMin())
             maskVal = image.getMask().getMaskPlane("EDGE")
@@ -706,8 +697,8 @@ class ConstructionTask(Task):
             warp = afwImage.makeExposure(image, skyInfo.wcs)
             weight = afwImage.ImageF(skyInfo.bbox)
             weight.set(0.0)
-        cache.bgRef[patchIndex] = warp
-        cache.bgWeight[patchIndex] = weight
+        cache.bgRef = warp
+        cache.bgWeight = weight
 
 #        ds9.mtv(warp, frame=1)
 #        ds9.mtv(weight, frame=2)
@@ -731,15 +722,18 @@ class ConstructionTask(Task):
     def matchNextVisit(self, cache, patchRef, visit):
         patchIndex = getPatchIndex(patchRef.dataId)
         dataId = dict(zip(cache.visitKeys, visit))
-        self.log.info("Matching %s to %s" % (patchIndex, dataId))
+        self.log.info("%s: Matching %s to %s" % (thisNode(), patchIndex, dataId))
         print patchRef.dataId
         print dataId
         if not patchRef.datasetExists(cache.warpType, **dataId):
             # Nothing to do
+            cache.warp = None
             return None
         warp = self.getWarp(patchRef, dataId, cache.warpType)
-        cache.warp[patchIndex] = warp
-        diff = self.subtractWarp(cache.bgRef[patchIndex], warp)
+        cache.warp = warp
+        bgRef = cache.bgRef.clone()
+        bgRef.getMaskedImage().__idiv__(cache.bgWeight)
+        diff = self.subtractWarp(bgRef, warp)
         bgModel = self.calculateBackgroundModel(diff)
 
 #        ds9.mtv(diff, frame=1)
@@ -753,7 +747,6 @@ class ConstructionTask(Task):
 
         This is drop-dead simple now; might want to do PSF-matching.
         """
-        refExp = refExp.clone()
         refExp.getMaskedImage().__isub__(warpExp.getMaskedImage())
         return refExp
 
@@ -823,14 +816,14 @@ class ConstructionTask(Task):
         patchRef = patchData.patchRef
         calexpRefList = patchData.calexpRefList
         patchIndex = getPatchIndex(patchRef.dataId)
-        self.log.info("Adding visit to patch %s" % (patchIndex,))
-        skyInfo = cache.skyInfo[patchIndex]
+        self.log.info("%s: Adding visit to patch %s" % (thisNode(), patchIndex))
+        skyInfo = cache.skyInfo
         # XXX this is awfully inefficient
         bgImage = bgModel.getImageF("AKIMA_SPLINE", "REDUCE_INTERP_ORDER")
         bgSubImage = afwImage.ImageF(bgImage, skyInfo.bbox)
 
-        if patchIndex in cache.warp:
-            warp = cache.warp.pop(patchIndex)
+        if cache.warp is not None:
+            warp = cache.warp
             warpImage = warp.getMaskedImage()
             warpImage += bgSubImage
             weight = self.generateWeight(skyInfo, calexpRefList, warp)
@@ -842,13 +835,12 @@ class ConstructionTask(Task):
                 weight = afwImage.ImageF(warpImage.getDimensions())
                 weight.set(0.0)
         warpImage *= weight
-        cache.bgRef[patchIndex].getMaskedImage().__iadd__(warpImage)
-        cache.bgWeight[patchIndex] += weight
+        cache.bgRef.getMaskedImage().__iadd__(warpImage)
+        cache.bgWeight += weight
 
     def finalize(self, cache, patchRef):
-        patchIndex = getPatchIndex(patchRef.dataId)
-        bgRef = cache.bgRef.pop(patchIndex)
-        bgRef.getMaskedImage().__idiv__(cache.bgWeight.pop(patchIndex))
+        bgRef = cache.bgRef
+        bgRef.getMaskedImage().__idiv__(cache.bgWeight)
         patchRef.put(bgRef, cache.bgRefType)
 
 
@@ -1002,12 +994,11 @@ class BackgroundReferenceTask(PbsPoolTask):
     ConfigClass = BackgroundReferenceConfig
     RunnerClass = CoaddTaskRunner
 
-    def __init__(self, config, **kwargs):
-        super(BackgroundReferenceTask, self).__init__(config=config, **kwargs)
+    def __init__(self, *args, **kwargs):
+        super(BackgroundReferenceTask, self).__init__(*args, **kwargs)
         self.makeSubtask("select")
         self.makeSubtask("assign")
         self.makeSubtask("construct")
-        self.bgRefName = self.config.coaddName + "Coadd_bgRef"
 
     @classmethod
     def _makeArgumentParser(cls):
