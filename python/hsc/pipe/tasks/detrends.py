@@ -22,9 +22,8 @@ from lsst.pipe.tasks.repair import RepairTask
 import lsst.obs.subaru.isr as hscIsr
 
 import hsc.pipe.base.butler as hscButler
-from hsc.pipe.base.mpi import thisNode
 from hsc.pipe.base.pbs import PbsPoolTask
-from hsc.pipe.base.pool import Pool
+from hsc.pipe.base.pool import Pool, NODE
 
 class DetrendStatsConfig(Config):
     """Parameters controlling background statistics"""
@@ -112,7 +111,7 @@ class DetrendCombineTask(Task):
         if finalScale is not None:
             background = self.stats.run(combined)
             self.log.info("%s: Measured background of stack is %f; adjusting to %f" %
-                         (thisNode(), background, finalScale))
+                         (NODE, background, finalScale))
             combined *= finalScale / background
 
         return combined
@@ -429,9 +428,9 @@ class DetrendTask(PbsPoolTask):
         Only slave nodes execute this method.
         """
         if ccdId is None:
-            self.log.warn("Null identifier received on %s" % thisNode())
+            self.log.warn("Null identifier received on %s" % NODE)
             return None
-        self.log.info("Processing %s on %s" % (ccdId, thisNode()))
+        self.log.info("Processing %s on %s" % (ccdId, NODE))
         sensorRef = hscButler.getDataRef(cache.butler, ccdId)
         if self.config.clobber or not sensorRef.datasetExists(outputName):
             exposure = self.processSingle(sensorRef)
@@ -481,7 +480,7 @@ class DetrendTask(PbsPoolTask):
                                expScales: scaling for each exposure
                                ) for each CCD name
         """
-        self.log.info("Scale on %s" % thisNode())
+        self.log.info("Scale on %s" % NODE)
         return dict((name, Struct(ccdScale=None, expScales=[None] * len(ccdIdLists[name])))
                     for name in ccdIdLists.keys())
 
@@ -517,7 +516,7 @@ class DetrendTask(PbsPoolTask):
         """
         dataRefList = [hscButler.getDataRef(cache.butler, dataId) if dataId is not None else None for
                        dataId in struct.ccdIdList]
-        self.log.info("Combining %s on %s" % (struct.outputId, thisNode()))
+        self.log.info("Combining %s on %s" % (struct.outputId, NODE))
         detrend = self.combination.run(dataRefList, expScales=struct.scales.expScales,
                                        finalScale=struct.scales.ccdScale)
         self.write(cache.butler, detrend, struct.outputId)
@@ -530,7 +529,7 @@ class DetrendTask(PbsPoolTask):
         @param exposure  CCD exposure to write
         @param dataId    Data identifier
         """
-        self.log.info("Writing %s on %s" % (dataId, thisNode()))
+        self.log.info("Writing %s on %s" % (dataId, NODE))
         butler.put(exposure, self.calibName, dataId)
 
 
