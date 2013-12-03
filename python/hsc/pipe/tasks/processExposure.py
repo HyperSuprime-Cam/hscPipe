@@ -6,12 +6,12 @@ import lsst.afw.table as afwTable
 import lsst.afw.image as afwImage
 import lsst.afw.cameraGeom as afwCg
 import hsc.pipe.base.butler as hscButler
-from lsst.pipe.base import Struct
+from lsst.pipe.base import Struct, ArgumentParser
 from lsst.pex.config import Config, Field, ConfigurableField
 from hsc.pipe.tasks.processCcd import SubaruProcessCcdTask
 from hsc.pipe.tasks.photometricSolution import PhotometricSolutionTask
-from hsc.pipe.base.mpi import abortOnError, thisNode, MpiTask, MpiArgumentParser
-from hsc.pipe.base.pbs import PbsCmdLineTask
+from hsc.pipe.base.pool import abortOnError, NODE, Pool
+from hsc.pipe.base.pbs import PbsPoolTask
 
 
 class ProcessExposureConfig(Config):
@@ -29,7 +29,7 @@ class ProcessExposureConfig(Config):
         self.processCcd.doFinalWrite = False
 
 
-class ProcessExposureTask(PbsCmdLineTask, MpiTask):
+class ProcessExposureTask(PbsPoolTask):
     """Process an entire exposure at once.
 
     We use MPI to gather the match lists for exposure-wide astrometric and
@@ -41,12 +41,12 @@ class ProcessExposureTask(PbsCmdLineTask, MpiTask):
     ConfigClass = ProcessExposureConfig
     _DefaultName = "processExposure"
 
-    def __init__(self, **kwargs):
+    def __init__(self, *args, **kwargs):
         """Constructor.
 
         All nodes execute this method.
         """
-        super(ProcessExposureTask, self).__init__(**kwargs)
+        super(ProcessExposureTask, self).__init__(*args, **kwargs)
         self.makeSubtask("processCcd")
         self.makeSubtask("photometricSolution", schema=self.processCcd.schema)
         self.resultsCache = dict() # Cache to remember results for saving
@@ -61,7 +61,7 @@ class ProcessExposureTask(PbsCmdLineTask, MpiTask):
     @classmethod
     def _makeArgumentParser(cls, *args, **kwargs):
         doPbs = kwargs.pop("doPbs", False)
-        parser = MpiArgumentParser(name="processExposure", *args, **kwargs)
+        parser = ArgumentParser(name="processExposure", *args, **kwargs)
         parser.add_id_argument("--id", datasetType="raw", level="visit",
                                help="data ID, e.g. --id visit=12345")
         return parser
@@ -73,59 +73,44 @@ class ProcessExposureTask(PbsCmdLineTask, MpiTask):
         All nodes execute this method, though the master and slaves have different
         routes through it.  The expRef is only a DummyDataRef on the slaves.
         """
-        self.butler = butler
+        pool = Pool("processExposure")
+        pool.storeSet(butler=butler)
 
-        if self.rank == self.root:
-            dataIdList = dict([(ccdRef.get("ccdExposureId"), ccdRef.dataId)
-                               for ccdRef in expRef.subItems("ccd") if ccdRef.datasetExists("raw")])
-        else:
-            dataIdList = dict()
+        dataIdList = dict([(ccdRef.get("ccdExposureId"), ccdRef.dataId)
+                           for ccdRef in expRef.subItems("ccd") if ccdRef.datasetExists("raw")])
 
         # Scatter: process CCDs independently
-        import pbasf2
-        structList = pbasf2.ScatterJob(self.comm, self.process, dataIdList.values(), root=self.root)
-        if self.rank == self.root:
-            numGood = sum(1 for s in structList if s is not None)
-        else:
-            numGood = 0
-        if self.comm.size > 1:
-            numGood = pbasf2.Broadcast(self.comm, numGood, root=self.root)
-        if numGood == 0:
-            return
+        structList = pool.map(self.process, dataIdList.values())
+        numGood = sum(1 for s in structList if s is not None)
 
         # Gathered: global WCS solution
-        if self.rank == self.root:
-            matchLists = self.getMatchLists(structList)
-            wcsList = self.solveAstrometry(matchLists, self.butler.mapper.camera)
-            fluxMag0 = self.solvePhotometry(matchLists.values(), self.getFilterName(structList))
-            ccdIdList = self.resultsCache.keys()
-        else:
-            matchLists = None
-            wcsList = None
-            fluxMag0 = None
-            ccdIdList = self.resultsCache.keys()
+        matchLists = self.getMatchLists(structList)
+        wcsList = self.solveAstrometry(matchLists, butler.mapper.camera)
+        fluxMag0 = self.solvePhotometry(matchLists.values(), self.getFilterName(structList))
+        ccdIdList = [s.ccdId for s in structList]
 
         # Scatter with data from root: save CCDs with update astrometric/photometric solutions
-        query = lambda ccdId: Struct(wcs=wcsList[ccdId], fluxMag0=fluxMag0, dataId=dataIdList[ccdId])
-        pbasf2.QueryToRoot(self.comm, self.write, query, ccdIdList, root=self.root)
+        solutionList = [Struct(ccdId=ccdId, wcs=wcsList[ccdId], fluxMag0=fluxMag0, dataId=dataIdList[ccdId])
+                        for ccdId in ccdIdList]
+        pool.mapToPrevious(self.write, solutionList)
 
-
-    def process(self, dataId):
+    def process(self, cache, dataId):
         """Process a single CCD and save the results for a later write.
 
         Only slaves execute this method.
         """
-        dataRef = hscButler.getDataRef(self.butler, dataId)
+        dataRef = hscButler.getDataRef(cache.butler, dataId)
         ccdId = dataRef.get("ccdExposureId")
-        print "Started processing %s (ccdId=%d) on %s" % (dataId, ccdId, thisNode())
+        print "Started processing %s (ccdId=%d) on %s" % (dataId, ccdId, NODE)
         try:
             result = self.processCcd.run(dataRef)
         except Exception, e:
             sys.stderr.write("Failed to process %s: %s\n" % (dataId, e))
+            cache.result = None
             return None
 
         # Cache the results (in particular, the image)
-        self.resultsCache[ccdId] = result
+        cache.result = result
         filterName = result.exposure.getFilter().getName()
 
         # Reformat the matches for MPI transfer
@@ -135,7 +120,7 @@ class ProcessExposureTask(PbsCmdLineTask, MpiTask):
             numMatches = len(matches)
 
         print ("Finished processing %s (ccdId=%d) on %s with %d matches" %
-               (dataId, ccdId, thisNode(), numMatches))
+               (dataId, ccdId, NODE, numMatches))
 
         return Struct(ccdId=ccdId, matches=matches, filterName=filterName)
 
@@ -187,27 +172,28 @@ class ProcessExposureTask(PbsCmdLineTask, MpiTask):
             self.log.warn("Failed to determine global photometric zero-point: %s" % e)
         return None
 
-    def write(self, ccdId, struct):
+    def write(self, cache, struct):
         """Write the outputs.
 
         The cached results are written along with revised astrometric and photometric solutions.
 
         This method is only executed on the slaves.
         """
-        if not ccdId in self.resultsCache:
-            # This node didn't process this CCD, or it failed; either way, nothing we can do
+        if not cache.result:
+            # Processing must have failed: nothing we can do
             return
+
         dataId = struct.dataId
-        dataRef = hscButler.getDataRef(self.butler, dataId)
-        print "Start writing %s (ccdId=%d) on %s" % (dataId, ccdId, thisNode())
+        ccdId = struct.ccdId
+        dataRef = hscButler.getDataRef(cache.butler, dataId)
+        print "Start writing %s (ccdId=%d) on %s" % (dataId, ccdId, NODE)
         wcs = struct.wcs
         fluxMag0 = struct.fluxMag0
 
         try:
-            result = self.resultsCache[ccdId]
-            self.processCcd.write(dataRef, result, wcs=wcs, fluxMag0=fluxMag0)
-            del self.resultsCache[ccdId]
+            self.processCcd.write(dataRef, cache.result, wcs=wcs, fluxMag0=fluxMag0)
+            del cache.result
         except Exception, e:
             sys.stderr.write('ERROR: Failed to write %s (ccdId=%d): %s\n' % (dataId, ccdId, e))
 
-        print "Finished writing CCD %s (ccdId=%d) on %s" % (dataId, ccdId, thisNode())
+        print "Finished writing CCD %s (ccdId=%d) on %s" % (dataId, ccdId, NODE)
