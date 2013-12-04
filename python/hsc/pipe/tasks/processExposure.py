@@ -49,7 +49,6 @@ class ProcessExposureTask(PbsPoolTask):
         super(ProcessExposureTask, self).__init__(*args, **kwargs)
         self.makeSubtask("processCcd")
         self.makeSubtask("photometricSolution", schema=self.processCcd.schema)
-        self.resultsCache = dict() # Cache to remember results for saving
 
     @classmethod
     def pbsWallTime(cls, time, parsedCmd, numNodes, numProcs):
