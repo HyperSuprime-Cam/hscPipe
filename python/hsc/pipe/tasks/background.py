@@ -10,7 +10,6 @@ from lsst.pex.exceptions import LsstCppException, DomainErrorException, RuntimeE
 from lsst.pipe.base import Task, Struct, ArgumentParser
 from lsst.pipe.tasks.coaddBase import CoaddTaskRunner, CoaddDataIdContainer, SelectDataIdContainer, getSkyInfo
 from lsst.pipe.tasks.selectImages import WcsSelectImagesTask
-#from lsst.pipe.tasks.makeCoaddTempExp import MakeCoaddTempExpTask
 from lsst.pipe.tasks.matchBackgrounds import MatchBackgroundsTask
 from lsst.pipe.tasks.scaleZeroPoint import ScaleZeroPointTask
 from lsst.afw.fits.fitsLib import FitsError
@@ -23,7 +22,6 @@ import lsst.afw.cameraGeom as afwCameraGeom
 import lsst.afw.cameraGeom.utils as afwCgu
 import lsst.meas.algorithms as measAlg
 
-from hsc.pipe.base.mpi import thisNode
 from hsc.pipe.base.pool import Pool, Debugger, NODE
 from hsc.pipe.base.pbs import PbsPoolTask
 
@@ -600,11 +598,9 @@ class XyTaperWeightImage(object):
 class ConstructionConfig(Config):
     doWarp = Field(dtype=bool, default=True, doc="Warp images to sky tract/patch?")
     taper = ConfigurableField(target=RadiusTaperWeightImage, doc="Object to provide tapered weight image")
-#    makeCoaddTempExp = ConfigurableField(target=MakeCoaddTempExpTask, doc="Warp images to sky")
     scaling = ConfigurableField(target=ScaleZeroPointTask, doc="Scale warps to common zero point")
     mask = ListField(dtype=str, default=["BAD", "SAT", "EDGE",], doc="Mask planes to mask")
     background = ConfigField(dtype=measAlg.BackgroundConfig, doc="Background matching config")
-#    matchBackgrounds = ConfigurableField(target=MatchBackgroundsTask, doc="Background matching")
     bgSize = Field(dtype=int, default=1024, doc="Background model bin size (tract pixels)")
     clobber = Field(dtype=bool, default=False, doc="Clobber existing outputs?")
 
@@ -613,9 +609,8 @@ class ConstructionTask(Task):
 
     def __init__(self, *args, **kwargs):
         super(ConstructionTask, self).__init__(*args, **kwargs)
-#        self.makeSubtask("makeCoaddTempExp")
         self.makeSubtask("scaling")
-#        self.makeSubtask("matchBackgrounds")
+        self.debug = False
 
     def run(self, patchRefList, visitList, overlaps, coaddName="deep", visitKeys=["visit"]):
         """Construct and write a background reference image from multiple inputs
@@ -624,9 +619,10 @@ class ConstructionTask(Task):
         method, 'construct'.
 
         @param patchRefList: List of patch data references
-        @param assignmentsList: Embedded lists: patches holding visits holding CCD data references
+        @param visitList: List of visit names
+        @param overlaps: Dict of patch overlaps
         @param coaddName: name of coadd
-        @return background reference
+        @param visitKeys: Name of keys that define a visit
         """
         warpType = coaddName + "Coadd_tempExp"
         bgRefType = coaddName + "Coadd_bgRef"
@@ -660,21 +656,28 @@ class ConstructionTask(Task):
         visit = visitList.pop(0)
         pool.map(self.firstVisit, extractPatchData(visit), visit)
 
-        # Add in each visit one by one
+        # Add in each visit one by one, using a common background model
         for visit in visitList:
-            # Generate background matching model
             bgModelList = pool.mapToPrevious(self.matchNextVisit, patchRefList, visit=visit)
-
-            # Merge background models
             bgModel = self.mergeBackgroundModels(butler, patchIdList, bgModelList)
-
-            # Use common background model when adding the next visit
             pool.mapToPrevious(self.addNextVisit, extractPatchData(visit), bgModel)
 
-        # Finish up and write
         pool.mapToPrevious(self.finalize, patchRefList)
 
     def firstVisit(self, cache, patchData, visit):
+        """Initialise background reference with the first visit
+
+        This method is intended to be run by slave nodes under the process pool.
+
+        Because we can only iterate over a single object, the
+        'patchData' includes multiple elements:
+            * patchRef: data reference for patch
+            * calexpRefList: List of calexp data references overlapping patch
+
+        @param cache: Process pool cache
+        @param patchData: Input data for patch
+        @param visit: Visit name
+        """
         patchRef = patchData.patchRef
         calexpRefList = patchData.calexpRefList
         patchIndex = getPatchIndex(patchRef.dataId)
@@ -685,7 +688,7 @@ class ConstructionTask(Task):
             self.log.info("%s: Creating background reference for %s from %s" %
                           (NODE, patchIndex, dataId))
             warp = self.getWarp(patchRef, dataId, cache.warpType)
-            weight = self.generateWeight(skyInfo, calexpRefList, warp)
+            weight = self.generateWeight(skyInfo, calexpRefList)
             self.zeroOutBad(warp, weight)
             warp.getMaskedImage().__imul__(weight)
         else:
@@ -701,32 +704,25 @@ class ConstructionTask(Task):
         cache.bgRef = warp
         cache.bgWeight = weight
 
-#        ds9.mtv(warp, frame=1)
-#        ds9.mtv(weight, frame=2)
-#        import pdb;pdb.set_trace()
-
     def getWarp(self, patchRef, dataId, datasetType="deepCoadd_tempExp"):
         warp = patchRef.get(datasetType, immediate=True, **dataId)
         self.scaling.computeImageScaler(warp, patchRef).scaleMaskedImage(warp.getMaskedImage())
-
-        # Remove masked pixels
-#        mask = warp.getMaskedImage().getMask()
-#        bitmask = mask.getPlaneBitMask(self.config.mask)
-#        warpArray = warp.getMaskedImage().getImage().getArray()
-#        varArray = warp.getMaskedImage().getVariance().getArray()
-#        bad = numpy.logical_or(mask.getArray() & bitmask > 0,
-#                               numpy.logical_not(numpy.isfinite(warpArray)))
-#        warpArray[bad] = 0.0
-#        varArray[bad] = 0.0
         return warp
 
     def matchNextVisit(self, cache, patchRef, visit):
+        """Match a visit to the existing background reference
+
+        This method is intended to be run by slave nodes under the process pool.
+
+        @param cache: Process pool cache
+        @param patchRef: Input data for patch
+        @param visit: Visit name
+        @return background model
+        """
         cache.visit = visit
         patchIndex = getPatchIndex(patchRef.dataId)
         dataId = dict(zip(cache.visitKeys, visit))
         self.log.info("%s: Matching %s to %s" % (NODE, patchIndex, dataId))
-        print patchRef.dataId
-        print dataId
         if not patchRef.datasetExists(cache.warpType, **dataId):
             # Nothing to do
             cache.warp = None
@@ -738,18 +734,13 @@ class ConstructionTask(Task):
         diff = self.subtractWarp(bgRef, warp)
         bgModel = self.calculateBackgroundModel(diff)
 
+        if self.debug:
+            diff.writeFits("diff-%s-%s.fits" % ("-".join(map(str, visit)), "%d,%d" % patchIndex))
 
-        diff.writeFits("diff-%s-%s.fits" % ("-".join(map(str, visit)), "%d,%d" % patchIndex))
-
-
-#        ds9.mtv(diff, frame=1)
-#        ds9.mtv(bgModel.getImageF(), frame=2)
-#        import pdb;pdb.set_trace()
-
-        return Struct(bgModel=bgModel, mask=warp.getMaskedImage().getMask())
+        return bgModel
 
     def subtractWarp(self, refExp, warpExp):
-        """Subtract in-place
+        """Subtract warp from reference in-place
 
         This is drop-dead simple now; might want to do PSF-matching.
         """
@@ -757,6 +748,10 @@ class ConstructionTask(Task):
         return refExp
 
     def zeroOutBad(self, image, *others):
+        """Zero out bad and non-finite pixels in an image
+
+        The same pixels are also zeroed out in the 'others'.
+        """
         others = list(others)
         if hasattr(image, "getMaskedImage"):
             image = image.getMaskedImage()
@@ -778,25 +773,49 @@ class ConstructionTask(Task):
 
 
     def calculateBackgroundModel(self, diff):
+        """Determine a background model from a diff image
+
+        This is the heart of background matching.
+
+        Bad pixels are zeroed out to ensure the background matching
+        addition goes to zero where there are no pixels.
+
+        @param diff: Difference exposure
+        @return background model
+        """
+
         bgModel = measAlg.getBackground(diff.getMaskedImage(), self.config.background)
         bgModel = afwMath.cast_BackgroundMI(bgModel)
         self.zeroOutBad(bgModel.getStatsImage().getImage())
         return bgModel
 
-    num = 0
     def mergeBackgroundModels(self, butler, patchIdList, bgModelList, coaddName="deep"):
+        """Merge background models from different patches
+
+        This ensures all patches use a common background model for
+        matching to the reference.
+
+        This implementation is extremely inefficient, and could be
+        improved by adding support for this operation in the
+        BackgroundMI class.
+
+        @param butler: Data butler
+        @param patchIdList: List of patch data identifiers
+        @param bgModelList: Corresponding list of patch background models
+        @param coaddName: Name of coadd (for retrieving skymap)
+        @return merged background model
+        """
         skymap = None
         statsImage = None
         # XXX configure stats
         statCtrl = afwMath.StatisticsControl()
         statCtrl.setAndMask(afwImage.MaskU.getPlaneBitMask(self.config.mask))
         stat = afwMath.MEAN
-        for patchId, bgStruct in zip(patchIdList, bgModelList):
-            if bgStruct is None:
+        for patchId, bgModel in zip(patchIdList, bgModelList):
+            if bgModel is None:
                 continue
-            bgModel = bgStruct.bgModel
-            mask = bgStruct.mask
             if not skymap:
+                # Set up the patch
                 skymap = butler.get(coaddName + "Coadd_skyMap", patchId)
                 tract = skymap[patchId["tract"]]
 
@@ -810,20 +829,18 @@ class ConstructionTask(Task):
                 xBounds = numpy.linspace(x0, xSize, xNum + 1, True).astype(int)
                 yBounds = numpy.linspace(x0, ySize, yNum + 1, True).astype(int)
 
-                statsNum = afwImage.ImageF(xNum, yNum) # float so we can divide later
+                statsNum = afwImage.ImageF(xNum, yNum) # float so we can easily divide later
                 statsNum.set(0.0)
                 statsImage = afwImage.ImageF(xNum, yNum)
                 statsImage.set(0.0)
 
                 def statsIter():
                     """Return coordinates on stats image, box on tract"""
-                    for iy in range(yNum):
-                        for ix in range(xNum):
-                            yield ix, iy, afwGeom.Box2I(afwGeom.Point2I(int(xBounds[ix]), int(yBounds[iy])),
-                                                        afwGeom.Point2I(int(xBounds[ix+1]), int(yBounds[iy+1])))
+                    for ix, iy in itertools.product(range(xNum), range(yNum)):
+                        yield ix, iy, afwGeom.Box2I(afwGeom.Point2I(int(xBounds[ix]), int(yBounds[iy])),
+                                                    afwGeom.Point2I(int(xBounds[ix+1]), int(yBounds[iy+1])))
 
             # XXX this is terribly inefficient
-            #import pdb;pdb.set_trace()
             bgImage = bgModel.getImageF("AKIMA_SPLINE", "REDUCE_INTERP_ORDER")
             patchIndex = getPatchIndex(patchId)
             patchBox = tract[patchIndex].getOuterBBox()
@@ -843,9 +860,6 @@ class ConstructionTask(Task):
         if statsImage is None:
             raise RuntimeError("Unable to merge background models")
 
-        statsImage.writeFits("statsImage-%d.fits" % self.num)
-        statsNum.writeFits("statsNum-%d.fits" % self.num)
-
         statsImage /= statsNum
         statsImage = afwImage.makeMaskedImage(statsImage)
         statsMask = statsImage.getMask().getArray()
@@ -854,12 +868,26 @@ class ConstructionTask(Task):
         mergedModel = afwMath.BackgroundMI(tractBox, statsImage)
         self.zeroOutBad(mergedModel.getStatsImage().getImage())
 
-        mergedModel.getImageF("AKIMA_SPLINE", "REDUCE_INTERP_ORDER").writeFits("mergedModel-%d.fits" % self.num)
-        self.num += 1
-
         return mergedModel
 
     def addNextVisit(self, cache, patchData, bgModel):
+        """Add visit to background reference
+
+        This method is intended to be run by slave nodes under the process pool.
+
+        Because we can only iterate over a single object, the
+        'patchData' includes multiple elements:
+            * patchRef: data reference for patch
+            * calexpRefList: List of calexp data references overlapping patch
+
+        This implementation is extremely inefficient, and could be
+        improved by adding support for this operation in the
+        BackgroundMI class.
+
+        @param cache: Process pool cache
+        @param patchData: Input data for patch
+        @param bgModel: Merged tract background model
+        """
         patchRef = patchData.patchRef
         calexpRefList = patchData.calexpRefList
         patchIndex = getPatchIndex(patchRef.dataId)
@@ -869,33 +897,33 @@ class ConstructionTask(Task):
         bgImage = bgModel.getImageF("AKIMA_SPLINE", "REDUCE_INTERP_ORDER")
         bgSubImage = afwImage.ImageF(bgImage, skyInfo.bbox)
 
-        bgSubImage.writeFits("model-%s-%s.fits" % ("-".join(map(str, cache.visit)), "%d,%d" % patchIndex))
+        if self.debug:
+            bgSubImage.writeFits("model-%s-%s.fits" % ("-".join(map(str, cache.visit)), "%d,%d" % patchIndex))
 
         if cache.warp is not None:
             warp = cache.warp
             warpImage = warp.getMaskedImage()
             good = numpy.where(numpy.logical_not(numpy.isnan(warpImage.getImage().getArray())))
-            self.log.info("%s mean: %f, %f" % (patchIndex, numpy.mean(warpImage.getImage().getArray()[good]), numpy.mean(bgSubImage.getArray()[good])))
             warpImage += bgSubImage
-            weight = self.generateWeight(skyInfo, calexpRefList, warp)
+            weight = self.generateWeight(skyInfo, calexpRefList)
             self.zeroOutBad(warp, weight)
         else:
             warpImage = bgSubImage
             if calexpRefList:
                 weight = self.generateWeight(skyInfo, calexpRefList)
+                self.zeroOutBad(warpImage, weight)
             else:
                 weight = afwImage.ImageF(warpImage.getDimensions())
                 weight.set(0.0)
 
-        warpImage.writeFits("add-%s-%s.fits" % ("-".join(map(str, cache.visit)), "%d,%d" % patchIndex))
+        if self.debug:
+            warpImage.writeFits("add-%s-%s.fits" % ("-".join(map(str, cache.visit)), "%d,%d" % patchIndex))
 
         warpImage *= weight
-
-
-
         cache.bgRef.getMaskedImage().__iadd__(warpImage)
         cache.bgWeight += weight
 
+        # Set bad pixels in the background reference
         bgImage = cache.bgRef.getMaskedImage()
         mask = bgImage.getMask()
         maskArray = mask.getArray()
@@ -904,74 +932,24 @@ class ConstructionTask(Task):
         maskArray &= ~bitmask
         maskArray[bad] = mask.getPlaneBitMask("BAD")
 
-
-        bgRef = cache.bgRef.getMaskedImage().clone()
-        bgRef /= cache.bgWeight
-        bgRef.writeFits("bg-%s-%s.fits" % ("-".join(map(str, cache.visit)), "%d,%d" % patchIndex))
-
-
+        if self.debug:
+            bgRef = cache.bgRef.getMaskedImage().clone()
+            bgRef /= cache.bgWeight
+            bgRef.writeFits("bg-%s-%s.fits" % ("-".join(map(str, cache.visit)), "%d,%d" % patchIndex))
 
     def finalize(self, cache, patchRef):
+        """Finish up background reference and write
+
+        This method is intended to be run by slave nodes under the process pool.
+
+        @param cache: Process pool cache
+        @param patchRef: Patch data reference
+        """
         bgRef = cache.bgRef
         bgRef.getMaskedImage().__idiv__(cache.bgWeight)
         patchRef.put(bgRef, cache.bgRefType)
 
-
-
-
-
-
-
-###    def construct(self, patchRef, assignments, coaddName="deep"):
-###        """Construct a background reference image from multiple inputs
-###
-###        @param patchRef: data reference for a patch
-###        @param assignments: list of a list of data references for each visit
-###        @param coaddName: name of coadd
-###        @return background reference
-###        """
-###        warpRefList = []
-###        weightList = []
-###        for calexpRefList in assignments:
-###            warpRef = self.getWarpRef(patchRef, calexpRefList, coaddName=coaddName)
-###            try:
-###                if self.config.doWarp:
-###                    self.warp(warpRef, calexpRefList, skyInfo, coaddName=coaddName)
-###                weight = self.generateWeight(skyInfo, calexpRefList)
-###            except RuntimeError as e:
-###                self.log.warn("Ignoring warp %s due to %s: %s" % (warpRef.dataId, e.__class__.__name__, e))
-###                continue
-###            warpRefList.append(warpRef)
-###            weightList.append(weight)
-###
-###        num = len(warpRefList)
-###        if num == 0:
-###            raise RuntimeError("No good input exposures")
-###
-###        bg = None
-###        for warpRef, weight in zip(warpRefList, weightList):
-###            self.log.info("Adding warp %s" % (warpRef.dataId,))
-###            bg = self.addWarp(bg, warpRef, weight, coaddName=coaddName)
-###
-###        bgImage = bg.exposure.getMaskedImage()
-###        bgImage /= bg.weight
-###        return bg.exposure
-###
-###    def warp(self, warpRef, calexpRefList, skyInfo, coaddName="deep"):
-###        """Warp CCDs to patch
-###
-###        @param warpRef: data reference for warp
-###        @param calexpRefList: list of calexp data references
-###        @param skyInfo: struct with skymap information
-###        @param coaddName: name of coadd
-###        """
-###        datasetType = coaddName + "Coadd_tempExp"
-###        if warpRef.datasetExists(datasetType):
-###            return
-###        exp = self.makeCoaddTempExp.createTempExp(calexpRefList, skyInfo)
-###        warpRef.put(exp, datasetType)
-###
-    def generateWeight(self, skyInfo, calexpRefList, warp=None):
+    def generateWeight(self, skyInfo, calexpRefList):
         """Construct a weight
 
         Returns a lightweight version of the actual weight image;
@@ -979,80 +957,14 @@ class ConstructionTask(Task):
 
         @param skyInfo: struct with skymap information
         @param calexpRefList: list of calexp data references
-        @return light weight image
+        @return weight image
         """
         transformer = CoordinateTransformer(skyInfo.wcs, calexpRefList)
         boresight = transformer.getBoresight()
         weight = self.config.taper.apply(skyInfo.bbox, transformer.skyToPatch(boresight))
         if hasattr(weight, "getImage"):
             weight = weight.getImage()
-
-###        if warp is not None:
-###            if hasattr(warp, "getMaskedImage"):
-###                warp = warp.getMaskedImage()
-###            bitmask = warp.getMask().getPlaneBitMask(self.config.mask)
-###            bad = numpy.logical_or(warp.getMask().getArray() & bitmask > 0,
-###                                   numpy.logical_not(numpy.isfinite(warp.getImage().getArray())))
-###            weightArray = weight.getArray()
-###            weightArray[bad] = 0.0
         return weight
-
-###    def getWarpRef(self, patchRef, calexpRefList, coaddName="deep"):
-###        """Generate a warp data reference
-###
-###        A "warp" is also known as a "coaddTempExp".
-###
-###        @param patchRef: data reference for the patch
-###        @param calexpRefList: list of data references for constituent calexps
-###        @return warp data reference
-###        """
-###        dataId = patchRef.dataId.copy()
-###        dataId.update(calexpRefList[0].dataId)
-###        for calexpRef in calexpRefList[1:]:
-###            for key, value in calexpRef.dataId.iteritems():
-###                if key in dataId and dataId[key] != value:
-###                    del dataId[key]
-###
-###        tempExpName = coaddName + "Coadd_tempExp"
-###        return patchRef.getButler().dataRef(datasetType=tempExpName, dataId=dataId)
-###
-###    def matchWarp(self, bg, warpRef, weight, coaddName="deep"):
-###        """Match a new warp to the background reference
-###
-###        @param bg: background reference struct (exposure,weight elements)
-###        @param warpRef: warp data reference
-###        @param weight: weight image (or lightweight version)
-###        @return background model
-###        """
-###        warp = warpRef.get(coaddName + "Coadd_tempExp", immediate=True)
-###        self.scaling.computeImageScaler(warp, warpRef).scaleMaskedImage(warp.getMaskedImage())
-###        if hasattr(weight, "getImage"):
-###            weight = getattr(weight, "getImage")()
-###
-###        # Remove masked pixels
-###        mask = warp.getMaskedImage().getMask()
-###        bitmask = mask.getPlaneBitMask(self.config.mask)
-###        weightArray = weight.getArray()
-###        warpArray = warp.getMaskedImage().getImage().getArray()
-###        varArray = warp.getMaskedImage().getVariance().getArray()
-###        bad = numpy.logical_or(mask.getArray() & bitmask > 0,
-###                               numpy.logical_not(numpy.isfinite(warpArray)))
-###        warpArray[bad] = 0.0
-###        weightArray[bad] = 0.0
-###        varArray[bad] = 0.0
-###        del bad
-###
-###        # Chop off overlaps so we don't step on other patches' toes
-###        bbox = patchInfo.getInnerBBox()
-###        bgImage = afwImage.MaskedImageF(bg.exposure.getMaskedImage(), bbox).clone()
-###        subWeight = afwImage.ImageF(bg.weight, bbox)
-###
-###        # Undo weighting of background, so we can match
-###        bgImage /= subWeight
-###
-###        bgImage.__isub__(warp.getMaskedImage())
-###        bgModel = afwMath.BackgroundMIF(bgImage, bgCtrl)
-###        return bgModel
 
 
 
@@ -1113,94 +1025,3 @@ class BackgroundReferenceTask(PbsPoolTask):
     def writeSchemas(self, *args, **kwargs):
         pass
 
-
-###class MpiBackgroundReferenceConfig(BackgroundReferenceConfig):
-###    """We're using this as part of the super-stacker, so the warps have already
-###    been constructed and we don't want to risk regenerating them with a different
-###    configuration.
-###    """
-###    makeCoaddTempExp = None
-###    def setDefaults(self):
-###        super(MpiBackgroundReferenceConfig, self).setDefaults()
-###        self.construct.doWarp = False
-###
-###class MpiBackgroundReferenceTask(MpiTask, BackgroundReferenceTask):
-###    """MPI-enabled background reference construction, intended for use within the super-stacker"""
-###    ConfigClass = MpiBackgroundReferenceConfig
-###
-###    def run(self, patchRefList, selectDataList=[]):
-###        """Construct a set of background references
-###
-###        All nodes execute this method, though the master and slaves
-###        take different routes through it.
-###
-###        @param patchRefList: List of patch data references
-###        @param selectDataList: List of SelectStruct for inputs
-###        """
-###        if self.rank == self.root:
-###            self.log.info("%s: Root node calculating overlaps and assignment" % NODE)
-###            super(MpiBackgroundReferenceTask, self).run(patchRefList, selectDataList=selectDataList)
-###        else:
-###            # Must get the slave nodes into the same place the master node ends up
-###            self.constructBackgrounds(patchRefList, None)
-###
-###    def constructBackgrounds(self, patchRefList, assignments):
-###        """Farm out the construction of background references
-###
-###        All nodes execute this method, though the master and slaves
-###        take different routes through it.
-###
-###        @param patchRefList: List of patch data references
-###        @param assignments: List of a list of data references for each visit
-###        """
-###        import pbasf2
-###        if self.rank == self.root:
-###            args = [Struct(patchRef=patchRef,
-###                           assignment=assignments.get(tuple(map(int, patchRef.dataId["patch"].split(","))),
-###                                                      None),
-###                           ) for patchRef in patchRefList]
-###        else:
-###            args = None
-###        self.log.info("%s: Ready to construct backgrounds" % NODE)
-###        pbasf2.ScatterJob(self.comm, self.constructSingleBackground, args, root=self.root)
-###
-###    def constructSingleBackground(self, struct):
-###        """Wrapper for ConstructBackgroundTask
-###
-###        Only slave nodes execute this method.
-###
-###        Because only one argument may be passed, it is expected to
-###        contain multiple elements, which are:
-###        @param patchRef: data reference for patch
-###        @param assignments: List of data references for each visit
-###        """
-###        patchRef = struct.patchRef
-###        assignment = struct.assignment
-###        self.log.info("%s: Start constructing background for %s" % (NODE, patchRef.dataId))
-###        if assignment is None:
-###            self.log.warn("%s: No inputs assigned for %s" % (NODE, patchRef.dataId))
-###            return
-###        try:
-###            self.construct.run(patchRef, assignment, coaddName=self.config.coaddName)
-###        except RuntimeError as e:
-###            self.log.warn("Unable to construct background reference for %s due to %s: %s" %
-###                          (patchRef.dataId, e.__class__.__name__, e))
-###        self.log.info("%s: Finished constructing background for %s" % (NODE, patchRef.dataId))
-###
-
-"""
-This doesn't work as I've approached it: the matching is being performed patch by patch instead of
-consistently over the entire tract.  For example, an edge patch that doesn't have the same first warp as the
-others will end up matching to a different warp, resulting in a discontinuity across the patch boundary.  More
-subtle discontinuities will result from slightly different and discontinuous background matching solutions for
-neighbouring patches.
-
-What is required is to do the background matching solution over the entire tract at once.  The subtraction
-should be performed patch by patch on the slaves, and the background-difference samples returned to the master
-node for a single, continuous background-difference model to be constructed and returned to the slaves for
-application.  This is likely going to require some extra hooks in the background model code to merge multiple
-models from different parts of a larger image, and to allow pickling.
-
-
-python `which stack.py` /tigress/HSC/SUPA --rerun price/background --id tract=0 filter=W-S-R+ --selectId field=ACTJ0022M0036 filter=W-S-R+ -C test_backgrounds.py --job test --clobber-config --mpiexec="-n 1" --do-exec --doraise
-"""
