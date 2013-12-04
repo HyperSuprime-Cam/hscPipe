@@ -24,7 +24,7 @@ import lsst.afw.cameraGeom.utils as afwCgu
 import lsst.meas.algorithms as measAlg
 
 from hsc.pipe.base.mpi import thisNode
-from hsc.pipe.base.pool import Pool, Debugger
+from hsc.pipe.base.pool import Pool, Debugger, NODE
 from hsc.pipe.base.pbs import PbsPoolTask
 
 def imagePoly(dataRef, log=None, imageName="calexp"):
@@ -683,16 +683,17 @@ class ConstructionTask(Task):
         dataId = dict(zip(cache.visitKeys, visit))
         if patchRef.datasetExists(cache.warpType, **dataId):
             self.log.info("%s: Creating background reference for %s from %s" %
-                          (thisNode(), patchIndex, dataId))
+                          (NODE, patchIndex, dataId))
             warp = self.getWarp(patchRef, dataId, cache.warpType)
             weight = self.generateWeight(skyInfo, calexpRefList, warp)
+            self.zeroOutBad(warp, weight)
             warp.getMaskedImage().__imul__(weight)
         else:
             # Create a blank image we can use as a base
-            self.log.info("%s: Creating blank background reference for %s" % (thisNode(), patchIndex))
+            self.log.info("%s: Creating blank background reference for %s" % (NODE, patchIndex))
             image = afwImage.MaskedImageF(skyInfo.bbox)
             image.setXY0(skyInfo.bbox.getMin())
-            maskVal = image.getMask().getMaskPlane("EDGE")
+            maskVal = image.getMask().getPlaneBitMask(self.config.mask)
             image.set((0.0, maskVal, 0.0))
             warp = afwImage.makeExposure(image, skyInfo.wcs)
             weight = afwImage.ImageF(skyInfo.bbox)
@@ -709,20 +710,21 @@ class ConstructionTask(Task):
         self.scaling.computeImageScaler(warp, patchRef).scaleMaskedImage(warp.getMaskedImage())
 
         # Remove masked pixels
-        mask = warp.getMaskedImage().getMask()
-        bitmask = mask.getPlaneBitMask(self.config.mask)
-        warpArray = warp.getMaskedImage().getImage().getArray()
-        varArray = warp.getMaskedImage().getVariance().getArray()
-        bad = numpy.logical_or(mask.getArray() & bitmask > 0,
-                               numpy.logical_not(numpy.isfinite(warpArray)))
-        warpArray[bad] = 0.0
-        varArray[bad] = 0.0
+#        mask = warp.getMaskedImage().getMask()
+#        bitmask = mask.getPlaneBitMask(self.config.mask)
+#        warpArray = warp.getMaskedImage().getImage().getArray()
+#        varArray = warp.getMaskedImage().getVariance().getArray()
+#        bad = numpy.logical_or(mask.getArray() & bitmask > 0,
+#                               numpy.logical_not(numpy.isfinite(warpArray)))
+#        warpArray[bad] = 0.0
+#        varArray[bad] = 0.0
         return warp
 
     def matchNextVisit(self, cache, patchRef, visit):
+        cache.visit = visit
         patchIndex = getPatchIndex(patchRef.dataId)
         dataId = dict(zip(cache.visitKeys, visit))
-        self.log.info("%s: Matching %s to %s" % (thisNode(), patchIndex, dataId))
+        self.log.info("%s: Matching %s to %s" % (NODE, patchIndex, dataId))
         print patchRef.dataId
         print dataId
         if not patchRef.datasetExists(cache.warpType, **dataId):
@@ -736,11 +738,15 @@ class ConstructionTask(Task):
         diff = self.subtractWarp(bgRef, warp)
         bgModel = self.calculateBackgroundModel(diff)
 
+
+        diff.writeFits("diff-%s-%s.fits" % ("-".join(map(str, visit)), "%d,%d" % patchIndex))
+
+
 #        ds9.mtv(diff, frame=1)
 #        ds9.mtv(bgModel.getImageF(), frame=2)
 #        import pdb;pdb.set_trace()
 
-        return bgModel
+        return Struct(bgModel=bgModel, mask=warp.getMaskedImage().getMask())
 
     def subtractWarp(self, refExp, warpExp):
         """Subtract in-place
@@ -750,17 +756,46 @@ class ConstructionTask(Task):
         refExp.getMaskedImage().__isub__(warpExp.getMaskedImage())
         return refExp
 
-    def calculateBackgroundModel(self, diff):
-        return measAlg.getBackground(diff.getMaskedImage(), self.config.background)
+    def zeroOutBad(self, image, *others):
+        others = list(others)
+        if hasattr(image, "getMaskedImage"):
+            image = image.getMaskedImage()
+        if hasattr(image, "getMask"):
+            # A MaskedImage
+            mask = image.getMask()
+            bitmask = mask.getPlaneBitMask(self.config.mask)
+            bad = numpy.logical_or(mask.getArray() & bitmask > 0,
+                                   numpy.logical_not(numpy.isfinite(image.getImage().getArray())))
+            others.append(image.getImage())
+            others.append(image.getVariance())
+        else:
+            bad = numpy.logical_not(numpy.isfinite(image.getArray()))
+            others.append(image)
 
+        for im in others:
+            array = im.getArray()
+            array[bad] = 0.0
+
+
+    def calculateBackgroundModel(self, diff):
+        bgModel = measAlg.getBackground(diff.getMaskedImage(), self.config.background)
+        bgModel = afwMath.cast_BackgroundMI(bgModel)
+        self.zeroOutBad(bgModel.getStatsImage().getImage())
+        return bgModel
+
+    num = 0
     def mergeBackgroundModels(self, butler, patchIdList, bgModelList, coaddName="deep"):
         skymap = None
+        statsImage = None
         # XXX configure stats
         statCtrl = afwMath.StatisticsControl()
+        statCtrl.setAndMask(afwImage.MaskU.getPlaneBitMask(self.config.mask))
         stat = afwMath.MEAN
-        for patchId, bgModel in zip(patchIdList, bgModelList):
-            if bgModel is None:
+        for patchId, bgStruct in zip(patchIdList, bgModelList):
+            if bgStruct is None:
                 continue
+            bgModel = bgStruct.bgModel
+            mask = bgStruct.mask
             if not skymap:
                 skymap = butler.get(coaddName + "Coadd_skyMap", patchId)
                 tract = skymap[patchId["tract"]]
@@ -778,6 +813,7 @@ class ConstructionTask(Task):
                 statsNum = afwImage.ImageF(xNum, yNum) # float so we can divide later
                 statsNum.set(0.0)
                 statsImage = afwImage.ImageF(xNum, yNum)
+                statsImage.set(0.0)
 
                 def statsIter():
                     """Return coordinates on stats image, box on tract"""
@@ -796,12 +832,19 @@ class ConstructionTask(Task):
                 try:
                     # XXX shrink box if only just a bit big
                     subImage = afwImage.ImageF(bgImage, box, afwImage.PARENT)
-                    value = afwMath.makeStatistics(subImage, stat, statCtrl).getValue()
+                    subMask = afwImage.MaskU(mask, box, afwImage.PARENT)
+                    value = afwMath.makeStatistics(subImage, subMask, stat, statCtrl).getValue()
                 except:
                     continue
-                statsImage[iy,ix] = value
-                statsNum[iy,ix] += 1
+                statsImage.set(ix, iy, statsImage.get(ix, iy) + value)
+                statsNum.set(ix, iy, statsNum.get(ix, iy) + 1)
             del bgImage
+
+        if statsImage is None:
+            raise RuntimeError("Unable to merge background models")
+
+        statsImage.writeFits("statsImage-%d.fits" % self.num)
+        statsNum.writeFits("statsNum-%d.fits" % self.num)
 
         statsImage /= statsNum
         statsImage = afwImage.makeMaskedImage(statsImage)
@@ -809,24 +852,33 @@ class ConstructionTask(Task):
         bad = numpy.where(numpy.isnan(statsImage.getImage().getArray()))
         statsMask[bad] = statsImage.getMask().getPlaneBitMask("BAD")
         mergedModel = afwMath.BackgroundMI(tractBox, statsImage)
-        statsImage.writeFits("statsImage.fits")
+        self.zeroOutBad(mergedModel.getStatsImage().getImage())
+
+        mergedModel.getImageF("AKIMA_SPLINE", "REDUCE_INTERP_ORDER").writeFits("mergedModel-%d.fits" % self.num)
+        self.num += 1
+
         return mergedModel
 
     def addNextVisit(self, cache, patchData, bgModel):
         patchRef = patchData.patchRef
         calexpRefList = patchData.calexpRefList
         patchIndex = getPatchIndex(patchRef.dataId)
-        self.log.info("%s: Adding visit to patch %s" % (thisNode(), patchIndex))
+        self.log.info("%s: Adding visit %s to patch %s" % (NODE, cache.visit, patchIndex))
         skyInfo = cache.skyInfo
         # XXX this is awfully inefficient
         bgImage = bgModel.getImageF("AKIMA_SPLINE", "REDUCE_INTERP_ORDER")
         bgSubImage = afwImage.ImageF(bgImage, skyInfo.bbox)
 
+        bgSubImage.writeFits("model-%s-%s.fits" % ("-".join(map(str, cache.visit)), "%d,%d" % patchIndex))
+
         if cache.warp is not None:
             warp = cache.warp
             warpImage = warp.getMaskedImage()
+            good = numpy.where(numpy.logical_not(numpy.isnan(warpImage.getImage().getArray())))
+            self.log.info("%s mean: %f, %f" % (patchIndex, numpy.mean(warpImage.getImage().getArray()[good]), numpy.mean(bgSubImage.getArray()[good])))
             warpImage += bgSubImage
             weight = self.generateWeight(skyInfo, calexpRefList, warp)
+            self.zeroOutBad(warp, weight)
         else:
             warpImage = bgSubImage
             if calexpRefList:
@@ -834,9 +886,30 @@ class ConstructionTask(Task):
             else:
                 weight = afwImage.ImageF(warpImage.getDimensions())
                 weight.set(0.0)
+
+        warpImage.writeFits("add-%s-%s.fits" % ("-".join(map(str, cache.visit)), "%d,%d" % patchIndex))
+
         warpImage *= weight
+
+
+
         cache.bgRef.getMaskedImage().__iadd__(warpImage)
         cache.bgWeight += weight
+
+        bgImage = cache.bgRef.getMaskedImage()
+        mask = bgImage.getMask()
+        maskArray = mask.getArray()
+        bad = numpy.where(numpy.isnan(bgImage.getImage().getArray()))
+        bitmask = mask.getPlaneBitMask(self.config.mask)
+        maskArray &= ~bitmask
+        maskArray[bad] = mask.getPlaneBitMask("BAD")
+
+
+        bgRef = cache.bgRef.getMaskedImage().clone()
+        bgRef /= cache.bgWeight
+        bgRef.writeFits("bg-%s-%s.fits" % ("-".join(map(str, cache.visit)), "%d,%d" % patchIndex))
+
+
 
     def finalize(self, cache, patchRef):
         bgRef = cache.bgRef
@@ -913,14 +986,15 @@ class ConstructionTask(Task):
         weight = self.config.taper.apply(skyInfo.bbox, transformer.skyToPatch(boresight))
         if hasattr(weight, "getImage"):
             weight = weight.getImage()
-        if warp is not None:
-            if hasattr(warp, "getMaskedImage"):
-                warp = warp.getMaskedImage()
-            bitmask = warp.getMask().getPlaneBitMask(self.config.mask)
-            bad = numpy.logical_or(warp.getMask().getArray() & bitmask > 0,
-                                   numpy.logical_not(numpy.isfinite(warp.getImage().getArray())))
-            weightArray = weight.getArray()
-            weightArray[bad] = 0.0
+
+###        if warp is not None:
+###            if hasattr(warp, "getMaskedImage"):
+###                warp = warp.getMaskedImage()
+###            bitmask = warp.getMask().getPlaneBitMask(self.config.mask)
+###            bad = numpy.logical_or(warp.getMask().getArray() & bitmask > 0,
+###                                   numpy.logical_not(numpy.isfinite(warp.getImage().getArray())))
+###            weightArray = weight.getArray()
+###            weightArray[bad] = 0.0
         return weight
 
 ###    def getWarpRef(self, patchRef, calexpRefList, coaddName="deep"):
@@ -1064,7 +1138,7 @@ class BackgroundReferenceTask(PbsPoolTask):
 ###        @param selectDataList: List of SelectStruct for inputs
 ###        """
 ###        if self.rank == self.root:
-###            self.log.info("%s: Root node calculating overlaps and assignment" % thisNode())
+###            self.log.info("%s: Root node calculating overlaps and assignment" % NODE)
 ###            super(MpiBackgroundReferenceTask, self).run(patchRefList, selectDataList=selectDataList)
 ###        else:
 ###            # Must get the slave nodes into the same place the master node ends up
@@ -1087,7 +1161,7 @@ class BackgroundReferenceTask(PbsPoolTask):
 ###                           ) for patchRef in patchRefList]
 ###        else:
 ###            args = None
-###        self.log.info("%s: Ready to construct backgrounds" % thisNode())
+###        self.log.info("%s: Ready to construct backgrounds" % NODE)
 ###        pbasf2.ScatterJob(self.comm, self.constructSingleBackground, args, root=self.root)
 ###
 ###    def constructSingleBackground(self, struct):
@@ -1102,16 +1176,16 @@ class BackgroundReferenceTask(PbsPoolTask):
 ###        """
 ###        patchRef = struct.patchRef
 ###        assignment = struct.assignment
-###        self.log.info("%s: Start constructing background for %s" % (thisNode(), patchRef.dataId))
+###        self.log.info("%s: Start constructing background for %s" % (NODE, patchRef.dataId))
 ###        if assignment is None:
-###            self.log.warn("%s: No inputs assigned for %s" % (thisNode(), patchRef.dataId))
+###            self.log.warn("%s: No inputs assigned for %s" % (NODE, patchRef.dataId))
 ###            return
 ###        try:
 ###            self.construct.run(patchRef, assignment, coaddName=self.config.coaddName)
 ###        except RuntimeError as e:
 ###            self.log.warn("Unable to construct background reference for %s due to %s: %s" %
 ###                          (patchRef.dataId, e.__class__.__name__, e))
-###        self.log.info("%s: Finished constructing background for %s" % (thisNode(), patchRef.dataId))
+###        self.log.info("%s: Finished constructing background for %s" % (NODE, patchRef.dataId))
 ###
 
 """
