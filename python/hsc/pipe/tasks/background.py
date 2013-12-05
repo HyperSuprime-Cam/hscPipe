@@ -5,12 +5,11 @@ import itertools
 import numpy
 
 from lsst.geom import convexHull
-from lsst.pex.config import Config, ConfigurableField, ListField, Field, ConfigField
+from lsst.pex.config import Config, ConfigurableField, ListField, Field, ConfigField, ChoiceField
 from lsst.pex.exceptions import LsstCppException, DomainErrorException, RuntimeErrorException
 from lsst.pipe.base import Task, Struct, ArgumentParser
 from lsst.pipe.tasks.coaddBase import CoaddTaskRunner, CoaddDataIdContainer, SelectDataIdContainer, getSkyInfo
 from lsst.pipe.tasks.selectImages import WcsSelectImagesTask
-from lsst.pipe.tasks.matchBackgrounds import MatchBackgroundsTask
 from lsst.pipe.tasks.scaleZeroPoint import ScaleZeroPointTask
 from lsst.afw.fits.fitsLib import FitsError
 import lsst.afw.display.ds9 as ds9
@@ -595,13 +594,108 @@ class XyTaperWeightImage(object):
                     cosBell(numpy.abs(y - yCenter), self._yStart, self._yStop))
         return image
 
+
+class MatchBackgroundsConfig(Config):
+    background = ConfigField(dtype=measAlg.BackgroundConfig, doc="Background matching config")
+    undersampleStyle = ChoiceField(
+        doc="behaviour if there are too few points in grid for requested interpolation style",
+        dtype=str, default="REDUCE_INTERP_ORDER",
+        allowed={
+            "THROW_EXCEPTION": "throw an exception if there are too few points",
+            "REDUCE_INTERP_ORDER": "use an interpolation style with a lower order.",
+            "INCREASE_NXNYSAMPLE": "Increase the number of samples used to make the interpolation grid.",
+            }
+        )
+    interpolation = ChoiceField(
+        doc="how to interpolate the background values. This maps to an enum; see afw::math::Background",
+        dtype=str, default="AKIMA_SPLINE",
+        allowed={
+            "CONSTANT" : "Use a single constant value",
+            "LINEAR" : "Use linear interpolation",
+            "NATURAL_SPLINE" : "cubic spline with zero second derivative at endpoints",
+            "AKIMA_SPLINE": "higher-level nonlinear spline that is more robust to outliers",
+            "NONE": "No background estimation is to be attempted",
+            }
+        )
+
+class MatchBackgroundsTask(Task):
+    ConfigClass = MatchBackgroundsConfig
+
+    def run(self, ref, warp, inPlace=True):
+        """Generate a background matching model
+
+        @param ref: Background reference image
+        @param warp: Science warp image
+        @param inPlace: Operate on background reference in-place?
+        @return background model
+        """
+        diff = self.subtract(ref, warp, inPlace=inPlace)
+        bgModel = self.calculateBackgroundModel(diff)
+        return bgModel
+
+    def _getImage(self, image):
+        """Get an image suitable for arithmetic operations
+
+        Mainly concerned with getting a MaskedImage out of an Exposure.
+        """
+        if hasattr(image, "getMaskedImage"):
+            return image.getMaskedImage()
+        return image
+
+    def subtract(self, ref, warp, inPlace=True):
+        """Subtract warp from reference
+
+        This is drop-dead simple now; might want to do PSF-matching.
+
+        @param ref: Background reference image
+        @param warp: Science warp image
+        @param inPlace: Operate on background reference in-place?
+        @return Subtracted image
+        """
+        if not inPlace:
+            ref = ref.clone()
+        refImage = self._getImage(ref)
+        warpImage = self._getImage(warp)
+        refImage -= warpImage
+        return ref
+
+    def calculateBackgroundModel(self, diff):
+        """Determine a background model from a diff image
+
+        This is the heart of background matching.
+
+        Bad pixels are zeroed out to ensure the background matching
+        addition goes to zero where there are no pixels.
+
+        @param diff: Difference exposure
+        @return background model
+        """
+        diff = self._getImage(diff)
+        bgModel = measAlg.getBackground(diff, self.config.background)
+        return afwMath.cast_BackgroundMI(bgModel)
+
+    def apply(self, warp, bgModel, inPlace=True):
+        """Apply background matching model to warp
+
+        @param warp: Science warp image
+        @param bgModel: Background model to apply
+        @param inPlace: Operate on warp in-place?
+        @return Background-matched warp
+        """
+        if not inPlace:
+            warp = warp.clone()
+        warpImage = self._getImage(warp)
+        bgImage = bgModel.getImageF(self.config.interpolation, self.config.undersampleStyle)
+        warpImage += bgImage
+        return warpImage
+
+
 class ConstructionConfig(Config):
-    doWarp = Field(dtype=bool, default=True, doc="Warp images to sky tract/patch?")
     taper = ConfigurableField(target=RadiusTaperWeightImage, doc="Object to provide tapered weight image")
     scaling = ConfigurableField(target=ScaleZeroPointTask, doc="Scale warps to common zero point")
     mask = ListField(dtype=str, default=["BAD", "SAT", "EDGE",], doc="Mask planes to mask")
-    background = ConfigField(dtype=measAlg.BackgroundConfig, doc="Background matching config")
-    bgSize = Field(dtype=int, default=1024, doc="Background model bin size (tract pixels)")
+    matching = ConfigurableField(target=MatchBackgroundsTask, doc="Background matching")
+    bgSize = Field(dtype=int, default=256, doc="Merged background model bin size (tract pixels)")
     clobber = Field(dtype=bool, default=False, doc="Clobber existing outputs?")
 
 class ConstructionTask(Task):
@@ -610,6 +704,7 @@ class ConstructionTask(Task):
     def __init__(self, *args, **kwargs):
         super(ConstructionTask, self).__init__(*args, **kwargs)
         self.makeSubtask("scaling")
+        self.makeSubtask("matching")
         self.debug = False
 
     def run(self, patchRefList, visitList, overlaps, coaddName="deep", visitKeys=["visit"]):
@@ -731,21 +826,11 @@ class ConstructionTask(Task):
         cache.warp = warp
         bgRef = cache.bgRef.clone()
         bgRef.getMaskedImage().__idiv__(cache.bgWeight)
-        diff = self.subtractWarp(bgRef, warp)
-        bgModel = self.calculateBackgroundModel(diff)
 
-        if self.debug:
-            diff.writeFits("diff-%s-%s.fits" % ("-".join(map(str, visit)), "%d,%d" % patchIndex))
+        bgModel = self.matching.run(bgRef, warp, inPlace=True)
+        self.zeroOutBad(bgModel.getStatsImage().getImage())
 
         return bgModel
-
-    def subtractWarp(self, refExp, warpExp):
-        """Subtract warp from reference in-place
-
-        This is drop-dead simple now; might want to do PSF-matching.
-        """
-        refExp.getMaskedImage().__isub__(warpExp.getMaskedImage())
-        return refExp
 
     def zeroOutBad(self, image, *others):
         """Zero out bad and non-finite pixels in an image
@@ -770,24 +855,6 @@ class ConstructionTask(Task):
         for im in others:
             array = im.getArray()
             array[bad] = 0.0
-
-
-    def calculateBackgroundModel(self, diff):
-        """Determine a background model from a diff image
-
-        This is the heart of background matching.
-
-        Bad pixels are zeroed out to ensure the background matching
-        addition goes to zero where there are no pixels.
-
-        @param diff: Difference exposure
-        @return background model
-        """
-
-        bgModel = measAlg.getBackground(diff.getMaskedImage(), self.config.background)
-        bgModel = afwMath.cast_BackgroundMI(bgModel)
-        self.zeroOutBad(bgModel.getStatsImage().getImage())
-        return bgModel
 
     def mergeBackgroundModels(self, butler, patchIdList, bgModelList, coaddName="deep"):
         """Merge background models from different patches
@@ -849,8 +916,7 @@ class ConstructionTask(Task):
                 try:
                     # XXX shrink box if only just a bit big
                     subImage = afwImage.ImageF(bgImage, box, afwImage.PARENT)
-                    subMask = afwImage.MaskU(mask, box, afwImage.PARENT)
-                    value = afwMath.makeStatistics(subImage, subMask, stat, statCtrl).getValue()
+                    value = afwMath.makeStatistics(subImage, stat, statCtrl).getValue()
                 except:
                     continue
                 statsImage.set(ix, iy, statsImage.get(ix, iy) + value)
@@ -903,7 +969,6 @@ class ConstructionTask(Task):
         if cache.warp is not None:
             warp = cache.warp
             warpImage = warp.getMaskedImage()
-            good = numpy.where(numpy.logical_not(numpy.isnan(warpImage.getImage().getArray())))
             warpImage += bgSubImage
             weight = self.generateWeight(skyInfo, calexpRefList)
             self.zeroOutBad(warp, weight)
