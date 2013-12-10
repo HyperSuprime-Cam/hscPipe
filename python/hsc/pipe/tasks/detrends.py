@@ -294,12 +294,12 @@ class DetrendTask(PbsPoolTask):
     RunnerClass = DetrendTaskRunner
     FilterName = None
 
-    def __init__(self, **kwargs):
+    def __init__(self, *args, **kwargs):
         """Constructor.
 
         All nodes execute this method.
         """
-        super(DetrendTask, self).__init__(**kwargs)
+        super(DetrendTask, self).__init__(*args, **kwargs)
         self.makeSubtask("isr")
         self.makeSubtask("combination")
 
@@ -717,8 +717,8 @@ class FlatTask(DetrendTask):
 #        config.isr.doFringe = False
 
 
-    def __init__(self, **kwargs):
-        super(FlatTask, self).__init__(**kwargs)
+    def __init__(self, *args, **kwargs):
+        super(FlatTask, self).__init__(*args, **kwargs)
         self.makeSubtask("stats")
 
     def processResult(self, exposure):
@@ -806,8 +806,8 @@ class FringeTask(DetrendTask):
         """Overrides for fringe construction"""
         config.isr.doFringe = False
 
-    def __init__(self, **kwargs):
-        super(FringeTask, self).__init__(**kwargs)
+    def __init__(self, *args, **kwargs):
+        super(FringeTask, self).__init__(*args, **kwargs)
         self.makeSubtask("detection")
         self.makeSubtask("stats")
 
@@ -898,8 +898,8 @@ class MaskTask(DetrendTask):
         """Overrides for mask construction"""
         pass
 
-    def __init__(self, **kwargs):
-        super(MaskTask, self).__init__(**kwargs)
+    def __init__(self, *args, **kwargs):
+        super(MaskTask, self).__init__(*args, **kwargs)
         background = ConfigField(dtype=measAlg.BackgroundConfig, doc="Background configuration")
         self.makeSubtask("detection")
 
