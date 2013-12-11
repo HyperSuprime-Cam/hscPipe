@@ -1,4 +1,5 @@
 import sys
+import math
 import collections
 
 import hsc.pipe.tasks.plotSetup
@@ -10,8 +11,10 @@ from lsst.pipe.base import Struct, ArgumentParser
 from lsst.pex.config import Config, Field, ConfigurableField
 from hsc.pipe.tasks.processCcd import SubaruProcessCcdTask
 from hsc.pipe.tasks.photometricSolution import PhotometricSolutionTask
-from hsc.pipe.base.pool import abortOnError, NODE, Pool
+from hsc.pipe.base.pool import abortOnError, NODE, Pool, Debugger
 from hsc.pipe.base.pbs import PbsPoolTask
+
+Debugger().enabled = True
 
 
 class ProcessExposureConfig(Config):
@@ -53,7 +56,7 @@ class ProcessExposureTask(PbsPoolTask):
     @classmethod
     def pbsWallTime(cls, time, parsedCmd, numNodes, numProcs):
         numCcds = sum(1 for raft in parsedCmd.butler.get("camera") for ccd in afwCg.cast_Raft(raft))
-        numCycles = int(numCcds/float(numNodes*numProcs) + 0.5)
+        numCycles = int(math.ceil(numCcds/float(numNodes*numProcs)))
         numExps = len(cls.RunnerClass.getTargetList(parsedCmd))
         return time*numExps*numCycles
 
@@ -86,10 +89,11 @@ class ProcessExposureTask(PbsPoolTask):
         matchLists = self.getMatchLists(structList)
         wcsList = self.solveAstrometry(matchLists, butler.mapper.camera)
         fluxMag0 = self.solvePhotometry(matchLists.values(), self.getFilterName(structList))
-        ccdIdList = [s.ccdId for s in structList]
+        ccdIdList = dataIdList.keys()
 
         # Scatter with data from root: save CCDs with update astrometric/photometric solutions
-        solutionList = [Struct(ccdId=ccdId, wcs=wcsList[ccdId], fluxMag0=fluxMag0, dataId=dataIdList[ccdId])
+        solutionList = [Struct(ccdId=ccdId, fluxMag0=fluxMag0, dataId=dataIdList[ccdId],
+                               wcs=wcsList[ccdId] if ccdId in wcsList else None)
                         for ccdId in ccdIdList]
         pool.mapToPrevious(self.write, solutionList)
 
@@ -100,11 +104,11 @@ class ProcessExposureTask(PbsPoolTask):
         """
         dataRef = hscButler.getDataRef(cache.butler, dataId)
         ccdId = dataRef.get("ccdExposureId")
-        print "Started processing %s (ccdId=%d) on %s" % (dataId, ccdId, NODE)
+        self.log.info("Started processing %s (ccdId=%d) on %s" % (dataId, ccdId, NODE))
         try:
             result = self.processCcd.run(dataRef)
         except Exception, e:
-            sys.stderr.write("Failed to process %s: %s\n" % (dataId, e))
+            self.log.warn("Failed to process %s: %s\n" % (dataId, e))
             cache.result = None
             return None
 
@@ -118,8 +122,8 @@ class ProcessExposureTask(PbsPoolTask):
             matches = afwTable.ReferenceMatchVector(result.matches)
             numMatches = len(matches)
 
-        print ("Finished processing %s (ccdId=%d) on %s with %d matches" %
-               (dataId, ccdId, NODE, numMatches))
+        self.log.Info("Finished processing %s (ccdId=%d) on %s with %d matches" %
+                      (dataId, ccdId, NODE, numMatches))
 
         return Struct(ccdId=ccdId, matches=matches, filterName=filterName)
 
@@ -159,7 +163,7 @@ class ProcessExposureTask(PbsPoolTask):
                 solvetansipIn = [task.convert(ml) if ml is not None else [] for ml in matchLists.values()]
                 wcsList = task.solve(self.config.instrument, cameraGeom, solvetansipIn)
             except Exception, e:
-                sys.stderr.write("WARNING: Global astrometric solution failed: %s\n" % e)
+                self.log.warn("WARNING: Global astrometric solution failed: %s\n" % e)
         else:
             self.log.info("solvetansip disabled in configuration")
         return dict(zip(matchLists.keys(), wcsList))
@@ -178,14 +182,14 @@ class ProcessExposureTask(PbsPoolTask):
 
         This method is only executed on the slaves.
         """
-        if not cache.result:
+        if not cache.result or not struct:
             # Processing must have failed: nothing we can do
             return
 
         dataId = struct.dataId
         ccdId = struct.ccdId
         dataRef = hscButler.getDataRef(cache.butler, dataId)
-        print "Start writing %s (ccdId=%d) on %s" % (dataId, ccdId, NODE)
+        self.log.info("Start writing %s (ccdId=%d) on %s" % (dataId, ccdId, NODE))
         wcs = struct.wcs
         fluxMag0 = struct.fluxMag0
 
@@ -193,6 +197,6 @@ class ProcessExposureTask(PbsPoolTask):
             self.processCcd.write(dataRef, cache.result, wcs=wcs, fluxMag0=fluxMag0)
             del cache.result
         except Exception, e:
-            sys.stderr.write('ERROR: Failed to write %s (ccdId=%d): %s\n' % (dataId, ccdId, e))
+            self.log.warn('ERROR: Failed to write %s (ccdId=%d): %s\n' % (dataId, ccdId, e))
 
-        print "Finished writing CCD %s (ccdId=%d) on %s" % (dataId, ccdId, NODE)
+        self.log.info("Finished writing CCD %s (ccdId=%d) on %s" % (dataId, ccdId, NODE))
