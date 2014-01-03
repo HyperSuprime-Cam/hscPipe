@@ -22,6 +22,7 @@ class ProcessExposureConfig(Config):
     photometricSolution = ConfigurableField(target=PhotometricSolutionTask, doc="Global photometric solution")
     instrument = Field(dtype=str, default="suprimecam", doc="Instrument name, for solvetansip")
     doSolveTansip = Field(dtype=bool, default=True, doc="Run solvetansip?")
+    doPhotometricSolution = Field(dtype=bool, default=True, doc="Run global photometric solution?")
 
     def setDefaults(self):
         # We will do persistence ourselves
@@ -169,6 +170,8 @@ class ProcessExposureTask(PbsPoolTask):
         return dict(zip(matchLists.keys(), wcsList))
 
     def solvePhotometry(self, matchLists, filterName):
+        if not self.config.doPhotometricSolution:
+            return None
         try:
             return self.photometricSolution.run(matchLists, filterName)
         except Exception, e:
