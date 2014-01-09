@@ -1,11 +1,9 @@
+from lsst.pex.config import Field
 from lsst.pipe.tasks.processCoadd import ProcessCoaddTask
 import hsc.pipe.base.matches as hscMatches
 
 class SubaruProcessCoaddConfig(ProcessCoaddTask.ConfigClass):
-    doWriteDenormalizedMatches = pexConfig.Field(
-        dtype=bool, default=True,
-        doc=("Write the denormalized match table?")
-    )
+    doWriteDenormalizedMatches = Field(dtype=bool, default=True, doc="Write the denormalized match table?")
 
 class SubaruProcessCoaddTask(ProcessCoaddTask):
     ConfigClass = SubaruProcessCoaddConfig
