@@ -13,6 +13,7 @@ from hsc.pipe.tasks.processCcd import SubaruProcessCcdTask
 from hsc.pipe.tasks.photometricSolution import PhotometricSolutionTask
 from hsc.pipe.base.pool import abortOnError, NODE, Pool, Debugger
 from hsc.pipe.base.pbs import PbsPoolTask
+from hsc.meas.tansip.solvetansip import SolveTansipTask
 
 Debugger().enabled = True
 
@@ -22,6 +23,7 @@ class ProcessExposureConfig(Config):
     photometricSolution = ConfigurableField(target=PhotometricSolutionTask, doc="Global photometric solution")
     instrument = Field(dtype=str, default="suprimecam", doc="Instrument name, for solvetansip")
     doSolveTansip = Field(dtype=bool, default=True, doc="Run solvetansip?")
+    solveTansip = ConfigurableField(target=SolveTansipTask, doc="Global astrometric solution")
     doPhotometricSolution = Field(dtype=bool, default=True, doc="Run global photometric solution?")
 
     def setDefaults(self):
@@ -53,6 +55,7 @@ class ProcessExposureTask(PbsPoolTask):
         super(ProcessExposureTask, self).__init__(*args, **kwargs)
         self.makeSubtask("processCcd")
         self.makeSubtask("photometricSolution", schema=self.processCcd.schema)
+        self.makeSubtask("solveTansip")
 
     @classmethod
     def pbsWallTime(cls, time, parsedCmd, numNodes, numProcs):
@@ -81,13 +84,14 @@ class ProcessExposureTask(PbsPoolTask):
 
         dataIdList = dict([(ccdRef.get("ccdExposureId"), ccdRef.dataId)
                            for ccdRef in expRef.subItems("ccd") if ccdRef.datasetExists("raw")])
+        dataIdList = collections.OrderedDict(sorted(dataIdList.items()))
 
         # Scatter: process CCDs independently
         structList = pool.map(self.process, dataIdList.values())
         numGood = sum(1 for s in structList if s is not None)
 
         # Gathered: global WCS solution
-        matchLists = self.getMatchLists(structList)
+        matchLists = self.getMatchLists(dataIdList, structList)
         wcsList = self.solveAstrometry(matchLists, butler.mapper.camera)
         fluxMag0 = self.solvePhotometry(matchLists.values(), self.getFilterName(structList))
         ccdIdList = dataIdList.keys()
@@ -123,7 +127,7 @@ class ProcessExposureTask(PbsPoolTask):
             matches = afwTable.ReferenceMatchVector(result.matches)
             numMatches = len(matches)
 
-        self.log.Info("Finished processing %s (ccdId=%d) on %s with %d matches" %
+        self.log.info("Finished processing %s (ccdId=%d) on %s with %d matches" %
                       (dataId, ccdId, NODE, numMatches))
 
         return Struct(ccdId=ccdId, matches=matches, filterName=filterName)
@@ -140,29 +144,29 @@ class ProcessExposureTask(PbsPoolTask):
             raise RuntimeError("Multiple filters over exposure: %s" % filterSet)
         return filterSet.pop()
 
-    def getMatchLists(self, structList):
+    def getMatchLists(self, dataIdList, structList):
         """Generate a list of matches for each CCD from the list of structs returned by process().
 
         The matches are reconsituted from the transfer format.
 
         Only the master executes this method, as the structList is only valid there.
         """
-        keyValue = [(s.ccdId, s.matches) for s in structList if s is not None]
-        return collections.OrderedDict(sorted(keyValue, key=lambda kv: kv[0]))
+        lookup = dict((s.ccdId, s.matches) for s in structList if s is not None)
+        return collections.OrderedDict((ccdId, lookup.get(ccdId, None)) for ccdId in dataIdList)
 
     def solveAstrometry(self, matchLists, cameraGeom):
         """Determine a global astrometric solution for the exposure.
 
         Only the master executes this method, as the matchLists is only valid there.
         """
+
         wcsList = [None] * len(matchLists)
         if self.config.doSolveTansip:
             try:
-                from hsc.meas.tansip.solvetansip import SolveTansipTask
-                config = SolveTansipTask.ConfigClass()
-                task = SolveTansipTask(name="solvetansip", config=config)
-                solvetansipIn = [task.convert(ml) if ml is not None else [] for ml in matchLists.values()]
-                wcsList = task.solve(self.config.instrument, cameraGeom, solvetansipIn)
+                solvetansipIn = [self.solveTansip.convert(ml) if ml is not None else []
+                                 for ml in matchLists.itervalues()]
+
+                wcsList = self.solveTansip.solve(self.config.instrument, cameraGeom, solvetansipIn)
             except Exception, e:
                 self.log.warn("WARNING: Global astrometric solution failed: %s\n" % e)
         else:
