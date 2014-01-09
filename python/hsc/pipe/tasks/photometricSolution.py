@@ -25,6 +25,8 @@ class PhotometricSolutionTask(PhotoCalTask):
         """Concatenate match lists"""
         matches = []
         for ml in matchLists:
+            if ml is None:
+                continue
             matches += [m for m in ml]
         return matches
 
