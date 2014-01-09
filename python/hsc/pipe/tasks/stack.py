@@ -15,7 +15,7 @@ from lsst.pipe.tasks.selectImages import BaseSelectImagesTask, WcsSelectImagesTa
 from lsst.pipe.tasks.makeCoaddTempExp import MakeCoaddTempExpTask
 from lsst.pipe.tasks.assembleCoadd import (AssembleCoaddTask, AssembleCoaddConfig, _subBBoxIter,
                                            AssembleCoaddDataIdContainer,)
-from lsst.pipe.tasks.processCoadd import ProcessCoaddTask
+from hsc.pipe.tasks.processCoadd import SubaruProcessCoaddTask
 from lsst.pipe.tasks.coaddHelpers import groupPatchExposures, getGroupDataRef
 from lsst.pipe.base import Struct, DataIdContainer, ArgumentParser
 from hsc.pipe.base.pbs import PbsPoolTask
@@ -321,7 +321,7 @@ class StackConfig(Config):
     doBackgroundReference = Field(dtype=bool, default=True, doc="Build background reference?")
     backgroundReference = ConfigurableField(target=BackgroundReferenceTask, doc="Build background reference")
     assembleCoadd = ConfigurableField(target=SimpleAssembleCoaddTask, doc="Assemble warps into coadd")
-    processCoadd = ConfigurableField(target=ProcessCoaddTask, doc="Detection and measurement on coadd")
+    processCoadd = ConfigurableField(target=SubaruProcessCoaddTask, doc="Detection and measurement on coadd")
     doOverwriteCoadd = Field(dtype=bool, default=False, doc="Overwrite coadd?")
     doOverwriteOutput = Field(dtype=bool, default=False, doc="Overwrite processing outputs?")
 
