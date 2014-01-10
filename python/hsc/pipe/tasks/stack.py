@@ -49,6 +49,7 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
         self.makeSubtask("interpImage")
         self.makeSubtask("matchBackgrounds")
         self.makeSubtask("scaleZeroPoint")
+        self.debug = False
 
     def run(self, dataRef, selectDataList=[]):
         """Assemble a coadd from a set of coaddTempExp
@@ -171,6 +172,27 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
             bgModel = None
             if self.config.doMatchBackgrounds:
                 bgModel = self.matchBackgrounds.run(bgRef, tempExp, inPlace=False)
+
+                if self.debug:
+                    suffix = "%s-%s" % (tempExpRef.dataId['visit'], patchRef.dataId['patch'])
+                    tempExp.writeFits("orig-%s.fits" % suffix)
+
+                    bgImage = bgModel.getImageF(self.matchBackgrounds.config.interpolation,
+                                                self.matchBackgrounds.config.undersampleStyle)
+                    bgImage.writeFits("bgModel-%s.fits" % suffix)
+
+                    diffImage = bgRef.clone()
+                    diffImage.getMaskedImage().__isub__(tempExp.getMaskedImage())
+                    diffImage.writeFits("diff-%s.fits" % suffix)
+
+                    warpImage = tempExp.clone()
+                    warpImage.getMaskedImage().__iadd__(bgImage)
+                    warpImage.writeFits("warp-%s.fits" % suffix)
+
+                    warpImage.getMaskedImage().__isub__(bgRef.getMaskedImage())
+                    warpImage.writeFits("check-%s.fits" % suffix)
+
+                    del bgImage, diffImage, warpImage
 
             del maskedImage
             del tempExp
