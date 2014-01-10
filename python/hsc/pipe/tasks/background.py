@@ -748,6 +748,7 @@ class ConstructionTask(Task):
 
         # Start with the first visit
         patchIdList = [patchRef.dataId for patchRef in patchRefList]
+        visitList = list(visitList) # Our own, mutable copy
         visit = visitList.pop(0)
         pool.map(self.firstVisit, extractPatchData(visit), visit)
 
