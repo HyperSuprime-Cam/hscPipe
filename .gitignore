@@ -11,5 +11,6 @@
 *.cfgc
 .sconf_temp/*
 .sconsign.dblite
+tests/.tests
 config.log
 python/hsc/pipe/tasks/version.py
