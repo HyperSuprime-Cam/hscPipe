@@ -89,6 +89,9 @@ class ProcessExposureTask(PbsPoolTask):
         # Scatter: process CCDs independently
         structList = pool.map(self.process, dataIdList.values())
         numGood = sum(1 for s in structList if s is not None)
+        if numGood == 0:
+            self.log.warn("All CCDs in exposure failed")
+            return
 
         # Gathered: global WCS solution
         matchLists = self.getMatchLists(dataIdList, structList)
