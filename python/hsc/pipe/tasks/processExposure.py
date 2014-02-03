@@ -117,6 +117,8 @@ class ProcessExposureTask(PbsPoolTask):
             result = self.processCcd.run(dataRef)
         except Exception, e:
             self.log.warn("Failed to process %s: %s\n" % (dataId, e))
+            import traceback
+            traceback.print_exc()
             cache.result = None
             return None
 
