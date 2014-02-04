@@ -111,6 +111,7 @@ class ProcessExposureTask(PbsPoolTask):
 
         Only slaves execute this method.
         """
+        cache.result = None
         dataRef = hscButler.getDataRef(cache.butler, dataId)
         ccdId = dataRef.get("ccdExposureId")
         self.log.info("Started processing %s (ccdId=%d) on %s" % (dataId, ccdId, NODE))
@@ -120,7 +121,6 @@ class ProcessExposureTask(PbsPoolTask):
             self.log.warn("Failed to process %s: %s\n" % (dataId, e))
             import traceback
             traceback.print_exc()
-            cache.result = None
             return None
 
         # Cache the results (in particular, the image)
