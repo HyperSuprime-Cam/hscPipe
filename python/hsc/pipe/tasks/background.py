@@ -102,9 +102,9 @@ class OverlappingExposure(Struct):
                                                   overlap=intersection.area()/patchArea)
 
 class AssignConfig(Config):
-    scoreNumExposures = Field(dtype=float, default=2.0, doc="Weight for scoring number of exposures")
+    scoreNumExposures = Field(dtype=float, default=1.0, doc="Weight for scoring number of exposures")
     scoreNumPatches = Field(dtype=float, default=2.0, doc="Weight for scoring number of patches")
-    scoreAverageOverlap = Field(dtype=float, default=1.0, doc="Weight for scoring average overlap")
+    scoreAverageOverlap = Field(dtype=float, default=5.0, doc="Weight for scoring average overlap")
     scoreAverageBgStdev = Field(dtype=float, default=0.01, doc="Weight for scoring average background stdev")
     scoreAveragePsfWidth = Field(dtype=float, default=0.1, doc="Weight for scoring average PSF width")
 
@@ -204,33 +204,33 @@ class AssignTask(Task):
         @param overlaps: overlaps between patches and exposures
         @return score
         """
-        score = 0
-
         # Want few distinct exposures involved:
         # ==> smaller number of exposures --> higher score
-        score += self.config.scoreNumExposures/len(selections)
+        scoreNum = self.config.scoreNumExposures/len(selections)
 
         # Want exposures to cover largest possible area:
         # ==> larger number of patches per exposure --> higher score
-        score += self.config.scoreNumPatches*len(assignments)/len(overlaps)
+        scoreArea = self.config.scoreNumPatches*len(assignments)/len(overlaps)
 
         # Want patch overlaps to be substantial:
         # ==> larger patch overlaps --> higher score
         averageOverlap = sum(max(visitData.overlap for visitData in patchAssignments.itervalues()) for
-                             patchAssignments in assignments.itervalues())/len(assignments)
-        score += self.config.scoreAverageOverlap*averageOverlap
+                             patchAssignments in assignments.itervalues())/len(overlaps)
+        scoreOverlap = self.config.scoreAverageOverlap*averageOverlap
 
         # Want background to be fairly constant:
         # ==> smaller background standard deviation --> higher score
         averageBgStdev = sum(data.bgStd for data in selectedData.itervalues())/len(assignments)
-        score += self.config.scoreAverageBgStdev/averageBgStdev
+        scoreBgStdev = self.config.scoreAverageBgStdev/averageBgStdev
 
         # Want PSF to be decent (easier subtractions, smaller kernel when PSF-matching):
         # ==> smaller PSF --> higher score
         averagePsfWidth = sum(data.psfWidth for data in selectedData.itervalues())/len(assignments)
-        score += self.config.scoreAveragePsfWidth/averagePsfWidth
+        scorePsfWidth = self.config.scoreAveragePsfWidth/averagePsfWidth
 
-        return score
+        self.log.info("Score %s: %f %f %f %f %f" % (selections, scoreNum, scoreArea, scoreOverlap,
+                                                    scoreBgStdev, scorePsfWidth))
+        return scoreNum + scoreArea + scoreOverlap + scoreBgStdev + scorePsfWidth
 
     def scoreSelections(self, selections, overlaps, expDataDict):
         """Provide a score (metric) for a possible set of selections
@@ -299,6 +299,8 @@ class AssignTask(Task):
                 bestSelections = selections
 
         self.log.info("Best selection is %s ==> score = %f" % (bestSelections, bestScore))
+        if bestSelections is None:
+            raise RuntimeError("Unable to select background reference visits")
         return bestSelections
 
     def visualizeSelections(self, tractInfo, selections, overlaps, expDataDict):
