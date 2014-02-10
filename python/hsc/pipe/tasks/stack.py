@@ -339,6 +339,7 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
 class StackConfig(Config):
     coaddName = Field(dtype=str, default="deep", doc="Name for coadd")
     select = ConfigurableField(target=BaseSelectImagesTask, doc="Select images to process")
+    doWarp = Field(dtype=bool, default=True, doc="Warp images?")
     makeCoaddTempExp = ConfigurableField(target=MakeCoaddTempExpTask, doc="Warp images to sky")
     doBackgroundReference = Field(dtype=bool, default=True, doc="Build background reference?")
     backgroundReference = ConfigurableField(target=BackgroundReferenceTask, doc="Build background reference")
@@ -450,9 +451,13 @@ class StackTask(PbsPoolTask):
         pool = Pool("stacker")
         pool.storeSet(warpType=self.config.coaddName + "Coadd_tempExp",
                       coaddType=self.config.coaddName + "Coadd")
-        warpData = [Struct(patchRef=patchRef, selectDataList=selectDataList) for
-                    patchRef in patchRefList]
-        selectedData = pool.map(self.warp, warpData)
+        if self.config.doWarp:
+            warpData = [Struct(patchRef=patchRef, selectDataList=selectDataList) for
+                        patchRef in patchRefList]
+            selectedData = pool.map(self.warp, warpData)
+        else:
+            # Faster not to do this in parallel, avoiding the overhead
+            selectedData = [self.selectExposures(patchRef, selectDataList) for patchRef in patchRefList]
         if self.config.doBackgroundReference:
             self.backgroundReference.run(patchRefList, selectDataList)
 
