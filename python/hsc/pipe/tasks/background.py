@@ -735,7 +735,7 @@ class ConstructionTask(Task):
         patchIdList = [patchRef.dataId for patchRef in patchRefList]
         visitList = list(visitList) # Our own, mutable copy
         visit = visitList.pop(0)
-        pool.map(self.firstVisit, extractPatchData(visit), visit)
+        pool.map(self.firstVisit, extractPatchData(visit), visit, len(visitList) == 0)
 
         # Add in each visit one by one, using a common background model
         for visit in visitList:
@@ -745,7 +745,7 @@ class ConstructionTask(Task):
 
         pool.mapToPrevious(self.finalize, patchRefList)
 
-    def firstVisit(self, cache, patchData, visit):
+    def firstVisit(self, cache, patchData, visit, soleVisit):
         """Initialise background reference with the first visit
 
         This method is intended to be run by slave nodes under the process pool.
@@ -758,6 +758,7 @@ class ConstructionTask(Task):
         @param cache: Process pool cache
         @param patchData: Input data for patch
         @param visit: Visit name
+        @param soleVisit: True if this is the sole visit (no weight will be applied)
         """
         patchRef = patchData.patchRef
         calexpRefList = patchData.calexpRefList
@@ -769,7 +770,12 @@ class ConstructionTask(Task):
             self.log.info("%s: Creating background reference for %s from %s" %
                           (NODE, patchIndex, dataId))
             warp = self.getWarp(patchRef, dataId, cache.warpType)
-            weight = self.generateWeight(skyInfo, calexpRefList)
+            if soleVisit:
+                self.log.info("Setting unit weight for single visit %s" % (visit,))
+                weight = afwImage.ImageF(skyInfo.bbox)
+                weight.set(1.0)
+            else:
+                weight = self.generateWeight(skyInfo, calexpRefList)
             self.zeroOutBad(warp, weight)
             warp.getMaskedImage().__imul__(weight)
         else:
