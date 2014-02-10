@@ -642,6 +642,7 @@ class MatchBackgroundsTask(Task):
         refImage = self._getImage(ref)
         warpImage = self._getImage(warp)
         refImage -= warpImage
+        # Don't zero out NAN pixels here; they're masked: let the background model do whatever it wants
         return ref
 
     def calculateBackgroundModel(self, diff):
@@ -901,9 +902,10 @@ class ConstructionTask(Task):
         cache.warp = warp
         bgRef = cache.bgRef.clone()
         bgRef.getMaskedImage().__idiv__(cache.bgWeight)
+        self.zeroOutBad(bgRef.getMaskedImage())
 
         bgModel = self.matching.run(bgRef, warp, inPlace=True)
-        self.zeroOutBad(bgModel.getStatsImage().getImage())
+        # Don't zero out bad pixels in bgModel: this introduces a potentially large offset
 
         if self.debug:
             suffix = "%s-%s.fits" % ("-".join(map(str, cache.visit)), "%d,%d" % patchIndex)
@@ -925,8 +927,10 @@ class ConstructionTask(Task):
             # A MaskedImage
             mask = image.getMask()
             bitmask = mask.getPlaneBitMask(self.config.mask)
-            bad = numpy.logical_or(mask.getArray() & bitmask > 0,
+            maskArray = mask.getArray()
+            bad = numpy.logical_or(maskArray & bitmask > 0,
                                    numpy.logical_not(numpy.isfinite(image.getImage().getArray())))
+            maskArray[bad] = bitmask # Important to flag pixels that have become NAN (e.g., due to zero weight)
             others.append(image.getImage())
             others.append(image.getVariance())
         else:
@@ -997,19 +1001,22 @@ class ConstructionTask(Task):
             bgSubImage.writeFits("model-" + suffix)
 
         if cache.warp is not None:
-            warp = cache.warp
-            warpImage = warp.getMaskedImage()
+            warpImage = cache.warp.getMaskedImage()
             warpImage += bgSubImage
-            weight = self.generateWeight(skyInfo, calexpRefList)
-            self.zeroOutBad(warp, weight)
+            del cache.warp
         else:
             warpImage = bgSubImage
-            if calexpRefList:
-                weight = self.generateWeight(skyInfo, calexpRefList)
-                self.zeroOutBad(warpImage, weight)
-            else:
-                weight = afwImage.ImageF(warpImage.getDimensions())
-                weight.set(0.0)
+        del bgSubImage, bgImage
+
+        if calexpRefList:
+            weight = self.generateWeight(skyInfo, calexpRefList)
+        else:
+            self.log.warn("%s: No data for visit %s in patch %s --- setting zero weight" %
+                          (NODE, cache.visit, patchIndex))
+            weight = afwImage.ImageF(warpImage.getDimensions())
+            weight.set(0.0)
+
+        self.zeroOutBad(warpImage, weight)
 
         if self.debug:
             warpImage.writeFits("add-" + suffix)
@@ -1018,6 +1025,7 @@ class ConstructionTask(Task):
         warpImage *= weight
         cache.bgRef.getMaskedImage().__iadd__(warpImage)
         cache.bgWeight += weight
+        del warpImage, weight
 
         # Set bad pixels in the background reference
         bgImage = cache.bgRef.getMaskedImage()
