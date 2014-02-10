@@ -602,26 +602,6 @@ class XyTaperWeightImage(object):
 
 class MatchBackgroundsConfig(Config):
     background = ConfigField(dtype=measAlg.BackgroundConfig, doc="Background matching config")
-    undersampleStyle = ChoiceField(
-        doc="behaviour if there are too few points in grid for requested interpolation style",
-        dtype=str, default="REDUCE_INTERP_ORDER",
-        allowed={
-            "THROW_EXCEPTION": "throw an exception if there are too few points",
-            "REDUCE_INTERP_ORDER": "use an interpolation style with a lower order.",
-            "INCREASE_NXNYSAMPLE": "Increase the number of samples used to make the interpolation grid.",
-            }
-        )
-    interpolation = ChoiceField(
-        doc="how to interpolate the background values. This maps to an enum; see afw::math::Background",
-        dtype=str, default="AKIMA_SPLINE",
-        allowed={
-            "CONSTANT" : "Use a single constant value",
-            "LINEAR" : "Use linear interpolation",
-            "NATURAL_SPLINE" : "cubic spline with zero second derivative at endpoints",
-            "AKIMA_SPLINE": "higher-level nonlinear spline that is more robust to outliers",
-            "NONE": "No background estimation is to be attempted",
-            }
-        )
 
 class MatchBackgroundsTask(Task):
     ConfigClass = MatchBackgroundsConfig
@@ -690,8 +670,8 @@ class MatchBackgroundsTask(Task):
         if not inPlace:
             warp = warp.clone()
         warpImage = self._getImage(warp)
-        bgImage = bgModel.getImageF(self.config.interpolation, self.config.undersampleStyle)
-        warpImage += bgImage
+        warpImage += bgModel.getImageF(self.config.background.algorithm,
+                                       self.config.background.undersampleStyle)
         return warpImage
 
 
@@ -965,9 +945,14 @@ class ConstructionTask(Task):
         patchIndex = getPatchIndex(patchRef.dataId)
         self.log.info("%s: Adding visit %s to patch %s" % (NODE, cache.visit, patchIndex))
         skyInfo = cache.skyInfo
-        # XXX this is awfully inefficient
-        bgImage = bgModel.getImageF("AKIMA_SPLINE", "REDUCE_INTERP_ORDER")
-        bgSubImage = afwImage.ImageF(bgImage, skyInfo.bbox)
+        if False:
+            # XXX this is awfully inefficient
+            bgImage = bgModel.getImageF("AKIMA_SPLINE", "REDUCE_INTERP_ORDER")
+            bgSubImage = afwImage.ImageF(bgImage, skyInfo.bbox)#, afwImage.PARENT, True)
+        else:
+            bgImage = None
+            bgSubImage = bgModel.getImageF(skyInfo.bbox, self.config.matching.background.algorithm,
+                                           self.config.matching.background.undersampleStyle)
 
         if self.debug:
             bgSubImage.writeFits("model-%s-%s.fits" % ("-".join(map(str, cache.visit)), "%d,%d" % patchIndex))
