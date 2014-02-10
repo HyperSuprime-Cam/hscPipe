@@ -789,11 +789,15 @@ class ConstructionTask(Task):
                 if patchRef.datasetExists(bgRefType):
                     raise RuntimeError("Background reference exists for %s" % (patchRef.dataId,))
 
+        # Remove patches with no overlap
+        patchRefList = [patchRef for patchRef in patchRefList if getPatchIndex(patchRef.dataId) in overlaps]
 
         def extractPatchData(visit):
             patchDataList = []
             for patchRef in patchRefList:
                 patchIndex = getPatchIndex(patchRef.dataId)
+                if patchIndex not in overlaps:
+                    continue
                 patchOverlaps = overlaps[patchIndex]
                 calexpRefList = ([comp.dataRef for comp in patchOverlaps[visit]] if
                                  visit in patchOverlaps else None)
