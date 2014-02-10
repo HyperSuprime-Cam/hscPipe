@@ -860,6 +860,16 @@ class ConstructionTask(Task):
         cache.bgRef = warp
         cache.bgWeight = weight
 
+        if self.debug:
+            suffix = "%s-%s.fits" % ("-".join(map(str, visit)), "%d,%d" % patchIndex)
+            warp.writeFits("add-" + suffix)
+            weight.writeFits("weight-" + suffix)
+            cache.bgRef.writeFits("sum-" + suffix)
+            cache.bgWeight.writeFits("sumWeight-" + suffix)
+            bgRef = cache.bgRef.getMaskedImage().clone()
+            bgRef /= cache.bgWeight
+            bgRef.writeFits("bgRef-" + suffix)
+
     def getWarp(self, patchRef, dataId, datasetType="deepCoadd_tempExp"):
         warp = patchRef.get(datasetType, immediate=True, **dataId)
         self.scaling.computeImageScaler(warp, patchRef).scaleMaskedImage(warp.getMaskedImage())
@@ -890,6 +900,12 @@ class ConstructionTask(Task):
 
         bgModel = self.matching.run(bgRef, warp, inPlace=True)
         self.zeroOutBad(bgModel.getStatsImage().getImage())
+
+        if self.debug:
+            suffix = "%s-%s.fits" % ("-".join(map(str, cache.visit)), "%d,%d" % patchIndex)
+            warp.writeFits("warp-" + suffix)
+            bgRef.writeFits("diff-" + suffix)
+            bgModel.getImageF("AKIMA_SPLINE", "REDUCE_INTERP_ORDER").writeFits("bgModel-single-" + suffix)
 
         return bgModel
 
@@ -973,7 +989,8 @@ class ConstructionTask(Task):
                                            self.config.matching.background.undersampleStyle)
 
         if self.debug:
-            bgSubImage.writeFits("model-%s-%s.fits" % ("-".join(map(str, cache.visit)), "%d,%d" % patchIndex))
+            suffix = "%s-%s.fits" % ("-".join(map(str, cache.visit)), "%d,%d" % patchIndex)
+            bgSubImage.writeFits("model-" + suffix)
 
         if cache.warp is not None:
             warp = cache.warp
@@ -991,7 +1008,8 @@ class ConstructionTask(Task):
                 weight.set(0.0)
 
         if self.debug:
-            warpImage.writeFits("add-%s-%s.fits" % ("-".join(map(str, cache.visit)), "%d,%d" % patchIndex))
+            warpImage.writeFits("add-" + suffix)
+            weight.writeFits("weight-" + suffix)
 
         warpImage *= weight
         cache.bgRef.getMaskedImage().__iadd__(warpImage)
@@ -1007,9 +1025,11 @@ class ConstructionTask(Task):
         maskArray[bad] = mask.getPlaneBitMask("BAD")
 
         if self.debug:
+            cache.bgRef.writeFits("sum-" + suffix)
+            cache.bgWeight.writeFits("sumWeight-" + suffix)
             bgRef = cache.bgRef.getMaskedImage().clone()
             bgRef /= cache.bgWeight
-            bgRef.writeFits("bg-%s-%s.fits" % ("-".join(map(str, cache.visit)), "%d,%d" % patchIndex))
+            bgRef.writeFits("bgRef-" + suffix)
 
     def finalize(self, cache, patchRef):
         """Finish up background reference and write
