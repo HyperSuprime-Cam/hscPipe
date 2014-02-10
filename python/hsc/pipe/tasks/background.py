@@ -674,6 +674,75 @@ class MatchBackgroundsTask(Task):
                                        self.config.background.undersampleStyle)
         return warpImage
 
+    def merge(self, tract, patchList, bgModelList):
+        """Merge background models from different patches
+
+        This ensures all patches use a common background model for
+        matching to the reference.
+
+        This implementation is extremely inefficient, and could be
+        improved by adding support for this operation in the
+        BackgroundMI class.
+
+        @param tract: Tract object
+        @param patchIdList: List of patch objects
+        @param bgModelList: Corresponding list of patch background models
+        @return merged background model
+        """
+        bgSize = self.config.background.binSize
+        tractBox = tract.getBBox()
+        x0, y0 = tractBox.getMin()
+        xSize, ySize = tractBox.getMax() - afwGeom.Extent2I(x0, y0) # Size of tract
+        # Number of samples for background model
+        xNum = int(math.ceil(float(xSize)/bgSize))
+        yNum = int(math.ceil(float(ySize)/bgSize))
+        # Bounds of each sample
+        xBounds = numpy.linspace(x0, xSize, xNum + 1, True).astype(int)
+        yBounds = numpy.linspace(x0, ySize, yNum + 1, True).astype(int)
+
+        statsNum = afwImage.ImageF(xNum, yNum) # float so we can easily divide later
+        statsNum.set(0.0)
+        statsImage = afwImage.ImageF(xNum, yNum)
+        statsImage.set(0.0)
+
+        def statsIter():
+            """Return coordinates on stats image, box on tract"""
+            for ix, iy in itertools.product(range(xNum), range(yNum)):
+                yield ix, iy, afwGeom.Box2I(afwGeom.Point2I(int(xBounds[ix]), int(yBounds[iy])),
+                                            afwGeom.Point2I(int(xBounds[ix+1]), int(yBounds[iy+1])))
+
+        statCtrl = afwMath.StatisticsControl()
+        statCtrl.setNanSafe(True)
+        stat = afwMath.MEAN
+        for patch, bgModel in zip(patchList, bgModelList):
+            if bgModel is None:
+                continue
+
+            # XXX this is not very efficient
+            bgImage = bgModel.getImageF(self.config.background.algorithm,
+                                        self.config.background.undersampleStyle)
+            bgImage.setXY0(patch.getOuterBBox().getMin())
+            for ix, iy, box in statsIter():
+                try:
+                    # XXX shrink box if only just a bit big
+                    subImage = afwImage.ImageF(bgImage, box, afwImage.PARENT)
+                    value = afwMath.makeStatistics(subImage, stat, statCtrl).getValue()
+                except:
+                    continue
+                statsImage.set(ix, iy, statsImage.get(ix, iy) + value)
+                statsNum.set(ix, iy, statsNum.get(ix, iy) + 1)
+            del bgImage
+
+        statsImage /= statsNum
+        statsImage = afwImage.makeMaskedImage(statsImage)
+        statsMask = statsImage.getMask().getArray()
+        bad = numpy.where(numpy.isnan(statsImage.getImage().getArray()))
+        statsMask[bad] = statsImage.getMask().getPlaneBitMask("BAD")
+        mergedModel = afwMath.BackgroundMI(tractBox, statsImage)
+
+        return mergedModel
+
+
 
 class ConstructionConfig(Config):
     taper = ConfigurableField(target=RadiusTaperWeightImage, doc="Object to provide tapered weight image")
@@ -864,69 +933,12 @@ class ConstructionTask(Task):
         @param coaddName: Name of coadd (for retrieving skymap)
         @return merged background model
         """
-        skymap = None
-        statsImage = None
-        # XXX configure stats
-        statCtrl = afwMath.StatisticsControl()
-        statCtrl.setAndMask(afwImage.MaskU.getPlaneBitMask(self.config.mask))
-        stat = afwMath.MEAN
-        for patchId, bgModel in zip(patchIdList, bgModelList):
-            if bgModel is None:
-                continue
-            if not skymap:
-                # Set up the patch
-                skymap = butler.get(coaddName + "Coadd_skyMap", patchId)
-                tract = skymap[patchId["tract"]]
-
-                tractBox = tract.getBBox()
-                x0, y0 = tractBox.getMin()
-                # Size of tract
-                xSize, ySize = tractBox.getMax() - afwGeom.Extent2I(x0, y0)
-                # Number of samples for background model
-                xNum = int(math.ceil(float(xSize)/self.config.bgSize))
-                yNum = int(math.ceil(float(ySize)/self.config.bgSize))
-                xBounds = numpy.linspace(x0, xSize, xNum + 1, True).astype(int)
-                yBounds = numpy.linspace(x0, ySize, yNum + 1, True).astype(int)
-
-                statsNum = afwImage.ImageF(xNum, yNum) # float so we can easily divide later
-                statsNum.set(0.0)
-                statsImage = afwImage.ImageF(xNum, yNum)
-                statsImage.set(0.0)
-
-                def statsIter():
-                    """Return coordinates on stats image, box on tract"""
-                    for ix, iy in itertools.product(range(xNum), range(yNum)):
-                        yield ix, iy, afwGeom.Box2I(afwGeom.Point2I(int(xBounds[ix]), int(yBounds[iy])),
-                                                    afwGeom.Point2I(int(xBounds[ix+1]), int(yBounds[iy+1])))
-
-            # XXX this is terribly inefficient
-            bgImage = bgModel.getImageF("AKIMA_SPLINE", "REDUCE_INTERP_ORDER")
-            patchIndex = getPatchIndex(patchId)
-            patchBox = tract[patchIndex].getOuterBBox()
-            bgImage.setXY0(patchBox.getMin())
-            for ix, iy, box in statsIter():
-                try:
-                    # XXX shrink box if only just a bit big
-                    subImage = afwImage.ImageF(bgImage, box, afwImage.PARENT)
-                    value = afwMath.makeStatistics(subImage, stat, statCtrl).getValue()
-                except:
-                    continue
-                statsImage.set(ix, iy, statsImage.get(ix, iy) + value)
-                statsNum.set(ix, iy, statsNum.get(ix, iy) + 1)
-            del bgImage
-
-        if statsImage is None:
-            raise RuntimeError("Unable to merge background models")
-
-        statsImage /= statsNum
-        statsImage = afwImage.makeMaskedImage(statsImage)
-        statsMask = statsImage.getMask().getArray()
-        bad = numpy.where(numpy.isnan(statsImage.getImage().getArray()))
-        statsMask[bad] = statsImage.getMask().getPlaneBitMask("BAD")
-        mergedModel = afwMath.BackgroundMI(tractBox, statsImage)
-        self.zeroOutBad(mergedModel.getStatsImage().getImage())
-
-        return mergedModel
+        skymap = butler.get(coaddName + "Coadd_skyMap")
+        tractIdSet = set([patchId["tract"] for patchId in patchIdList])
+        assert len(tractIdSet) == 1
+        tract = skymap[tractIdSet.pop()]
+        patchList = [tract[getPatchIndex(patchId)] for patchId in patchIdList]
+        return self.matching.merge(tract, patchList, bgModelList)
 
     def addNextVisit(self, cache, patchData, bgModel):
         """Add visit to background reference
