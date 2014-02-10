@@ -537,7 +537,7 @@ class RadiusTaperWeightImage(object):
         """Return image of radius as a function of position"""
         bbox = self._bbox
         image = afwImage.ImageF(bbox)
-        x, y = numpy.ogrid[bbox.getMinY():bbox.getMaxY()+1, bbox.getMinX():bbox.getMaxX()+1]
+        y, x = numpy.ogrid[bbox.getMinY():bbox.getMaxY()+1, bbox.getMinX():bbox.getMaxX()+1]
         xCenter, yCenter = self._boresight
         array = image.getArray()
         array[:] = numpy.sqrt((x - xCenter)**2 + (y - yCenter)**2)
