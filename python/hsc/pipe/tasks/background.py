@@ -122,7 +122,12 @@ class AssignTask(Task):
         @param dataRefList: list of input (calexp) data references
         @return dict mapping patch (x,y) tuple to a list of a list of data references for each visit
         """
-        expDataDict = self.gatherExposureData(dataRefList)
+        pool = Pool(None)
+        expData = pool.map(self.gatherExposureData, dataRefList)
+        expDataDict = {}
+        for dataRef, data in zip(dataRefList, expData):
+            data.dataRef = dataRef
+            expDataDict[getDataName(dataRef)] = data
         overlaps = self.calculateOverlaps(tractInfo, expDataDict, visitKeys)
         selections = self.calculateBestSelections(tractInfo, overlaps, expDataDict, visitKeys)
         assignments = self.extractSelections(selections, overlaps)
@@ -167,19 +172,17 @@ class AssignTask(Task):
 
         return overlaps
 
-    def gatherExposureData(self, dataRefList):
-        """Gather data about each input exposure
+    def gatherExposureData(self, dataRef):
+        """Gather data about an input exposure
 
-        This is currently implemented as a serial operation, but could be
-        made parallel using MPI.
+        This method adds a polygon, which is essential for determining
+        which patches the exposure overlaps.  The "getExposureData"
+        method adds other data, useful for scoring.
 
-        @param dataRefList: list of (calexp) data references
-        @return dict mapping data name to struct with exposure data
+        @param dataRef: data reference (for calexp)
+        @return struct with exposure data
         """
-        return dict((getDataName(dataRef), Struct(dataRef=dataRef,
-                                                  poly=imagePoly(dataRef, log=self.log).poly,
-                                                  **self.getExposureData(dataRef).getDict())) for
-                    dataRef in dataRefList)
+        return Struct(poly=imagePoly(dataRef, log=self.log).poly, **self.getExposureData(dataRef).getDict())
 
     def getExposureData(self, dataRef):
         """Retrieve data about an exposure"""
