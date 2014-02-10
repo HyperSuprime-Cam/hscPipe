@@ -7,8 +7,8 @@ import lsst.afw.geom as afwGeom
 import lsst.afw.math as afwMath
 import lsst.afw.image as afwImage
 import lsst.coadd.utils as coaddUtils
-from lsst.meas.algorithms import CoaddPsf
-from lsst.pex.config import Config, Field, ConfigurableField
+from lsst.meas.algorithms import CoaddPsf, BackgroundConfig, getBackground
+from lsst.pex.config import Config, Field, ConfigurableField, ConfigField
 from lsst.pex.exceptions import LsstCppException, InvalidParameterException
 from lsst.pipe.tasks.coaddBase import CoaddDataIdContainer, SelectDataIdContainer, CoaddTaskRunner
 from lsst.pipe.tasks.selectImages import BaseSelectImagesTask, WcsSelectImagesTask, BaseExposureInfo
@@ -37,7 +37,8 @@ class NullSelectImagesTask(BaseSelectImagesTask):
 
 class SimpleAssembleCoaddConfig(AssembleCoaddConfig):
     matchBackgrounds = ConfigurableField(target=MatchBackgroundsTask, doc="Background matching")
-
+    doBackgroundSubtraction = Field(dtype=bool, default=True, doc="Subtract background?")
+    background = ConfigField(dtype=BackgroundConfig, doc="Background matching config")
 
 class SimpleAssembleCoaddTask(AssembleCoaddTask):
     """Assemble a coadd from a set of coaddTempExp
@@ -97,10 +98,17 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
             self.interpImage.interpolateOnePlane(maskedImage=coaddExp.getMaskedImage(), planeName="EDGE",
                                                  fwhmPixels=fwhmPixels)
 
+        if self.config.doBackgroundSubtraction:
+            bgModel = self.subtractBackground(coaddExp)
+        else:
+            bgModel = None
+
         if self.config.doWrite:
             self.writeCoaddOutput(dataRef, coaddExp)
+            if bgModel:
+                self.writeCoaddOutput(dataRef, bgModel.getImage(), "bg")
 
-        return Struct(coaddExposure=coaddExp)
+        return Struct(coaddExposure=coaddExp, background=bgModel)
 
     def getTempExpRefList(self, patchRef, calExpRefList):
         """Generate list of warp data references
@@ -321,6 +329,13 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
                 maskedImageList, statsFlags, statsCtrl, weightList)
 
         coaddView <<= coaddSubregion
+
+    def subtractBackground(self, exp):
+        # XXX these results from individual patches need to be merged
+        bgModel = getBackground(exp.getMaskedImage(), self.config.background)
+        bgImage = bgModel.getImageF(self.config.background.algorithm, self.config.background.undersampleStyle)
+        exp.getMaskedImage().__isub__(bgImage)
+        return bgModel
 
     @classmethod
     def _makeArgumentParser(cls):
