@@ -99,6 +99,7 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
                                                  fwhmPixels=fwhmPixels)
 
         if self.config.doBackgroundSubtraction:
+            # XXX Should be a two-step process, with a detection stage in-between
             bgModel = self.subtractBackground(coaddExp)
         else:
             bgModel = None
@@ -106,7 +107,7 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
         if self.config.doWrite:
             self.writeCoaddOutput(dataRef, coaddExp)
             if bgModel:
-                self.writeCoaddOutput(dataRef, bgModel.getImage(), "bg")
+                self.writeCoaddOutput(dataRef, bgModel.getImageF(), "bg")
 
         return Struct(coaddExposure=coaddExp, background=bgModel)
 
