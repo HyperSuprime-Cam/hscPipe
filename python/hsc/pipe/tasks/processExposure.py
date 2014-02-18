@@ -80,6 +80,7 @@ class ProcessExposureTask(PbsPoolTask):
         routes through it.  The expRef is only a DummyDataRef on the slaves.
         """
         pool = Pool("processExposure")
+        pool.cacheClear()
         pool.storeSet(butler=butler)
 
         dataIdList = dict([(ccdRef.get("ccdExposureId"), ccdRef.dataId)
