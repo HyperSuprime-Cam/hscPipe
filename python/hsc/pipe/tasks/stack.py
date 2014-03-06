@@ -1,5 +1,6 @@
 import re
 import argparse
+import cPickle as pickle
 
 import numpy
 
@@ -23,6 +24,9 @@ from hsc.pipe.base.pool import Pool, abortOnError, NODE
 from hsc.pipe.tasks.background import BackgroundReferenceTask, MatchBackgroundsTask, mergeBackgroundModels
 
 from hsc.pipe.tasks.backgroundModels import Background, BackgroundConfig
+
+
+DEBUGGING = False
 
 class NullSelectImagesTask(BaseSelectImagesTask):
     """Select images by taking everything we're given without further examination
@@ -193,9 +197,7 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
                     suffix = "%s-%s" % (tempExpRef.dataId['visit'], patchRef.dataId['patch'])
                     tempExp.writeFits("orig-%s.fits" % suffix)
 
-                    bgImage = bgModel.getImageF(maskedImage.getBBox(),
-                                                self.matchBackgrounds.config.background.algorithm,
-                                                self.matchBackgrounds.config.background.undersampleStyle)
+                    bgImage = bgModel.getImageF(maskedImage.getBBox(afwImage.PARENT))
                     bgImage.writeFits("bgModel-%s.fits" % suffix)
                     bgModel.getStatsImage().writeFits("bgStats-%s.fits" % suffix)
 
@@ -342,13 +344,14 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
 
         coaddView <<= coaddSubregion
 
-    def subtractBackground(self, exp):
-        # XXX these results from individual patches need to be merged
-        bgModel = getBackground(exp.getMaskedImage(), self.config.background)
-        bgImage = bgModel.getImageF(exp.getMaskedImage().getBBox(afwImage.PARENT),
-                                    self.config.background.algorithm, self.config.background.undersampleStyle)
-        exp.getMaskedImage().__isub__(bgImage)
-        return bgModel
+# XXX Old stuff, not used because of ParallelAssembleCoaddTask
+#    def subtractBackground(self, exp):
+#        # XXX these results from individual patches need to be merged
+#        bgModel = getBackground(exp.getMaskedImage(), self.config.background)
+#        bgImage = bgModel.getImageF(exp.getMaskedImage().getBBox(afwImage.PARENT),
+#                                    self.config.background.algorithm, self.config.background.undersampleStyle)
+#        exp.getMaskedImage().__isub__(bgImage)
+#        return bgModel
 
     @classmethod
     def _makeArgumentParser(cls):
@@ -371,7 +374,7 @@ class ParallelAssembleCoaddTask(SimpleAssembleCoaddTask):
 
         # XXX debugging
 #        import itertools
-#        goodPatches = set(("%d,%d" % xy for xy in itertools.product(range(3,7),range(3,7))))
+#        goodPatches = set(("%d,%d" % xy for xy in itertools.product(range(4,6),range(4,6))))
 #        patchRefList = [patchRef for patchRef in patchRefList if patchRef.dataId["patch"] in goodPatches]
 
 
@@ -381,7 +384,7 @@ class ParallelAssembleCoaddTask(SimpleAssembleCoaddTask):
         tract = skymap[tractIdSet.pop()]
 
         patchPool = Pool("assembleCoadd-patch")
-        patchPool.storeSet(visitKeys=visitKeys)
+        patchPool.storeSet(visitKeys=visitKeys, coaddName=coaddName)
 
         patchDataListList = patchPool.map(self.preparePatch, patchRefList, selectedDataList)
 
@@ -401,6 +404,12 @@ class ParallelAssembleCoaddTask(SimpleAssembleCoaddTask):
         visitPool.cacheClear()
         visitDataList = visitPool.map(self.mergeVisit, visitData.values(), tract)
         visitList = visitData.keys()
+        if self.debug:
+            for visit, data in zip(visitList, visitDataList):
+                visitName = "+".join(map(str, visit))
+                data.bgModel.getStatsImage().writeFits("bgMerge-%s.fits" % visitName)
+                pickle.dump(data.bgModel, open("bgMerge-%s.pickle" % visitName, "w"))
+
         bgModelDict = dict(zip(visitList, [v.bgModel for v in visitDataList]))
         weightDict = dict(zip(visitList, [v.weight for v in visitDataList]))
         self.log.info("Visit weights: %s" % (weightDict,))
@@ -411,6 +420,9 @@ class ParallelAssembleCoaddTask(SimpleAssembleCoaddTask):
         if self.config.doBackgroundSubtraction:
             bgModelList = [bgModel for bgModel in bgModelList if bgModel is not None]
             bgModel = reduce(lambda x,y: x.merge(y), bgModelList[1:], bgModelList[0])
+            if self.debug:
+                pickle.dump(bgModel, open("bg.pickle", "w"))
+                bgModel.getStatsImage().writeFits("bg.fits")
         else:
             bgModel = None
 
@@ -442,6 +454,13 @@ class ParallelAssembleCoaddTask(SimpleAssembleCoaddTask):
         cache.inputData = inputData
         cache.skyInfo = skyInfo
 
+        for ref, bgModel in zip(inputData.tempExpRefList, inputData.bgModelList):
+            visit = tuple((ref.dataId[k] for k in cache.visitKeys))
+            if self.debug:
+                bgModel.getStatsImage().writeFits("bgMeas-%s-%s.fits" %
+                                                  ("+".join(map(str, visit)),
+                                                   ",".join(map(str, skyInfo.patchInfo.getIndex()))))
+
         return [Struct(visit=tuple((ref.dataId[k] for k in cache.visitKeys)), dataId=ref.dataId,
                        bgModel=bgModel, patch=skyInfo.patchInfo, weight=weight) for
                 ref, bgModel, weight in zip(inputData.tempExpRefList, inputData.bgModelList,
@@ -451,7 +470,8 @@ class ParallelAssembleCoaddTask(SimpleAssembleCoaddTask):
         patchList = [data.patch for data in patchDataList]
         bgModelList = [data.bgModel for data in patchDataList]
         weights = numpy.array([data.weight for data in patchDataList])
-        return Struct(bgModel=self.matchBackgrounds.merge(bgModelList),
+        bgModel = self.matchBackgrounds.merge(bgModelList) if self.config.doMatchBackgrounds else None
+        return Struct(bgModel=bgModel,
                       weight=weights.mean(), # XXX weighted mean?
                       )
 
@@ -462,6 +482,22 @@ class ParallelAssembleCoaddTask(SimpleAssembleCoaddTask):
         visitList = [tuple((ref.dataId[k] for k in cache.visitKeys)) for ref in cache.inputData.tempExpRefList]
         bgModelList = [bgModelDict[visit] for visit in visitList]
         weightList = [weightDict[visit] for visit in visitList]
+
+        if self.debug:
+            for tempExpRef, imageScaler, bgModel in zip(cache.inputData.tempExpRefList,
+                                                        cache.inputData.imageScalerList,
+                                                        bgModelList):
+                tempExp = tempExpRef.get(cache.coaddName + "Coadd_tempExp", immediate=True)
+                tempImage = tempExp.getMaskedImage()
+                imageScaler.scaleMaskedImage(tempImage)
+                if self.config.doMatchBackgrounds:
+                    self.matchBackgrounds.apply(tempImage, bgModel, tempImage.getBBox(afwImage.PARENT),
+                                                inPlace=True)
+                visit = tuple((ref.dataId[k] for k in cache.visitKeys))
+                patchIndex = cache.skyInfo.patchInfo.getIndex()
+                tempExp.writeFits("input-%s-%s.fits" % ("+".join(map(str, visit)),
+                                                        ",".join(map(str, patchIndex))))
+                del tempExp, tempImage, visit, patchIndex
 
         coaddExp = self.assemble(cache.skyInfo, cache.inputData.tempExpRefList,
                                  cache.inputData.imageScalerList, weightList, bgModelList)
@@ -477,10 +513,9 @@ class ParallelAssembleCoaddTask(SimpleAssembleCoaddTask):
             bgModel = Background.fromImage(self.config.background, coaddExp,
                                            box=cache.skyInfo.tractInfo.getBBox())
             if self.debug:
-                bgModel.getStatsImage().writeFits("bgStats-%s.fits" % (patchRef.dataId['patch'],))
-                bgImage = bgModel.getImageF(coaddExp.getMaskedImage().getBBox(afwImage.PARENT),
-                                            self.config.background.algorithm,
-                                            self.config.background.undersampleStyle)
+                pickle.dump(bgModel, open("bgSingle-%s.pickle" % (patchRef.dataId['patch'],), "w"))
+                bgModel.getStatsImage().writeFits("bgSingle-%s.fits" % (patchRef.dataId['patch'],))
+                bgImage = bgModel.getImageF(coaddExp.getMaskedImage().getBBox(afwImage.PARENT))
                 bgImage.writeFits("bgImage-%s.fits" % (patchRef.dataId['patch'],))
         else:
             bgModel = None
@@ -496,8 +531,7 @@ class ParallelAssembleCoaddTask(SimpleAssembleCoaddTask):
         if not cache.coaddExp:
             return
         if bgModel:
-            bgImage = bgModel.getImageF(cache.skyInfo.bbox, self.config.background.algorithm,
-                                        self.config.background.undersampleStyle)
+            bgImage = bgModel.getImageF(cache.skyInfo.bbox)
             if self.debug:
                 bgImage.writeFits("bgApply-%s.fits" % (patchRef.dataId['patch'],))
             cache.coaddExp.getMaskedImage().__isub__(bgImage)
@@ -575,7 +609,8 @@ class StackTaskRunner(CoaddTaskRunner):
     @staticmethod
     def getTargetList(parsedCmd, **kwargs):
         """Get bare butler into Task"""
-        parsedCmd.selectId.dataList = None # XXX dirty debugging hack
+        if DEBUGGING:
+            parsedCmd.selectId.dataList = None # XXX dirty debugging hack
         return CoaddTaskRunner.getTargetList(parsedCmd, butler=parsedCmd.butler, **kwargs)
 
 class StackTask(PbsPoolTask):
@@ -601,7 +636,9 @@ class StackTask(PbsPoolTask):
         parser.add_id_argument("--id", "deepCoadd", help="data ID, e.g. --id tract=12345 patch=1,2",
                                ContainerClass=TractDataIdContainer)
         # We don't want to be reading all the WCSes if we're only in the act of submitting to PBS
-        SelectContainerClass = DataIdContainer### if doPbs else SelectDataIdContainer
+        SelectContainerClass = DataIdContainer if doPbs else SelectDataIdContainer
+        if DEBUGGING:
+            SelectContainerClass = DataIdContainer ### XXX dirty debugging hack
         parser.add_id_argument("--selectId", "raw", help="data ID, e.g. --selectId visit=6789 ccd=0..9",
                                ContainerClass=SelectContainerClass)
         return parser
@@ -622,7 +659,10 @@ class StackTask(PbsPoolTask):
         @param selectDataList: List of SelectStruct for inputs
         """
         import cPickle as pickle
-        if True:
+        if DEBUGGING:
+            self.log.warn("Reading pickled data...")
+            patchRefList, selectDataList, coaddData = pickle.load(open("stack.pickle"))
+        else:
             pool = Pool("stacker")
             pool.storeSet(warpType=self.config.coaddName + "Coadd_tempExp",
                           coaddType=self.config.coaddName + "Coadd")
@@ -642,9 +682,6 @@ class StackTask(PbsPoolTask):
                          patchRef in patchRefList]
 
             pickle.dump((patchRefList, selectDataList, coaddData), open("stack.pickle", "w"))
-        else:
-            self.log.warn("Reading pickled data...")
-            patchRefList, selectDataList, coaddData = pickle.load(open("stack.pickle"))
 
         patchPool = self.assembleCoadd.run(patchRefList, selectDataList, visitKeys=self.config.visitKeys,
                                            coaddName=self.config.coaddName)

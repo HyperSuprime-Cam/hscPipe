@@ -605,11 +605,7 @@ class XyTaperWeightImage(object):
         return image
 
 class MatchBackgroundsConfig(Config):
-    background = ConfigField(dtype=measAlg.BackgroundConfig, doc="Background matching config")
-
-    def setDefaults(self):
-        super(MatchBackgroundsConfig, self).setDefaults()
-        self.background.isNanSafe = True
+    background = ConfigField(dtype=BackgroundConfig, doc="Background matching config")
 
 class MatchBackgroundsTask(Task):
     ConfigClass = MatchBackgroundsConfig
@@ -655,6 +651,17 @@ class MatchBackgroundsTask(Task):
         warpImage = self._getImage(warp)
         refImage -= warpImage
         # Don't zero out NAN pixels here; they're masked: let the background model do whatever it wants
+
+        # Propagate exposure info, so we can pick it up later
+        if (hasattr(ref, "getInfo") and ref.getInfo().hasCoaddInputs() and
+            hasattr(warp, "getInfo") and warp.getInfo().hasCoaddInputs()):
+            refInputs = ref.getInfo().getCoaddInputs()
+            warpInputs = warp.getInfo().getCoaddInputs()
+            for row in warpInputs.ccds:
+                refInputs.ccds.append(row)
+            for row in warpInputs.visits:
+                refInputs.visits.append(row)
+
         return ref
 
     def extractModelData(self, ref, warp):
@@ -992,8 +999,7 @@ class ConstructionTask(Task):
             bgSubImage = afwImage.ImageF(bgImage, skyInfo.bbox)#, afwImage.PARENT, True)
         else:
             bgImage = None
-            bgSubImage = bgModel.getImageF(skyInfo.bbox, self.config.matching.background.algorithm,
-                                           self.config.matching.background.undersampleStyle)
+            bgSubImage = bgModel.getImageF(skyInfo.bbox)
 
         if self.debug:
             suffix = "%s-%s.fits" % ("-".join(map(str, cache.visit)), "%d,%d" % patchIndex)
