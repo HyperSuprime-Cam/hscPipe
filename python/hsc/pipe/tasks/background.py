@@ -24,6 +24,8 @@ import lsst.meas.algorithms as measAlg
 from hsc.pipe.base.pool import Pool, Debugger, NODE
 from hsc.pipe.base.pbs import PbsPoolTask
 
+from hsc.pipe.tasks.backgroundModels import PolygonBackground, BackgroundConfig
+
 def imagePoly(dataRef, log=None, imageName="calexp"):
     """Generate a SphericalConvexPolygon from an image
 
@@ -107,7 +109,7 @@ class AssignConfig(Config):
     scoreAverageOverlap = Field(dtype=float, default=5.0, doc="Weight for scoring average overlap")
     scoreAverageBgStdev = Field(dtype=float, default=0.01, doc="Weight for scoring average background stdev")
     scoreAveragePsfWidth = Field(dtype=float, default=0.1, doc="Weight for scoring average PSF width")
-
+    maxNumExposures = Field(dtype=int, default=0, doc="Maximum number of exposures; 0 for no limit")
 
 def getPatchIndex(dataId):
     return tuple(map(int, dataId["patch"].split(",")))
@@ -291,6 +293,9 @@ class AssignTask(Task):
                     yield expList
 
         for selections in selectionsIterator(overlaps):
+            if self.config.maxNumExposures > 0 and len(selections) > self.config.maxNumExposures:
+                continue
+
             score = self.scoreSelections(selections, overlaps, expDataDict)
 
             self.log.info("Selection %s ==> score = %f" % (selections, score))
@@ -599,14 +604,20 @@ class XyTaperWeightImage(object):
                     cosBell(numpy.abs(y - yCenter), self._yStart, self._yStop))
         return image
 
-
 class MatchBackgroundsConfig(Config):
     background = ConfigField(dtype=measAlg.BackgroundConfig, doc="Background matching config")
 
+    def setDefaults(self):
+        super(MatchBackgroundsConfig, self).setDefaults()
+        self.background.isNanSafe = True
+
 class MatchBackgroundsTask(Task):
     ConfigClass = MatchBackgroundsConfig
+    def __init__(self, *args, **kwargs):
+        super(MatchBackgroundsTask, self).__init__(*args, **kwargs)
+        self.debug = False
 
-    def run(self, ref, warp, inPlace=True):
+    def run(self, ref, warp, parentBox, inPlace=True):
         """Generate a background matching model
 
         @param ref: Background reference image
@@ -615,7 +626,8 @@ class MatchBackgroundsTask(Task):
         @return background model
         """
         diff = self.subtract(ref, warp, inPlace=inPlace)
-        bgModel = self.calculateBackgroundModel(diff)
+        data = self.extractModelData(ref, warp)
+        bgModel = self.calculateBackgroundModel(diff, parentBox, data)
         return bgModel
 
     def _getImage(self, image):
@@ -645,104 +657,91 @@ class MatchBackgroundsTask(Task):
         # Don't zero out NAN pixels here; they're masked: let the background model do whatever it wants
         return ref
 
-    def calculateBackgroundModel(self, diff):
+    def extractModelData(self, ref, warp):
+        """Extract data useful for the background model
+
+        @param ref: Background reference image
+        @param warp: Science warp image
+        @return Data, in whatever format used by calculateBackgroundModel
+        """
+
+        def getPolygons(exposure):
+            """Get polygons from an exposure
+
+            This is specific to Suprime-Cam and Hyper Suprime-Cam (and other
+            cameras that use CCDs with 4 amplifiers, divided along the short axis).
+            """
+            polygonList = []
+            for ccd in exposure.getInfo().getCoaddInputs().ccds:
+                transform = afwImage.XYTransformFromWcsPair(exposure.getWcs(), ccd.getWcs())
+                # Divide CCDs into amps
+                box = ccd.getBBox()
+                xMin, yMin = box.getMin()
+                width, height = box.getDimensions()
+                numAmps = 4
+                if height > width:
+                    boxList = [afwGeom.Box2D(afwGeom.Point2D(xMin + i*(width//numAmps), yMin),
+                                             afwGeom.Extent2D(width//4, height)) for i in range(numAmps)]
+                else:
+                    boxList = [afwGeom.Box2D(afwGeom.Point2D(xMin, yMin + i*(height//numAmps)),
+                                             afwGeom.Extent2D(width, height//4)) for i in range(numAmps)]
+
+                polygonList += [afwGeom.Polygon(box, transform) for box in boxList]
+            return polygonList
+
+        refPolygons = getPolygons(ref)
+        warpPolygons = getPolygons(warp)
+        # We only have data where polygons intersect: there's nothing interesting outside
+        polygonList = []
+        for iPoly in refPolygons:
+            for jPoly in warpPolygons:
+                polygonList += iPoly.intersection(jPoly)
+        return polygonList
+
+    def calculateBackgroundModel(self, diff, parentBox, data):
         """Determine a background model from a diff image
 
         This is the heart of background matching.
 
-        Bad pixels are zeroed out to ensure the background matching
-        addition goes to zero where there are no pixels.
-
         @param diff: Difference exposure
+        @param parentBox: Bounding box of parent
+        @param data: Data used for the background model construction
         @return background model
         """
-        diff = self._getImage(diff)
-        bgModel = measAlg.getBackground(diff, self.config.background)
-        return afwMath.cast_BackgroundMI(bgModel)
+        image = self._getImage(diff)
+        return PolygonBackground.fromImage(self.config.background, diff, box=parentBox, polygons=data)
 
-    def apply(self, warp, bgModel, inPlace=True):
+    def apply(self, warp, bgModel, bbox=None, inPlace=True):
         """Apply background matching model to warp
 
         @param warp: Science warp image
         @param bgModel: Background model to apply
+        @param bbox: Bounding box for image
         @param inPlace: Operate on warp in-place?
         @return Background-matched warp
         """
         if not inPlace:
             warp = warp.clone()
         warpImage = self._getImage(warp)
-        warpImage += bgModel.getImageF(self.config.background.algorithm,
-                                       self.config.background.undersampleStyle)
+        if bbox is None:
+            bbox = warpImage.getBBox(afwImage.PARENT)
+        warpImage += bgModel.getImage(bbox)
         return warpImage
 
-    def merge(self, tract, patchList, bgModelList):
+    def merge(self, bgModelList):
         """Merge background models from different patches
 
         This ensures all patches use a common background model for
         matching to the reference.
 
-        This implementation is extremely inefficient, and could be
-        improved by adding support for this operation in the
-        BackgroundMI class.
+        Note that the first background model is modified with the results
+        of the merge.
 
-        @param tract: Tract object
-        @param patchIdList: List of patch objects
         @param bgModelList: Corresponding list of patch background models
         @return merged background model
         """
-        bgSize = self.config.background.binSize
-        tractBox = tract.getBBox()
-        x0, y0 = tractBox.getMin()
-        xSize, ySize = tractBox.getMax() - afwGeom.Extent2I(x0, y0) # Size of tract
-        # Number of samples for background model
-        xNum = int(math.ceil(float(xSize)/bgSize))
-        yNum = int(math.ceil(float(ySize)/bgSize))
-        # Bounds of each sample
-        xBounds = numpy.linspace(x0, xSize, xNum + 1, True).astype(int)
-        yBounds = numpy.linspace(x0, ySize, yNum + 1, True).astype(int)
-
-        statsNum = afwImage.ImageF(xNum, yNum) # float so we can easily divide later
-        statsNum.set(0.0)
-        statsImage = afwImage.ImageF(xNum, yNum)
-        statsImage.set(0.0)
-
-        def statsIter():
-            """Return coordinates on stats image, box on tract"""
-            for ix, iy in itertools.product(range(xNum), range(yNum)):
-                yield ix, iy, afwGeom.Box2I(afwGeom.Point2I(int(xBounds[ix]), int(yBounds[iy])),
-                                            afwGeom.Point2I(int(xBounds[ix+1]), int(yBounds[iy+1])))
-
-        statCtrl = afwMath.StatisticsControl()
-        statCtrl.setNanSafe(True)
-        stat = afwMath.MEAN
-        for patch, bgModel in zip(patchList, bgModelList):
-            if bgModel is None:
-                continue
-
-            # XXX this is not very efficient
-            bgImage = bgModel.getImageF(self.config.background.algorithm,
-                                        self.config.background.undersampleStyle)
-            bgImage.setXY0(patch.getOuterBBox().getMin())
-            for ix, iy, box in statsIter():
-                try:
-                    # XXX shrink box if only just a bit big
-                    subImage = afwImage.ImageF(bgImage, box, afwImage.PARENT)
-                    value = afwMath.makeStatistics(subImage, stat, statCtrl).getValue()
-                except:
-                    continue
-                statsImage.set(ix, iy, statsImage.get(ix, iy) + value)
-                statsNum.set(ix, iy, statsNum.get(ix, iy) + 1)
-            del bgImage
-
-        statsImage /= statsNum
-        statsImage = afwImage.makeMaskedImage(statsImage)
-        statsMask = statsImage.getMask().getArray()
-        bad = numpy.where(numpy.isnan(statsImage.getImage().getArray()))
-        statsMask[bad] = statsImage.getMask().getPlaneBitMask("BAD")
-        mergedModel = afwMath.BackgroundMI(tractBox, statsImage)
-
-        return mergedModel
-
+        bgModelList = [bgModel for bgModel in bgModelList if bgModel is not None]
+        return reduce(lambda x,y: x.merge(y), bgModelList[1:], bgModelList[0])
 
 
 class ConstructionConfig(Config):
@@ -904,13 +903,13 @@ class ConstructionTask(Task):
         bgRef.getMaskedImage().__idiv__(cache.bgWeight)
         self.zeroOutBad(bgRef.getMaskedImage())
 
-        bgModel = self.matching.run(bgRef, warp, inPlace=True)
+        bgModel = self.matching.run(bgRef, warp, cache.skyInfo.tractInfo.getBBox(), inPlace=True)
         # Don't zero out bad pixels in bgModel: this introduces a potentially large offset
 
         if self.debug:
             suffix = "%s-%s.fits" % ("-".join(map(str, cache.visit)), "%d,%d" % patchIndex)
-            warp.writeFits("warp-" + suffix)
-            bgRef.writeFits("diff-" + suffix)
+            warp.writeFits("bg-warp-" + suffix)
+            bgRef.writeFits("bg-diff-" + suffix)
             bgModel.getImageF("AKIMA_SPLINE", "REDUCE_INTERP_ORDER").writeFits("bgModel-single-" + suffix)
 
         return bgModel
@@ -962,7 +961,7 @@ class ConstructionTask(Task):
         assert len(tractIdSet) == 1
         tract = skymap[tractIdSet.pop()]
         patchList = [tract[getPatchIndex(patchId)] for patchId in patchIdList]
-        return self.matching.merge(tract, patchList, bgModelList)
+        return self.matching.merge(bgModelList)
 
     def addNextVisit(self, cache, patchData, bgModel):
         """Add visit to background reference
@@ -1076,7 +1075,6 @@ class ConstructionTask(Task):
 
 class BackgroundReferenceConfig(Config):
     coaddName = Field(dtype=str, default="deep", doc="Name of coadd of interest")
-    visitKeys = ListField(dtype=str, default=["visit"], doc="dataId keys that identify an exposure")
     select = ConfigurableField(target=WcsSelectImagesTask, doc="Task to select input images")
     assign = ConfigurableField(target=AssignTask, doc="Task to assign inputs to patches")
     construct = ConfigurableField(target=ConstructionTask, doc="Task to construct background reference")
@@ -1103,14 +1101,14 @@ class BackgroundReferenceTask(PbsPoolTask):
                                ContainerClass=SelectDataIdContainer)
         return parser
 
-    def run(self, patchRefList, selectDataList=[]):
+    def run(self, patchRefList, selectDataList=[], visitKeys=["visit"]):
         skyMap = patchRefList[0].get(self.config.coaddName + "Coadd_skyMap")
         tract = skyMap[patchRefList[0].dataId['tract']]
         dataRefList = self.selectExposures(tract, selectDataList)
         assignData = self.assign.run(tract, dataRefList)
 
         self.construct.run(patchRefList, assignData.visits, assignData.overlaps,
-                           coaddName=self.config.coaddName, visitKeys=self.config.visitKeys)
+                           coaddName=self.config.coaddName, visitKeys=visitKeys)
 
     def selectExposures(self, tractInfo, selectDataList=[]):
         """Select exposures to include

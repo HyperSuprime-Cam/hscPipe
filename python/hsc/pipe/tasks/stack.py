@@ -7,8 +7,8 @@ import lsst.afw.geom as afwGeom
 import lsst.afw.math as afwMath
 import lsst.afw.image as afwImage
 import lsst.coadd.utils as coaddUtils
-from lsst.meas.algorithms import CoaddPsf, BackgroundConfig, getBackground
-from lsst.pex.config import Config, Field, ConfigurableField, ConfigField
+from lsst.meas.algorithms import CoaddPsf
+from lsst.pex.config import Config, Field, ConfigurableField, ConfigField, ListField
 from lsst.pex.exceptions import LsstCppException, InvalidParameterException
 from lsst.pipe.tasks.coaddBase import CoaddDataIdContainer, SelectDataIdContainer, CoaddTaskRunner
 from lsst.pipe.tasks.selectImages import BaseSelectImagesTask, WcsSelectImagesTask, BaseExposureInfo
@@ -20,7 +20,9 @@ from lsst.pipe.tasks.coaddHelpers import groupPatchExposures, getGroupDataRef
 from lsst.pipe.base import Struct, DataIdContainer, ArgumentParser
 from hsc.pipe.base.pbs import PbsPoolTask
 from hsc.pipe.base.pool import Pool, abortOnError, NODE
-from hsc.pipe.tasks.background import BackgroundReferenceTask, MatchBackgroundsTask
+from hsc.pipe.tasks.background import BackgroundReferenceTask, MatchBackgroundsTask, mergeBackgroundModels
+
+from hsc.pipe.tasks.backgroundModels import Background, BackgroundConfig
 
 class NullSelectImagesTask(BaseSelectImagesTask):
     """Select images by taking everything we're given without further examination
@@ -39,6 +41,10 @@ class SimpleAssembleCoaddConfig(AssembleCoaddConfig):
     matchBackgrounds = ConfigurableField(target=MatchBackgroundsTask, doc="Background matching")
     doBackgroundSubtraction = Field(dtype=bool, default=True, doc="Subtract background?")
     background = ConfigField(dtype=BackgroundConfig, doc="Background matching config")
+
+    def setDefaults(self):
+        super(SimpleAssembleCoaddConfig, self).setDefaults()
+        self.badMaskPlanes += ["BAD", "CR", "EDGE", ]
 
 class SimpleAssembleCoaddTask(AssembleCoaddTask):
     """Assemble a coadd from a set of coaddTempExp
@@ -107,7 +113,8 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
         if self.config.doWrite:
             self.writeCoaddOutput(dataRef, coaddExp)
             if bgModel:
-                self.writeCoaddOutput(dataRef, bgModel.getImageF(), "bg")
+                bgImage = bgModel.getImageF(coaddExp.getMaskedImage().getBBox(afwImage.PARENT))
+                self.writeCoaddOutput(dataRef, bgImage, "bg")
 
         return Struct(coaddExposure=coaddExp, background=bgModel)
 
@@ -125,13 +132,14 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
                           g in groupData.groups.keys()]
         return tempExpRefList
 
-    def prepareInputs(self, patchRef, refList):
+    def prepareInputs(self, patchRef, refList, tract):
         """Prepare the input warps for coaddition
 
         This involves measuring weights and constructing image scalers
         for each of the inputs.
 
         @param refList: List of data references to tempExp
+        @param tract: Tract on which we're coadding
         @return Struct:
         - tempExprefList: List of data references to tempExp
         - weightList: List of weightings
@@ -152,6 +160,8 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
         bgModelList = []
         if self.config.doMatchBackgrounds:
             bgRef = self.getBackgroundReference(patchRef)
+            if not bgRef:
+                return None
         tempExpName = self.getTempExpDatasetName()
         for tempExpRef in refList:
             if not tempExpRef.datasetExists(tempExpName):
@@ -160,10 +170,7 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
 
             tempExp = tempExpRef.get(tempExpName, immediate=True)
             maskedImage = tempExp.getMaskedImage()
-            imageScaler = self.scaleZeroPoint.computeImageScaler(
-                exposure = tempExp,
-                dataRef = tempExpRef,
-            )
+            imageScaler = self.scaleZeroPoint.computeImageScaler(exposure=tempExp, dataRef=tempExpRef)
             try:
                 imageScaler.scaleMaskedImage(maskedImage)
             except Exception, e:
@@ -180,15 +187,17 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
 
             bgModel = None
             if self.config.doMatchBackgrounds:
-                bgModel = self.matchBackgrounds.run(bgRef, tempExp, inPlace=False)
+                bgModel = self.matchBackgrounds.run(bgRef, tempExp, tract.getBBox(), inPlace=False)
 
                 if self.debug:
                     suffix = "%s-%s" % (tempExpRef.dataId['visit'], patchRef.dataId['patch'])
                     tempExp.writeFits("orig-%s.fits" % suffix)
 
-                    bgImage = bgModel.getImageF(self.matchBackgrounds.config.interpolation,
-                                                self.matchBackgrounds.config.undersampleStyle)
+                    bgImage = bgModel.getImageF(maskedImage.getBBox(),
+                                                self.matchBackgrounds.config.background.algorithm,
+                                                self.matchBackgrounds.config.background.undersampleStyle)
                     bgImage.writeFits("bgModel-%s.fits" % suffix)
+                    bgModel.getStatsImage().writeFits("bgStats-%s.fits" % suffix)
 
                     diffImage = bgRef.clone()
                     diffImage.getMaskedImage().__isub__(tempExp.getMaskedImage())
@@ -200,6 +209,8 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
 
                     warpImage.getMaskedImage().__isub__(bgRef.getMaskedImage())
                     warpImage.writeFits("check-%s.fits" % suffix)
+
+                    bgRef.writeFits("bgRef-%s.fits" % suffix)
 
                     del bgImage, diffImage, warpImage
 
@@ -215,7 +226,8 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
                       imageScalerList=imageScalerList, bgModelList=bgModelList)
 
     def getBackgroundReference(self, patchRef):
-        return patchRef.get(self.config.coaddName + "Coadd_bgRef", immediate=True)
+        name = self.config.coaddName + "Coadd_bgRef"
+        return patchRef.get(name, immediate=True) if patchRef.datasetExists(name) else None
 
     def assemble(self, skyInfo, tempExpRefList, imageScalerList, weightList, bgModelList=None):
         """Assemble a coadd from input warps
@@ -231,7 +243,9 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
         @return coadded exposure
         """
         tempExpName = self.getTempExpDatasetName()
-        self.log.info("Assembling %s %s" % (len(tempExpRefList), tempExpName))
+        self.log.info("Assembling %d %s for tract %s patch %s" %
+                      (len(tempExpRefList), tempExpName, skyInfo.tractInfo.getId(),
+                       skyInfo.patchInfo.getIndex()))
 
         statsCtrl = afwMath.StatisticsControl()
         statsCtrl.setNumSigmaClip(self.config.sigmaClip)
@@ -319,22 +333,20 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
             imageScaler.scaleMaskedImage(maskedImage)
 
             if self.config.doMatchBackgrounds:
-                bgImage = bgModel.getImageF()
-                bgImage.setXY0(coaddMaskedImage.getXY0())
-                maskedImage += bgImage.Factory(bgImage, bbox, afwImage.PARENT, False)
+                self.matchBackgrounds.apply(maskedImage, bgModel, bbox, inPlace=True)
 
             maskedImageList.append(maskedImage)
 
         with self.timer("stack"):
-            coaddSubregion = afwMath.statisticsStack(
-                maskedImageList, statsFlags, statsCtrl, weightList)
+            coaddSubregion = afwMath.statisticsStack(maskedImageList, statsFlags, statsCtrl, weightList)
 
         coaddView <<= coaddSubregion
 
     def subtractBackground(self, exp):
         # XXX these results from individual patches need to be merged
         bgModel = getBackground(exp.getMaskedImage(), self.config.background)
-        bgImage = bgModel.getImageF(self.config.background.algorithm, self.config.background.undersampleStyle)
+        bgImage = bgModel.getImageF(exp.getMaskedImage().getBBox(afwImage.PARENT),
+                                    self.config.background.algorithm, self.config.background.undersampleStyle)
         exp.getMaskedImage().__isub__(bgImage)
         return bgModel
 
@@ -350,16 +362,160 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
                                ContainerClass=SelectDataIdContainer)
         return parser
 
+class ParallelAssembleCoaddTask(SimpleAssembleCoaddTask):
+    """Assemble a coadd from a set of coaddTempExp
+    """
+
+    def run(self, patchRefList, selectedDataList=[], visitKeys=["visit"], coaddName="deep"):
+
+
+        # XXX debugging
+#        import itertools
+#        goodPatches = set(("%d,%d" % xy for xy in itertools.product(range(3,7),range(3,7))))
+#        patchRefList = [patchRef for patchRef in patchRefList if patchRef.dataId["patch"] in goodPatches]
+
+
+        skymap = patchRefList[0].get(coaddName + "Coadd_skyMap")
+        tractIdSet = set([patchRef.dataId["tract"] for patchRef in patchRefList])
+        assert len(tractIdSet) == 1
+        tract = skymap[tractIdSet.pop()]
+
+        patchPool = Pool("assembleCoadd-patch")
+        patchPool.storeSet(visitKeys=visitKeys)
+
+        patchDataListList = patchPool.map(self.preparePatch, patchRefList, selectedDataList)
+
+        # Pull out data for each visit
+        visitData = {}
+        for patchDataList, patchRef in zip(patchDataListList, patchRefList):
+            if patchDataList is None:
+                continue
+            for patchData in patchDataList:
+                visit = patchData.visit
+                if visit in visitData:
+                    visitData[visit].append(patchData)
+                else:
+                    visitData[visit] = [patchData]
+
+        visitPool = Pool("assembleCoadd-visit") # Pool for processing visits
+        visitPool.cacheClear()
+        visitDataList = visitPool.map(self.mergeVisit, visitData.values(), tract)
+        visitList = visitData.keys()
+        bgModelDict = dict(zip(visitList, [v.bgModel for v in visitDataList]))
+        weightDict = dict(zip(visitList, [v.weight for v in visitDataList]))
+        self.log.info("Visit weights: %s" % (weightDict,))
+        del visitPool
+
+        bgModelList = patchPool.mapToPrevious(self.assemblePatch, patchRefList, bgModelDict, weightDict)
+
+        if self.config.doBackgroundSubtraction:
+            bgModelList = [bgModel for bgModel in bgModelList if bgModel is not None]
+            bgModel = reduce(lambda x,y: x.merge(y), bgModelList[1:], bgModelList[0])
+        else:
+            bgModel = None
+
+        patchPool.mapToPrevious(self.completePatch, patchRefList, bgModel)
+
+        return patchPool # Has the coadd in memory
+
+    def preparePatch(self, cache, patchRef, selectDataList):
+        cache.inputData = None
+        skyInfo = self.getSkyInfo(patchRef)
+        calExpRefList = self.selectExposures(patchRef, skyInfo, selectDataList=selectDataList)
+        if len(calExpRefList) == 0:
+            self.log.warn("No exposures to coadd for %s" % (patchRef.dataId,))
+            return
+        self.log.info("Coadding %d exposures for %s" % (len(calExpRefList), patchRef.dataId))
+
+        tempExpRefList = self.getTempExpRefList(patchRef, calExpRefList)
+        inputData = self.prepareInputs(patchRef, tempExpRefList, skyInfo.tractInfo)
+        if not inputData:
+            return None
+        tempExpRefList = inputData.tempExpRefList
+        self.log.info("Found %d %s for %s" % (len(inputData.tempExpRefList), self.getTempExpDatasetName(),
+                                              patchRef.dataId))
+        if len(inputData.tempExpRefList) == 0:
+            self.log.warn("No coadd temporary exposures found for %s" % (patchRef.dataId,))
+            return
+
+        cache.calExpRefList = calExpRefList
+        cache.inputData = inputData
+        cache.skyInfo = skyInfo
+
+        return [Struct(visit=tuple((ref.dataId[k] for k in cache.visitKeys)), dataId=ref.dataId,
+                       bgModel=bgModel, patch=skyInfo.patchInfo, weight=weight) for
+                ref, bgModel, weight in zip(inputData.tempExpRefList, inputData.bgModelList,
+                                            inputData.weightList)]
+
+    def mergeVisit(self, cache, patchDataList, tract):
+        patchList = [data.patch for data in patchDataList]
+        bgModelList = [data.bgModel for data in patchDataList]
+        weights = numpy.array([data.weight for data in patchDataList])
+        return Struct(bgModel=self.matchBackgrounds.merge(bgModelList),
+                      weight=weights.mean(), # XXX weighted mean?
+                      )
+
+    def assemblePatch(self, cache, patchRef, bgModelDict, weightDict):
+        cache.coaddExp = None
+        if not cache.inputData:
+            return None
+        visitList = [tuple((ref.dataId[k] for k in cache.visitKeys)) for ref in cache.inputData.tempExpRefList]
+        bgModelList = [bgModelDict[visit] for visit in visitList]
+        weightList = [weightDict[visit] for visit in visitList]
+
+        coaddExp = self.assemble(cache.skyInfo, cache.inputData.tempExpRefList,
+                                 cache.inputData.imageScalerList, weightList, bgModelList)
+
+        if self.config.doInterp:
+            fwhmPixels = self.config.interpFwhm / cache.skyInfo.wcs.pixelScale().asArcseconds()
+            self.interpImage.interpolateOnePlane(maskedImage=coaddExp.getMaskedImage(), planeName="EDGE",
+                                                 fwhmPixels=fwhmPixels)
+
+        if self.config.doBackgroundSubtraction:
+            # XXX Should be a two-step process, with a detection stage in-between;
+            # simply running detection might work.
+            bgModel = Background.fromImage(self.config.background, coaddExp,
+                                           box=cache.skyInfo.tractInfo.getBBox())
+            if self.debug:
+                bgModel.getStatsImage().writeFits("bgStats-%s.fits" % (patchRef.dataId['patch'],))
+                bgImage = bgModel.getImageF(coaddExp.getMaskedImage().getBBox(afwImage.PARENT),
+                                            self.config.background.algorithm,
+                                            self.config.background.undersampleStyle)
+                bgImage.writeFits("bgImage-%s.fits" % (patchRef.dataId['patch'],))
+        else:
+            bgModel = None
+
+        cache.coaddExp = coaddExp
+
+        if self.debug:
+            coaddExp.writeFits("coadd-%s.fits" % (patchRef.dataId['patch'],))
+
+        return bgModel
+
+    def completePatch(self, cache, patchRef, bgModel):
+        if not cache.coaddExp:
+            return
+        if bgModel:
+            bgImage = bgModel.getImageF(cache.skyInfo.bbox, self.config.background.algorithm,
+                                        self.config.background.undersampleStyle)
+            if self.debug:
+                bgImage.writeFits("bgApply-%s.fits" % (patchRef.dataId['patch'],))
+            cache.coaddExp.getMaskedImage().__isub__(bgImage)
+            if self.config.doWrite:
+                self.writeCoaddOutput(patchRef, bgImage, "bg")
+
+        self.writeCoaddOutput(patchRef, cache.coaddExp)
 
 
 class StackConfig(Config):
     coaddName = Field(dtype=str, default="deep", doc="Name for coadd")
+    visitKeys = ListField(dtype=str, default=["visit"], doc="dataId keys that identify an exposure")
     select = ConfigurableField(target=BaseSelectImagesTask, doc="Select images to process")
     doWarp = Field(dtype=bool, default=True, doc="Warp images?")
     makeCoaddTempExp = ConfigurableField(target=MakeCoaddTempExpTask, doc="Warp images to sky")
     doBackgroundReference = Field(dtype=bool, default=True, doc="Build background reference?")
     backgroundReference = ConfigurableField(target=BackgroundReferenceTask, doc="Build background reference")
-    assembleCoadd = ConfigurableField(target=SimpleAssembleCoaddTask, doc="Assemble warps into coadd")
+    assembleCoadd = ConfigurableField(target=ParallelAssembleCoaddTask, doc="Assemble warps into coadd")
     processCoadd = ConfigurableField(target=SubaruProcessCoaddTask, doc="Detection and measurement on coadd")
     doOverwriteCoadd = Field(dtype=bool, default=False, doc="Overwrite coadd?")
     doOverwriteOutput = Field(dtype=bool, default=False, doc="Overwrite processing outputs?")
@@ -419,6 +575,7 @@ class StackTaskRunner(CoaddTaskRunner):
     @staticmethod
     def getTargetList(parsedCmd, **kwargs):
         """Get bare butler into Task"""
+        parsedCmd.selectId.dataList = None # XXX dirty debugging hack
         return CoaddTaskRunner.getTargetList(parsedCmd, butler=parsedCmd.butler, **kwargs)
 
 class StackTask(PbsPoolTask):
@@ -444,7 +601,7 @@ class StackTask(PbsPoolTask):
         parser.add_id_argument("--id", "deepCoadd", help="data ID, e.g. --id tract=12345 patch=1,2",
                                ContainerClass=TractDataIdContainer)
         # We don't want to be reading all the WCSes if we're only in the act of submitting to PBS
-        SelectContainerClass = DataIdContainer if doPbs else SelectDataIdContainer
+        SelectContainerClass = DataIdContainer### if doPbs else SelectDataIdContainer
         parser.add_id_argument("--selectId", "raw", help="data ID, e.g. --selectId visit=6789 ccd=0..9",
                                ContainerClass=SelectContainerClass)
         return parser
@@ -464,24 +621,37 @@ class StackTask(PbsPoolTask):
         @param tractRef: Data reference for tract
         @param selectDataList: List of SelectStruct for inputs
         """
-        pool = Pool("stacker")
-        pool.storeSet(warpType=self.config.coaddName + "Coadd_tempExp",
-                      coaddType=self.config.coaddName + "Coadd")
-        if self.config.doWarp:
-            warpData = [Struct(patchRef=patchRef, selectDataList=selectDataList) for
-                        patchRef in patchRefList]
-            selectedData = pool.map(self.warp, warpData)
-        else:
-            # Faster not to do this in parallel, avoiding the overhead
-            selectedData = [self.selectExposures(patchRef, selectDataList) for patchRef in patchRefList]
-        if self.config.doBackgroundReference:
-            self.backgroundReference.run(patchRefList, selectDataList)
+        import cPickle as pickle
+        if True:
+            pool = Pool("stacker")
+            pool.storeSet(warpType=self.config.coaddName + "Coadd_tempExp",
+                          coaddType=self.config.coaddName + "Coadd")
+            if self.config.doWarp:
+                warpData = [Struct(patchRef=patchRef, selectDataList=selectDataList) for
+                            patchRef in patchRefList]
+                selectedData = pool.map(self.warp, warpData)
+            else:
+                # Faster not to do this in parallel, avoiding the overhead
+                selectedData = [self.selectExposures(patchRef, selectDataList) for patchRef in patchRefList]
+            if self.config.doBackgroundReference:
+                self.backgroundReference.run(patchRefList, selectDataList)
 
-        refNamer = lambda patchRef: tuple(map(int, patchRef.dataId["patch"].split(",")))
-        lookup = dict(zip(map(refNamer, patchRefList), selectedData))
-        coaddData = [Struct(patchRef=patchRef, selectDataList=lookup[refNamer(patchRef)]) for
-                     patchRef in patchRefList]
-        pool.map(self.coadd, coaddData)
+            refNamer = lambda patchRef: tuple(map(int, patchRef.dataId["patch"].split(",")))
+            lookup = dict(zip(map(refNamer, patchRefList), selectedData))
+            coaddData = [Struct(patchRef=patchRef, selectDataList=lookup[refNamer(patchRef)]) for
+                         patchRef in patchRefList]
+
+            pickle.dump((patchRefList, selectDataList, coaddData), open("stack.pickle", "w"))
+        else:
+            self.log.warn("Reading pickled data...")
+            patchRefList, selectDataList, coaddData = pickle.load(open("stack.pickle"))
+
+        patchPool = self.assembleCoadd.run(patchRefList, selectDataList, visitKeys=self.config.visitKeys,
+                                           coaddName=self.config.coaddName)
+
+        patchPool.storeSet(warpType=self.config.coaddName + "Coadd_tempExp",
+                           coaddType=self.config.coaddName + "Coadd")
+        patchPool.mapToPrevious(self.process, patchRefList)
 
     def warp(self, cache, data):
         """Warp all images for a patch
@@ -502,32 +672,6 @@ class StackTask(PbsPoolTask):
         self.log.info("%s: Finished warping %s" % (NODE, patchRef.dataId))
         return selectDataList
 
-    def coadd(self, cache, data):
-        """Construct coadd for a patch and measure
-
-        Only slave nodes execute this method.
-
-        Because only one argument may be passed, it is expected to
-        contain multiple elements, which are:
-        @param patchRef: data reference for patch
-        @param selectDataList: List of SelectStruct for inputs
-        """
-        patchRef = data.patchRef
-        selectDataList = data.selectDataList
-        self.log.info("%s: Start coadding %s" % (NODE, patchRef.dataId))
-        coadd = None
-        if self.config.doOverwriteCoadd or not patchRef.datasetExists(cache.coaddType):
-            coaddResults = self.assembleCoadd.run(patchRef, selectDataList)
-            if coaddResults is not None:
-                coadd = coaddResults.coaddExposure
-        elif patchRef.datasetExists(cache.coaddType):
-            coadd = patchRef.get(cache.coaddType, immediate=True)
-        self.log.info("%s: Finished coadding %s" % (NODE, patchRef.dataId))
-        if coadd is not None and (self.config.doOverwriteOutput or
-                                  not patchRef.datasetExists(cache.coaddType + "_src") or
-                                  not patchRef.datasetExists(cache.coaddType + "_calexp")):
-            self.process(patchRef, coadd)
-
     def selectExposures(self, patchRef, selectDataList):
         """Select exposures to operate upon, via the SelectImagesTask
 
@@ -547,7 +691,20 @@ class StackTask(PbsPoolTask):
         dataRefList = self.select.runDataRef(patchRef, coordList, selectDataList=selectDataList).dataRefList
         return [inputs[key(dataRef)] for dataRef in dataRefList]
 
-    def process(self, patchRef, coadd):
+    def process(self, cache, patchRef):
+        """Process (detection and measurement) image for a patch
+
+        Only slave nodes execute this method.
+        """
+        coadd = cache.coaddExp
+        if coadd is None:
+            self.log.info("%s: No coadd to process for %s" % (NODE, patchRef.dataId))
+            return
+        if (not self.config.doOverwriteOutput and patchRef.datasetExists(cache.coaddType + "_src") and
+            patchRef.datasetExists(cache.coaddType + "_calexp")):
+            self.log.info("%s: Coadd outputs exist for %s" % (NODE, patchRef.dataId))
+            return
+
         self.log.info("%s: Start processing %s" % (NODE, patchRef.dataId))
         try:
             self.processCoadd.process(patchRef, coadd)
