@@ -464,7 +464,7 @@ class PolygonBackground(object):
         if self.box != bg.box:
             raise RuntimeError("Box mismatch: %s vs %s" % (self.box, bg.box))
 
-        for i, iPoly in enumerate(bg.polygons):
+        for i, iPoly in enumerate(bg.goodPolygons):
             found = False
             for j, jPoly in enumerate(self.goodPolygons):
                 if iPoly == jPoly:
@@ -478,6 +478,10 @@ class PolygonBackground(object):
         newBadPolygons = []
         if iPoly in bg.badPolygons:
             found = False
+            for jPoly in self.goodPolygons:
+                if iPoly == jPoly:
+                    found = True
+                    break
             for jPoly in self.badPolygons:
                 if iPoly == jPoly:
                     found = True
