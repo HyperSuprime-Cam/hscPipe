@@ -429,16 +429,19 @@ class PolygonBackground(object):
 
     def threshPolygons(self, polygons):
         box = afwGeom.Box2D(self.box)
+        minArea = self.config.minFrac*self.config.xSize*self.config.ySize
+        minPerimeter = 2*self.config.xSize + 2*self.config.ySize
         goodPolygonList = []
         badPolygonList = []
         for poly in polygons:
             if not poly.overlaps(box):
                 #print "Polygon %s not in box %s" % (poly, box)
                 continue
-            if poly.calculateArea() < self.config.minFrac*self.config.xSize*self.config.ySize:
+            if poly.calculateArea() < minArea:
                 #print "Polygon %s area is %f" % (poly, poly.calculateArea())
                 badPolygonList.append(poly)
-            if poly.calculatePerimeter() < 2*self.config.xSize + 2*self.config.ySize:
+                continue
+            if poly.calculatePerimeter() < minPerimeter:
                 #print "Polygon %s perimeter is %f" % (poly, poly.calculatePerimeter())
                 badPolygonList.append(poly)
                 continue

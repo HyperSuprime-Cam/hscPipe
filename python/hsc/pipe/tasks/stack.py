@@ -21,7 +21,7 @@ from lsst.pipe.tasks.coaddHelpers import groupPatchExposures, getGroupDataRef
 from lsst.pipe.base import Struct, DataIdContainer, ArgumentParser
 from hsc.pipe.base.pbs import PbsPoolTask
 from hsc.pipe.base.pool import Pool, abortOnError, NODE
-from hsc.pipe.tasks.background import BackgroundReferenceTask, MatchBackgroundsTask, mergeBackgroundModels
+from hsc.pipe.tasks.background import BackgroundReferenceTask, MatchBackgroundsTask
 
 from hsc.pipe.tasks.backgroundModels import Background, BackgroundConfig
 

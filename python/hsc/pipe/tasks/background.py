@@ -678,8 +678,11 @@ class MatchBackgroundsTask(Task):
             This is specific to Suprime-Cam and Hyper Suprime-Cam (and other
             cameras that use CCDs with 4 amplifiers, divided along the short axis).
             """
+            coaddInputs = exposure.getInfo().getCoaddInputs()
+            if not coaddInputs:
+                return [] # No polygons!
             polygonList = []
-            for ccd in exposure.getInfo().getCoaddInputs().ccds:
+            for ccd in coaddInputs.ccds:
                 transform = afwImage.XYTransformFromWcsPair(exposure.getWcs(), ccd.getWcs())
                 # Divide CCDs into amps
                 box = ccd.getBBox()
@@ -1031,6 +1034,14 @@ class ConstructionTask(Task):
         cache.bgRef.getMaskedImage().__iadd__(warpImage)
         cache.bgWeight += weight
         del warpImage, weight
+
+        coaddInputs = cache.bgRef.getInfo().getCoaddInputs()
+        warpInputs = cache.warp.getInfo().getCoaddInputs()
+        if coaddInputs:
+            coaddInputs.visits.extend(warpInputs.visits)
+            coaddInputs.ccds.extend(warpInputs.ccds)
+        else:
+            cache.bgRef.getInfo().setCoaddInputs(warpInputs)
 
         # Set bad pixels in the background reference
         bgImage = cache.bgRef.getMaskedImage()
