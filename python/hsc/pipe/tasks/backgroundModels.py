@@ -248,13 +248,18 @@ class Background(object):
         if self.polygon is not None:
             polyImage = self.polygon.createImage(imageBox)
 
+        xMinImage, yMinImage = imageBox.getMin()
+        xMaxImage, yMaxImage = imageBox.getMax()
+
         for j, (yMin, yMax) in enumerate(self._yBounds):
+            if yMax < yMinImage or yMin > yMaxImage:
+                continue
             for i, (xMin, xMax) in enumerate(self._xBounds):
+                if xMax < xMinImage or xMin > xMaxImage:
+                    continue
                 box = afwGeom.Box2I(afwGeom.Point2I(int(xMin), int(yMin)),
                                     afwGeom.Point2I(int(xMax), int(yMax)))
                 box.clip(imageBox)
-                if box.isEmpty():
-                    continue
                 if self.polygon is not None and not self.polygon.overlaps(afwGeom.Box2D(box)):
                     continue
                 subImage = image.Factory(image, box, afwImage.PARENT)
@@ -329,11 +334,18 @@ class Background(object):
         values = numpy.ma.masked_where(mask, values.astype(float))
 
         targetImage = afwImage.ImageF(box)
-        target = targetImage.getArray()
 
-        if self.polygon is not None and not self.polygon.overlaps(afwGeom.Box2D(box)):
-            targetImage.set(0.0)
-            return targetImage
+        if self.polygon is not None:
+            if not self.polygon.overlaps(afwGeom.Box2D(box)):
+                targetImage.set(0.0)
+                return targetImage
+            polyBox = afwGeom.Box2I(self.polygon.getBBox())
+            polyBox.clip(box)
+            subImage = afwImage.ImageF(targetImage, polyBox, afwImage.PARENT)
+            target = subImage.getArray()
+            box = polyBox
+        else:
+            target = targetImage.getArray()
 
         xMin, yMin = box.getMin()
         xMax, yMax = box.getMax()
@@ -361,14 +373,16 @@ class Background(object):
 
             return interpolated
 
+        xMaxExtrapolate = self.config.maxExtrapolateFrac*self.config.xSize
+        yMaxExtrapolate = self.config.maxExtrapolateFrac*self.config.ySize
+
         # Interpolation in x
         temp = numpy.zeros((width, len(self._yCenter)))
         xPosFull = numpy.arange(xMin, xMax + 1, dtype=float)
         for y, yCen in enumerate(self._yCenter):
             # XXX opt: limit yCen based on reach of interpolator
             xPos = numpy.ma.masked_where(mask[y,:], self._xCenter).compressed()
-            temp[:,y] = doInterpolate(xPos, values[y,:].compressed(), xPosFull, method,
-                                      self.config.maxExtrapolateFrac*self.config.xSize)
+            temp[:,y] = doInterpolate(xPos, values[y,:].compressed(), xPosFull, method, xMaxExtrapolate)
 
         tempMask = numpy.isnan(temp)
         temp = numpy.ma.masked_where(tempMask, temp)
@@ -378,9 +392,7 @@ class Background(object):
         for x in range(xMin, xMax + 1):
             dx = x - xMin
             yPos = numpy.ma.masked_where(tempMask[dx,:], self._yCenter).compressed()
-            target[:,dx] = doInterpolate(yPos, temp[dx,:].compressed(), yPosFull, method,
-                                         self.config.maxExtrapolateFrac*self.config.ySize)
-
+            target[:,dx] = doInterpolate(yPos, temp[dx,:].compressed(), yPosFull, method, yMaxExtrapolate)
         # Throw away anything outside the polygon
         if self.polygon is not None:
             polyImage = self.polygon.createImage(box)
@@ -416,10 +428,11 @@ class PolygonBackground(object):
             bg.addImage(image)
 
     def threshPolygons(self, polygons):
+        box = afwGeom.Box2D(self.box)
         goodPolygonList = []
         badPolygonList = []
-        for poly in intersectionList:
-            if not poly.overlaps(afwGeom.Box2D(box)):
+        for poly in polygons:
+            if not poly.overlaps(box):
                 #print "Polygon %s not in box %s" % (poly, box)
                 continue
             if poly.calculateArea() < self.config.minFrac*self.config.xSize*self.config.ySize:
@@ -438,7 +451,7 @@ class PolygonBackground(object):
             image = image.getMaskedImage()
         if box is None:
             box = image.getBBox(afwImage.PARENT)
-        self = cls(config, box, polygons, badPolygons)
+        self = cls(config, box, polygons)
         self.addImage(image)
         return self
 
