@@ -1,5 +1,5 @@
 import numpy
-from lsst.pex.config import Config, Field, ListField
+from lsst.pex.config import Config, Field, ListField, ChoiceField
 import lsst.afw.image as afwImage
 import lsst.afw.geom as afwGeom
 import lsst.afw.math as afwMath
@@ -194,8 +194,19 @@ class BackgroundConfig(Config):
                           doc="Mask planes to treat as bad")
     maxExtrapolateFrac = Field(dtype=float, default=0.5,
                                doc="Maximum fraction of a bin to extrapolate; 0 for unbounded")
-    allowExtrapolate = Field(dtype=bool, default=True, doc="Allow extrapolation?")
     extrapolateValue = Field(dtype=float, default=numpy.nan, doc="Value for extrapolation if disallowed")
+    extrapolationMode = ChoiceField(dtype=str, doc="Mode of extrapolation", default="NONE",
+                                    allowed={"NONE": "No extrapolation allowed",
+                                             "CONSTANT": "Extrapolate with a constant",
+                                             "LIMITED": "Limit extrapolation with maxExtrapolateFrac",
+                                             "FULL": "Full extrapolation allowed",
+                                             }, optional=False)
+    approximateStyle = ChoiceField(dtype=str, doc="Approximation style for statistics image", default="NONE",
+                                   allowed={"NONE": "No approximation",
+                                            "CHEBYSHEV": "Approximate with Chebyshev polynomial",
+                                        }, optional=False)
+    xApproximate = Field(dtype=int, default=5, doc="Approximation order in x")
+    yApproximate = Field(dtype=int, default=5, doc="Approximation order in y")
 
 class Background(object):
     def __init__(self, config, box, polygon=None, values=None, numbers=None):
@@ -312,7 +323,17 @@ class Background(object):
         values /= self._numbers
         thresh = self.config.minFrac*self.config.xSize*self.config.ySize
         values.getArray()[:] = numpy.where(self._numbers.getArray() < thresh, numpy.nan, values.getArray())
-        return values
+        return self.approximateStatsImage(values)
+
+    def approximateStatsImage(self, image):
+        # XXX Doesn't handle NANs in the image
+        if self.config.approximateStyle == "NONE":
+            return image
+        assert(self.config.approximateStyle == "CHEBYSHEV")
+        approx = afwMath.ApproximateControl(afwMath.ApproximateControl.CHEBYSHEV,
+                                            self.config.xApproximate, self.config.yApproximate)
+        mi = afwImage.makeMaskedImage(image)
+        return afwMath.makeApproximate(self._xCenter, self._yCenter, mi, self.box, approx).getImage()
 
     def getImage(self, *args):
         # Reproduce API for BackgroundMI.getImageF
@@ -362,15 +383,20 @@ class Background(object):
                     return numpy.ones_like(xInterp)*numpy.nan
                 interpolated = doInterpolate(xSample, ySample, xInterp,
                                              afwMath.lookupMaxInterpStyle(len(xSample)), maxExtrapolate)
-            if self.config.allowExtrapolate and maxExtrapolate > 0:
-                interpolated = numpy.where(numpy.logical_or(xInterp < xSample.min() - maxExtrapolate,
-                                                            xInterp > xSample.max() + maxExtrapolate),
-                                           self.config.extrapolateValue, interpolated)
-            elif not self.config.allowExtrapolate:
+            if self.config.extrapolationMode == "NONE":
                 interpolated = numpy.where(numpy.logical_or(xInterp < xSample.min(),
                                                             xInterp > xSample.max()),
                                            self.config.extrapolateValue, interpolated)
-
+            if self.config.extrapolationMode == "CONSTANT":
+                maskSample = numpy.ma.masked_where(numpy.isnan(ySample), ySample).compressed()
+                lowValue = maskSample[0]
+                highValue = maskSample[-1]
+                interpolated = numpy.where(xInterp < xSample.min() - maxExtrapolate, lowValue, interpolated)
+                interpolated = numpy.where(xInterp > xSample.max() - maxExtrapolate, highValue, interpolated)
+            if self.config.extrapolationMode == "LIMITED":
+                interpolated = numpy.where(numpy.logical_or(xInterp < xSample.min() - maxExtrapolate,
+                                                            xInterp > xSample.max() + maxExtrapolate),
+                                           self.config.extrapolateValue, interpolated)
             return interpolated
 
         xMaxExtrapolate = self.config.maxExtrapolateFrac*self.config.xSize
