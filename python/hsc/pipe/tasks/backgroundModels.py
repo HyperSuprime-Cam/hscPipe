@@ -217,6 +217,8 @@ class Background(object):
         self._xBounds, self._xCenter = getBoundsCenters(box.getMinX(), box.getMaxX(), config.xSize)
         self._yBounds, self._yCenter = getBoundsCenters(box.getMinY(), box.getMaxY(), config.ySize)
 
+        xNum, yNum = len(self._xCenter), len(self._yCenter)
+
         if False:
             print self._xBounds
             print self._xCenter
@@ -228,11 +230,12 @@ class Background(object):
                     print b, b.getDimensions(), afwGeom.Box2D(b).getCenter(), afwGeom.Point2D(xCenter, yCenter)
 
         imageBox = afwGeom.Box2I(afwGeom.Point2I(0,0),
-                                 afwGeom.Point2I(len(self._xCenter) - 1, len(self._yCenter) - 1))
+                                 afwGeom.Point2I(len(self._xCenter) - 1, len(self._yCenter) - 1)) # inclusive
         if values is None:
             values = afwImage.ImageF(imageBox)
             values.set(0.0)
         assert(values.getBBox(afwImage.PARENT) == imageBox)
+        assert(values.getWidth() == xNum and values.getHeight() == yNum)
         self._values = values
         if numbers is None:
             numbers = afwImage.ImageF(imageBox) # float for dynamic range and convenience
@@ -289,6 +292,8 @@ class Background(object):
                     result = afwMath.makeStatistics(subImage, statistic | afwMath.NPOINT, stats)
                     value = result.getValue(statistic)
                     num = result.getValue(afwMath.NPOINT)
+
+                assert(i < self._values.getWidth() and j < self._values.getHeight())
 
                 self._values.set(i, j, self._values.get(i, j) + value*num)
                 self._numbers.set(i, j, self._numbers.get(i, j) + num)
@@ -432,22 +437,20 @@ class Background(object):
 
 
 class PolygonBackground(object):
-    def __init__(self, config, box, polygons=[], bgList=None):
+    def __init__(self, config, box, polygons=[], bgList=None, badPolygons=[]):
         self.config = config
         self.box = box
-        self.polygons = polygons
-        if polygons:
-            self.goodPolygons, self.badPolygons = self.threshPolygons(polygons)
-        else:
-            self.goodPolygons, self.badPolygons = [None], []
-
         if bgList is None:
+            self.goodPolygons, self.badPolygons = self.threshPolygons(polygons)
             bgList = [Background(config, box, poly) for poly in self.goodPolygons]
+        else:
+            self.goodPolygons = polygons
+            self.badPolygons = badPolygons
         assert(len(bgList) == len(self.goodPolygons))
         self._bgList = bgList
 
     def __reduce__(self):
-        return self.__class__, (self.config, self.box, self.polygons, self._bgList)
+        return self.__class__, (self.config, self.box, self.goodPolygons, self._bgList, self.badPolygons)
 
     def addImage(self, image):
         for bg in self._bgList:

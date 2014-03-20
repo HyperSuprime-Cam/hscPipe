@@ -652,16 +652,6 @@ class MatchBackgroundsTask(Task):
         refImage -= warpImage
         # Don't zero out NAN pixels here; they're masked: let the background model do whatever it wants
 
-        # Propagate exposure info, so we can pick it up later
-        if (hasattr(ref, "getInfo") and ref.getInfo().hasCoaddInputs() and
-            hasattr(warp, "getInfo") and warp.getInfo().hasCoaddInputs()):
-            refInputs = ref.getInfo().getCoaddInputs()
-            warpInputs = warp.getInfo().getCoaddInputs()
-            for row in warpInputs.ccds:
-                refInputs.ccds.append(row)
-            for row in warpInputs.visits:
-                refInputs.visits.append(row)
-
         return ref
 
     def extractModelData(self, ref, warp):
@@ -699,14 +689,34 @@ class MatchBackgroundsTask(Task):
                 polygonList += [afwGeom.Polygon(box, transform) for box in boxList]
             return polygonList
 
+        return getPolygons(warp) # XXX Have smoothed over chip gaps in reference --- like there are no polygons
+
         refPolygons = getPolygons(ref)
         warpPolygons = getPolygons(warp)
         # We only have data where polygons intersect: there's nothing interesting outside
-        polygonList = []
+        intersectionList = []
         for iPoly in refPolygons:
             for jPoly in warpPolygons:
-                polygonList += iPoly.intersection(jPoly)
-        return polygonList
+                intersectionList += iPoly.intersection(jPoly)
+
+#        for i, iPoly in enumerate(refPolygons):
+#            for jPoly in refPolygons[i+1:]:
+#                if iPoly.intersection(jPoly):
+#                    import pdb;pdb.set_trace()
+#
+#
+#        bbox = ref.getMaskedImage().getBBox(afwImage.PARENT)
+#        polyImage = afwImage.ImageF(bbox)
+#        polyImage.set(0)
+#        for poly in intersectionList:
+#            polyImage += poly.createImage(bbox)
+#        import lsst.afw.display.ds9 as ds9
+#        ds9.mtv(polyImage, frame=1)
+#        for poly in intersectionList:
+#            poly.display(xy0=bbox.getMin(), frame=1)
+#        import pdb;pdb.set_trace()
+
+        return intersectionList
 
     def calculateBackgroundModel(self, diff, parentBox, data):
         """Determine a background model from a diff image
@@ -1035,13 +1045,14 @@ class ConstructionTask(Task):
         cache.bgWeight += weight
         del warpImage, weight
 
-        coaddInputs = cache.bgRef.getInfo().getCoaddInputs()
-        warpInputs = cache.warp.getInfo().getCoaddInputs()
-        if coaddInputs:
-            coaddInputs.visits.extend(warpInputs.visits)
-            coaddInputs.ccds.extend(warpInputs.ccds)
-        else:
-            cache.bgRef.getInfo().setCoaddInputs(warpInputs)
+        if cache.warp is not None:
+            coaddInputs = cache.bgRef.getInfo().getCoaddInputs()
+            warpInputs = cache.warp.getInfo().getCoaddInputs()
+            if coaddInputs:
+                coaddInputs.visits.extend(warpInputs.visits)
+                coaddInputs.ccds.extend(warpInputs.ccds)
+            else:
+                cache.bgRef.getInfo().setCoaddInputs(warpInputs)
 
         # Set bad pixels in the background reference
         bgImage = cache.bgRef.getMaskedImage()
