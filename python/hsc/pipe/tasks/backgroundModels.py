@@ -209,10 +209,9 @@ class BackgroundConfig(Config):
     yApproximate = Field(dtype=int, default=5, doc="Approximation order in y")
 
 class Background(object):
-    def __init__(self, config, box, polygon=None, values=None, numbers=None):
+    def __init__(self, config, box, values=None, numbers=None):
         self.box = box
         self.config = config
-        self.polygon = polygon
 
         self._xBounds, self._xCenter = getBoundsCenters(box.getMinX(), box.getMaxX(), config.xSize)
         self._yBounds, self._yCenter = getBoundsCenters(box.getMinY(), box.getMaxY(), config.ySize)
@@ -244,26 +243,22 @@ class Background(object):
         self._numbers = numbers
 
     def __reduce__(self):
-        return self.__class__, (self.config, self.box, self.polygon, self._values, self._numbers)
+        return self.__class__, (self.config, self.box, self._values, self._numbers)
+
+    def _addImageBounds(self, image, data):
+        return image.getBBox(afwImage.PARENT)
 
     def addImage(self, image):
+        data = self._addImageData(image)
+
         if hasattr(image, "getMaskedImage"):
             image = image.getMaskedImage()
         imageBox = image.getBBox(afwImage.PARENT)
-        stats = afwMath.StatisticsControl()
-        statistic = afwMath.MEAN
-        mask = None
-        if hasattr(image, "getMask"):
-            mask = image.getMask()
-            maskVal = mask.getPlaneBitMask(self.config.badPixels)
-            stats.setAndMask(maskVal)
-        stats.setNanSafe(True)
 
-        if self.polygon is not None:
-            polyImage = self.polygon.createImage(imageBox)
+        bounds = self._addImageBounds(data)
 
-        xMinImage, yMinImage = imageBox.getMin()
-        xMaxImage, yMaxImage = imageBox.getMax()
+        xMinImage, yMinImage = bounds.getMin()
+        xMaxImage, yMaxImage = bounds.getMax()
 
         for j, (yMin, yMax) in enumerate(self._yBounds):
             if yMax < yMinImage or yMin > yMaxImage:
@@ -273,38 +268,38 @@ class Background(object):
                     continue
                 box = afwGeom.Box2I(afwGeom.Point2I(int(xMin), int(yMin)),
                                     afwGeom.Point2I(int(xMax), int(yMax)))
-                box.clip(imageBox)
-                if self.polygon is not None and not self.polygon.overlaps(afwGeom.Box2D(box)):
-                    continue
-                subImage = image.Factory(image, box, afwImage.PARENT)
-                if self.polygon is not None:
-                    subPoly = polyImage.Factory(polyImage, box, afwImage.PARENT)
-                    if hasattr(subImage, "getMask"):
-                        data = numpy.ma.masked_where(numpy.logical_or(subImage.getMask().getArray() & maskVal,
-                                                                      subPoly.getArray() < 1.0),
-                                                     subImage.getImage().getArray())
-                    else:
-                        data = numpy.ma.masked_where(subPoly.getArray() < 1.0, subImage.getArray())
-                    data = data.compressed()
-                    num = len(data)
-                    value = data.mean() if num > 0 else numpy.nan
-                else:
-                    result = afwMath.makeStatistics(subImage, statistic | afwMath.NPOINT, stats)
-                    value = result.getValue(statistic)
-                    num = result.getValue(afwMath.NPOINT)
-
                 assert(i < self._values.getWidth() and j < self._values.getHeight())
-
+                value, number = self._addImageRegion(image, box, data)
                 self._values.set(i, j, self._values.get(i, j) + value*num)
                 self._numbers.set(i, j, self._numbers.get(i, j) + num)
+        return self
+
+    def _addImageData(self, image):
+        stats = afwMath.StatisticsControl()
+        statistic = afwMath.MEAN
+        mask = None
+        if hasattr(image, "getMask"):
+            mask = image.getMask()
+            maskVal = mask.getPlaneBitMask(self.config.badPixels)
+            stats.setAndMask(maskVal)
+        stats.setNanSafe(True)
+        return stats
+
+    def _addImageRegion(self, image, box, stats):
+        box.clip(image.getBBox())
+        subImage = image.Factory(image, box, afwImage.PARENT)
+        result = afwMath.makeStatistics(subImage, statistic | afwMath.NPOINT, stats)
+        value = result.getValue(statistic)
+        num = result.getValue(afwMath.NPOINT)
+        return value, num
 
     @classmethod
-    def fromImage(cls, config, image, box=None, polygon=None):
+    def fromImage(cls, config, image, *args, **kwargs):
         if hasattr(image, "getMaskedImage"):
             image = image.getMaskedImage()
         if box is None:
             box = image.getBBox(afwImage.PARENT)
-        self = cls(config, box=box, polygon=polygon)
+        self = cls(config, *args, **kwargs)
         self.addImage(image)
         return self
 
@@ -314,8 +309,6 @@ class Background(object):
                                                             (bg.config.xSize, bg.config.ySize)))
         if self.box != bg.box:
             raise RuntimeError("Box mismatch: %s vs %s" % (self.box, bg.box))
-        if self.polygon != bg.polygon:
-            raise RuntimeError("Polygon mismatch: %s vs %s" % (self.polygon, bg.polygon))
         self._values += bg._values
         self._numbers += bg._numbers
         return self
@@ -340,9 +333,9 @@ class Background(object):
         mi = afwImage.makeMaskedImage(image)
         return afwMath.makeApproximate(self._xCenter, self._yCenter, mi, self.box, approx).getImage()
 
-    def getImage(self, *args):
+    def _getImageArgs(self, *args):
         # Reproduce API for BackgroundMI.getImageF
-        box = None
+        box = self.box
         method = "AKIMA_SPLINE"
         args = list(args)
         if args and isinstance(args[0], afwGeom.Box2I):
@@ -350,59 +343,92 @@ class Background(object):
         if args and isinstance(args[0], basestring):
             method = args.pop(0)
         # XXX leftovers?
-
-        if box is None:
-            box = self.box
         method = afwMath.stringToInterpStyle(method)
 
-        values = self.getStatsImage().getArray()
-        mask = numpy.isnan(values)
-        values = numpy.ma.masked_where(mask, values.astype(float))
+        return box, method
 
-        targetImage = afwImage.ImageF(box)
+    def _interpolate(self, xSample, ySample, xInterp, method, maxExtrapolate):
+        """One-dimensional interpolation"""
+        if len(xSample) == 0:
+            return numpy.ones_like(xInterp)*numpy.nan
+        try:
+            interpolated = afwMath.makeInterpolate(xSample, ySample, method).interpolate(xInterp)
+        except:
+            if method == afwMath.Interpolate.CONSTANT:
+                # We've already tried the most basic interpolation and it failed
+                return numpy.ones_like(xInterp)*numpy.nan
+            interpolated = doInterpolate(xSample, ySample, xInterp,
+                                         afwMath.lookupMaxInterpStyle(len(xSample)), maxExtrapolate)
+        if self.config.extrapolationMode == "NONE":
+            interpolated = numpy.where(numpy.logical_or(xInterp < xSample.min(),
+                                                        xInterp > xSample.max()),
+                                       self.config.extrapolateValue, interpolated)
+        if self.config.extrapolationMode == "CONSTANT":
+            maskSample = numpy.ma.masked_where(numpy.isnan(ySample), ySample).compressed()
+            lowValue = maskSample[0]
+            highValue = maskSample[-1]
+            interpolated = numpy.where(xInterp < xSample.min() - maxExtrapolate, lowValue, interpolated)
+            interpolated = numpy.where(xInterp > xSample.max() - maxExtrapolate, highValue, interpolated)
+        if self.config.extrapolationMode == "LIMITED":
+            interpolated = numpy.where(numpy.logical_or(xInterp < xSample.min() - maxExtrapolate,
+                                                        xInterp > xSample.max() + maxExtrapolate),
+                                       self.config.extrapolateValue, interpolated)
+        return interpolated
 
-        if self.polygon is not None:
-            if not self.polygon.overlaps(afwGeom.Box2D(box)):
-                targetImage.set(0.0)
-                return targetImage
-            polyBox = afwGeom.Box2I(self.polygon.getBBox())
-            polyBox.clip(box)
-            subImage = afwImage.ImageF(targetImage, polyBox, afwImage.PARENT)
-            target = subImage.getArray()
-            box = polyBox
-        else:
-            target = targetImage.getArray()
-
+    def _interpolate2D(xSample, ySample, zSample, box, method, xMaxExtrapolate, yMaxExtrapolate):
+        """Two dimensional interpolation; all sample inputs numpy"""
         xMin, yMin = box.getMin()
         xMax, yMax = box.getMax()
         width, height = box.getDimensions()
 
-        def doInterpolate(xSample, ySample, xInterp, method, maxExtrapolate):
-            if len(xSample) == 0:
-                return numpy.ones_like(xInterp)*numpy.nan
-            try:
-                interpolated = afwMath.makeInterpolate(xSample, ySample, method).interpolate(xInterp)
-            except:
-                if method == afwMath.Interpolate.CONSTANT:
-                    # We've already tried the most basic interpolation and it failed
-                    return numpy.ones_like(xInterp)*numpy.nan
-                interpolated = doInterpolate(xSample, ySample, xInterp,
-                                             afwMath.lookupMaxInterpStyle(len(xSample)), maxExtrapolate)
-            if self.config.extrapolationMode == "NONE":
-                interpolated = numpy.where(numpy.logical_or(xInterp < xSample.min(),
-                                                            xInterp > xSample.max()),
-                                           self.config.extrapolateValue, interpolated)
-            if self.config.extrapolationMode == "CONSTANT":
-                maskSample = numpy.ma.masked_where(numpy.isnan(ySample), ySample).compressed()
-                lowValue = maskSample[0]
-                highValue = maskSample[-1]
-                interpolated = numpy.where(xInterp < xSample.min() - maxExtrapolate, lowValue, interpolated)
-                interpolated = numpy.where(xInterp > xSample.max() - maxExtrapolate, highValue, interpolated)
-            if self.config.extrapolationMode == "LIMITED":
-                interpolated = numpy.where(numpy.logical_or(xInterp < xSample.min() - maxExtrapolate,
-                                                            xInterp > xSample.max() + maxExtrapolate),
-                                           self.config.extrapolateValue, interpolated)
-            return interpolated
+        mask = numpy.isnan(zSample)
+        zSample = numpy.ma.masked_where(mask, zSample.astype(float))
+
+        xInterp = numpy.arange(xMin, xMax + 1, dtype=float)
+        yInterp = numpy.arange(yMin, yMax + 1, dtype=float)
+
+        # Interpolation in x
+        temp = numpy.zeros((len(xInterp), len(ySample)))
+        for y, yCen in enumerate(ySample):
+            # XXX opt: limit yCen based on reach of interpolator
+            xPos = numpy.ma.masked_where(mask[y,:], xSample).compressed()
+            temp[:,y] = self._interpolate1D(xPos, zSample[y,:].compressed(), xInterp, method, xMaxExtrapolate)
+
+        tempMask = numpy.isnan(temp)
+        temp = numpy.ma.masked_where(tempMask, temp)
+
+        # Interpolation in y
+        zInterp = numpy.zeros((width, height))
+        for x in range(xMin, xMax + 1):
+            dx = x - xMin
+            yPos = numpy.ma.masked_where(tempMask[dx,:], ySample).compressed()
+            zInterp[:,dx] = self._interpolate1D(yPos, temp[dx,:].compressed(), yInterp, method,
+                                                yMaxExtrapolate)
+
+        return zInterp
+
+    def getImage(self, *args):
+        box, method = self._getImageArgs(*args)
+
+        xMaxExtrapolate = self.config.maxExtrapolateFrac*self.config.xSize
+        yMaxExtrapolate = self.config.maxExtrapolateFrac*self.config.ySize
+
+        values = self.getStatsImage().getArray()
+        target = afwImage.ImageF(box)
+        target.getArray()[:] = self._interpolate2D(self._xCenter, self._yCenter, values, box, method,
+                                                   xMaxExtrapolate, yMaxExtrapolate)
+        return target
+
+        ### The below was refactored, but I don't want to blow it away yet.
+        mask = numpy.isnan(values)
+        values = numpy.ma.masked_where(mask, values.astype(float))
+
+        targetImage = afwImage.ImageF(box)
+        target = targetImage.getArray()
+
+        xMin, yMin = box.getMin()
+        xMax, yMax = box.getMax()
+        width, height = box.getDimensions()
 
         xMaxExtrapolate = self.config.maxExtrapolateFrac*self.config.xSize
         yMaxExtrapolate = self.config.maxExtrapolateFrac*self.config.ySize
@@ -413,7 +439,7 @@ class Background(object):
         for y, yCen in enumerate(self._yCenter):
             # XXX opt: limit yCen based on reach of interpolator
             xPos = numpy.ma.masked_where(mask[y,:], self._xCenter).compressed()
-            temp[:,y] = doInterpolate(xPos, values[y,:].compressed(), xPosFull, method, xMaxExtrapolate)
+            temp[:,y] = self._interpolate(xPos, values[y,:].compressed(), xPosFull, method, xMaxExtrapolate)
 
         tempMask = numpy.isnan(temp)
         temp = numpy.ma.masked_where(tempMask, temp)
@@ -423,20 +449,69 @@ class Background(object):
         for x in range(xMin, xMax + 1):
             dx = x - xMin
             yPos = numpy.ma.masked_where(tempMask[dx,:], self._yCenter).compressed()
-            target[:,dx] = doInterpolate(yPos, temp[dx,:].compressed(), yPosFull, method, yMaxExtrapolate)
-        # Throw away anything outside the polygon
-        if self.polygon is not None:
-            polyImage = self.polygon.createImage(box)
-            polyArray = polyImage.getArray()
-            target[:] = numpy.where(polyArray >= 1.0, target, 0.0)
-            target[:] = numpy.where(numpy.logical_and(polyArray > 0.0, polyArray < 1.0), numpy.nan, target)
+            target[:,dx] = self._interpolate(yPos, temp[dx,:].compressed(), yPosFull, method, yMaxExtrapolate)
 
         return targetImage
 
     getImageF = getImage
 
 
-class PolygonBackground(object):
+class PolygonBackground(Background):
+    def __init__(self, config, box, polygon, values=None, numbers=None):
+        super(PolygonBackground, self).__init__(config, box, values=values, numbers=numbers)
+        self.polygon = polygon
+
+    def __reduce__(self):
+        return self.__class__, (self.config, self.box, self.polygon, self._values, self._numbers)
+
+    def _addImageData(self, image):
+        if hasattr(image, "getMask"):
+            mask = image.getMask()
+            maskVal = mask.getPlaneBitMask(self.config.badPixels)
+        else:
+            maskVal = 0
+        polyImage = self.polygon.createImage(imageBox)
+        return polyImage, maskVal
+
+    def _addImageRegion(self, image, box, data):
+        polyImage, maskVal = data
+        subImage = image.Factory(image, box, afwImage.PARENT)
+        subPoly = polyImage.Factory(polyImage, box, afwImage.PARENT)
+        if hasattr(subImage, "getMask"):
+            values = numpy.ma.masked_where(numpy.logical_or(subImage.getMask().getArray() & data.maskVal,
+                                                            subPoly.getArray() < 1.0),
+                                           subImage.getImage().getArray())
+        else:
+            values = numpy.ma.masked_where(subPoly.getArray() < 1.0, subImage.getArray())
+        values = values.compressed()
+        num = len(values)
+        value = values.mean() if num > 0 else numpy.nan
+        return value, num
+
+    def merge(self, bg):
+        if self.polygon != bg.polygon:
+            raise RuntimeError("Polygon mismatch: %s vs %s" % (self.polygon, bg.polygon))
+        return super(PolygonBackground, self).merge(bg)
+
+    def getImage(self, *args):
+        box, method = self._getImageArgs(*args)
+
+        if not self.polygon.overlaps(afwGeom.Box2D(box)):
+            targetImage.set(0.0)
+            return targetImage
+
+        image = super(PolygonBackground, self).getImage(args)
+        array = image.getArray()
+
+        # Throw away anything outside the polygon
+            polyImage = self.polygon.createImage(box)
+            polyArray = polyImage.getArray()
+            array[:] = numpy.where(polyArray >= 1.0, target, 0.0)
+            array[:] = numpy.where(numpy.logical_and(polyArray > 0.0, polyArray < 1.0), numpy.nan, target)
+
+        return image
+
+class MultiPolygonBackground(object):
     def __init__(self, config, box, polygons=[], bgList=None, badPolygons=[]):
         self.config = config
         self.box = box
@@ -562,6 +637,83 @@ class PolygonBackground(object):
 
     getImageF = getImage
 
+
+class WarpedBackground(Background):
+    def __init__(self, config, box, wcs, values=None, numbers=None):
+        super(WarpedBackground, self).__init__(config, box, values=values, numbers=numbers)
+        self.wcs = wcs
+
+    def __reduce__(self):
+        return self.__class__, (self.config, self.box, self.wcs, self._values, self._numbers)
+
+    def _addImageData(self, image):
+        if not hasattr(image, "getWcs"):
+            return Struct(haveWcs=False, data=super(WarpedBackground, self)._addImageData(image))
+        wcs = image.getWcs()
+
+        if hasattr(image, "getMaskedImage"):
+            image = image.getMaskedImage()
+
+        if hasattr(image, "getMask"):
+            mask = image.getMask()
+            maskVal = mask.getPlaneBitMask(self.config.badPixels)
+        else:
+            maskVal = 0
+
+        box = image.getBBox()
+        poly = Polygon(afwGeom.Box2D(box), afwImage.XYTransformFromWcsPair(self.wcs, wcs))
+
+        return Struct(haveWcs=True, wcs=wcs, box=box, poly=poly, maskVal=maskVal)
+
+    def _addImageBounds(self, box, data):
+        return (data.poly.getBBox() if data.haveWcs else
+                super(WarpedBackground, self)._addImageBounds(data.data))
+
+    def _addImageRegion(self, image, box, data):
+        poly = Polygon(afwGeom.Box2D(box), afwImage.XYTransformFromWcsPair(data.wcs, self.wcs))
+        polyImage = poly.createImage(data.box)
+        bad = polyImage.getArray() < 1.0
+        if hasattr(image, "getMask"):
+            bad = numpy.logical_or(bad, image.getMask().getArray() & data.maskVal)
+        values = numpy.ma.masked_where(bad, polyImage.getImage().getArray()).compressed()
+        num = len(values)
+        value = values.mean() if num > 0 else numpy.nan # XXX use more robust statistic
+        return value, num
+
+    def merge(self, bg):
+        if self.wcs != bg.wcs:
+            raise RuntimeError("Wcs mismatch: %s vs %s" % (self.wcs, bg.wcs))
+        return super(WarpedBackground, self).merge(bg)
+
+    def getImage(self, box, wcs, method="AKIMA_SPLINE"):
+        xMaxExtrapolate = self.config.maxExtrapolateFrac*self.config.xSize
+        yMaxExtrapolate = self.config.maxExtrapolateFrac*self.config.ySize
+
+        values = self.getStatsImage().getArray()
+
+        # generate set of bounds+centers for this box, then warp stats image to these bounds
+        xSize, ySize = self.config.xSize, self.config.ySize
+        xBounds, xCenter = getBoundsCenters(box.getMinX() - xSize, box.getMaxX() + xSize, xSize)
+        yBounds, yCenter = getBoundsCenters(box.getMinY() - ySize, box.getMaxY() + ySize, ySize)
+
+        thisValues = afwImage.ImageF(len(xCenter), len(yCenter))
+
+        warp = afwMath.WarpingControl("bilinear", "bilinear", 0, 0, afwGpu.DEFAULT_DEVICE_PREFERENCE,
+                                      afwImage.MaskU.getPlaneBitMask("EDGE"))
+
+        origBinnedWcs = measAlg.BinnedWcs(self.wcs, xSize, ySize,
+                                          afwGeom.Point2D(self._xCenter[0], self._yCenter[0]))
+        thisBinnedWcs = measAlg.BinnedWcs(wcs, xSize, ySize, box.getMin())
+        transform = afwImage.XYTransformFromWcsPair(thisBinnedWcs, origBinnedWcs)
+
+        numGood = afwMath.warpImage(thisValues, values, transform, warp, numpy.nan)
+
+        target = afwImage.ImageF(box)
+        target.getArray()[:] = self._interpolate2D(self._xCenter, self._yCenter, thisValues, box, method,
+                                                   xMaxExtrapolate, yMaxExtrapolate)
+        return target
+
+    getImageF = getImage
 
 if __name__ == "__main__":
     # make a ramping image (spline should be exact for linear increasing image
