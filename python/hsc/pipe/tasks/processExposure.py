@@ -1,16 +1,20 @@
 import sys
 import math
+import itertools
 import collections
 
 import hsc.pipe.tasks.plotSetup
+import lsst.afw.geom as afwGeom
+import lsst.afw.coord as afwCoord
 import lsst.afw.table as afwTable
 import lsst.afw.image as afwImage
 import lsst.afw.cameraGeom as afwCg
 import hsc.pipe.base.butler as hscButler
 from lsst.pipe.base import Struct, ArgumentParser
-from lsst.pex.config import Config, Field, ConfigurableField
+from lsst.pex.config import Config, Field, ConfigurableField, ConfigField
 from hsc.pipe.tasks.processCcd import SubaruProcessCcdTask
 from hsc.pipe.tasks.photometricSolution import PhotometricSolutionTask
+from hsc.pipe.tasks.backgroundModels import WarpedBackground, BackgroundConfig
 from hsc.pipe.base.pool import abortOnError, NODE, Pool, Debugger
 from hsc.pipe.base.pbs import PbsPoolTask
 from hsc.meas.tansip.solvetansip import SolveTansipTask
@@ -25,6 +29,8 @@ class ProcessExposureConfig(Config):
     doSolveTansip = Field(dtype=bool, default=True, doc="Run solvetansip?")
     solveTansip = ConfigurableField(target=SolveTansipTask, doc="Global astrometric solution")
     doPhotometricSolution = Field(dtype=bool, default=False, doc="Run global photometric solution?")
+    doBackground = Field(dtype=bool, default=False, doc="Do global background subtraction?")
+    background = ConfigField(dtype=BackgroundConfig, doc="Global background subtraction config")
 
     def setDefaults(self):
         # We will do persistence ourselves
@@ -33,6 +39,10 @@ class ProcessExposureConfig(Config):
         self.processCcd.doWriteSources = False
         self.processCcd.doWriteHeavyFootprintsInSources = False
         self.processCcd.doFinalWrite = False
+
+        self.background.xSize = 2048
+        self.background.ySize = 2048
+        self.background.extrapolationMode = "FULL"
 
 
 class ProcessExposureTask(PbsPoolTask):
@@ -99,12 +109,18 @@ class ProcessExposureTask(PbsPoolTask):
         wcsList = self.solveAstrometry(matchLists, butler.mapper.camera)
         fluxMag0 = self.solvePhotometry(matchLists.values(), self.getFilterName(structList))
         ccdIdList = dataIdList.keys()
+        if self.config.doBackground:
+            bg = self.backgroundPrepare(wcsList, structList)
+            bgList = pool.mapToPrevious(self.measureBackground, dataIdList.values(), bg)
+            bg = self.backgroundReduce(bg, bgList)
+        else:
+            bg = None
 
         # Scatter with data from root: save CCDs with update astrometric/photometric solutions
         solutionList = [Struct(ccdId=ccdId, fluxMag0=fluxMag0, dataId=dataIdList[ccdId],
                                wcs=wcsList[ccdId] if ccdId in wcsList else None)
                         for ccdId in ccdIdList]
-        pool.mapToPrevious(self.write, solutionList)
+        pool.mapToPrevious(self.write, solutionList, bg)
 
     def process(self, cache, dataId):
         """Process a single CCD and save the results for a later write.
@@ -129,14 +145,16 @@ class ProcessExposureTask(PbsPoolTask):
 
         # Reformat the matches for MPI transfer
         matches, numMatches = None, 0
+        box = None
         if result.matches is not None and result.matchMeta is not None:
             matches = afwTable.ReferenceMatchVector(result.matches)
             numMatches = len(matches)
+            box = result.exposure.getMaskedImage().getBBox()
 
         self.log.info("Finished processing %s (ccdId=%d) on %s with %d matches" %
                       (dataId, ccdId, NODE, numMatches))
 
-        return Struct(ccdId=ccdId, matches=matches, filterName=filterName)
+        return Struct(ccdId=ccdId, matches=matches, filterName=filterName, box=box)
 
     def getFilterName(self, structList):
         """Determine the filter name from the list of structs returned by process().
@@ -188,7 +206,99 @@ class ProcessExposureTask(PbsPoolTask):
             self.log.warn("Failed to determine global photometric zero-point: %s" % e)
         return None
 
-    def write(self, cache, struct):
+    def backgroundPrepare(self, wcsDict, structList):
+        """Prepare to measure global background
+
+        We generate a consistent coordinate system over the exposure,
+        and use that to seed a background model which can be used to
+        make measurements on the individual CCDs.
+
+        This method is run only on the master node.
+
+        @param wcsDict: Dict of ccdId --> WCS solutions
+        @param structList: List of process results
+        @return virgin background model
+        """
+        # Determine bounds of images
+        xMin, xMax = 2, -2
+        yMin, yMax = 2, -2
+        zMin, zMax = 2, -2
+        scale = 0.0
+        num = 0
+        for struct in structList:
+            if struct is None:
+                continue
+            box = struct.box
+            if box is None:
+                continue
+            ccdId = struct.ccdId
+            if not ccdId in wcsDict:
+                continue
+            wcs = wcsDict[struct.ccdId]
+            if wcs is None:
+                continue
+            scale += wcs.pixelScale().asDegrees()
+            for p in box.getCorners():
+                xyz = wcs.pixelToSky(afwGeom.Point2D(p)).getVector()
+                xMin = min(xMin, xyz.getX())
+                xMax = max(xMax, xyz.getX())
+                yMin = min(yMin, xyz.getY())
+                yMax = max(yMax, xyz.getY())
+                zMin = min(zMin, xyz.getZ())
+                zMax = max(zMax, xyz.getZ())
+
+            num += 1
+        # Create Wcs
+        center = afwGeom.Point3D(0.5*(xMin+xMax), 0.5*(yMin+yMax), 0.5*(zMin+xMax))
+        scale /= num
+        wcs = afwImage.makeWcs(afwCoord.Coord(xyz), afwGeom.Point2D(0, 0), scale, 0.0, 0.0, scale)
+        # Convert sky xyz bounds to image xy box
+        box = afwGeom.Box2I()
+        for x, y, z in itertools.product((xMin, xMax), (yMin, yMax), (zMin, zMax)):
+            box.include(afwGeom.Point2I(wcs.skyToPixel(afwCoord.Coord(afwGeom.Point3D(x, y, z)))))
+
+        return WarpedBackground(self.config.background, box, wcs)
+
+    def measureBackground(self, cache, dataId, bg):
+        """Measure background on individual CCD
+
+        The global background model is used to measure on the CCD.
+        The resultant measurement is returned in order to form a
+        populated full-exposure background model.
+
+        Only slave nodes run this method.
+
+        @param cache: Pool cache
+        @param dataId: Data identifier; unused (only required for Pool API)
+        @param bg: Unpopulated global background model
+        @return Global background model populated with CCD measurements
+        """
+        if not cache.result:
+            return None
+        # Reinstate old background measurement
+        exposure = cache.result.exposure
+        if not exposure:
+            return None
+        exposure.getMaskedImage().__iadd__(cache.result.backgrounds.getImage())
+        # Measure new background
+        bg.addImage(exposure)
+        return bg
+
+    def backgroundReduce(self, bgMaster, bgList):
+        """Consolidate background models
+
+        Reduce the individual CCD measurements of the global
+        background model to produce a full-exposure background
+        model.
+
+        @param bgMaster: Master (unpopulated) background model
+        @param bgList: List of background models from each CCD
+        @return Fully-populated background model
+        """
+        bgList = [bg for bg in bgList if bg is not None]
+        return reduce(lambda x,y: x.merge(y), bgList, bgMaster)
+
+    def write(self, cache, struct, bg):
         """Write the outputs.
 
         The cached results are written along with revised astrometric and photometric solutions.
@@ -198,6 +308,10 @@ class ProcessExposureTask(PbsPoolTask):
         if not cache.result or not struct:
             # Processing must have failed: nothing we can do
             return
+
+        if bg is not None:
+            image = cache.result.exposure.getMaskedImage()
+            image -= bg.getImage(image.getBBox(), struct.wcs)
 
         dataId = struct.dataId
         ccdId = struct.ccdId
