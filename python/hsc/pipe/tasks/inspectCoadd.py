@@ -6,7 +6,12 @@ import lsst.afw.geom as afwGeom
 import lsst.afw.display.ds9 as ds9
 
 def coaddToOriginal(exposure, point):
-    """Convert coadd coordinates to original coordinates"""
+    """Convert coadd coordinates to original coordinates
+
+    @param exposure: Coadd exposure
+    @param point: Position of interest
+    @return identifier, pixel coordinates on original
+    """
     info = exposure.getInfo()
     if not info:
         raise RuntimeError("No exposure info")
@@ -20,7 +25,12 @@ def coaddToOriginal(exposure, point):
     return [(orig.getId(), orig.getWcs().skyToPixel(sky)) for orig in inputs.ccds if orig.contains(sky)]
 
 def identToVisitCcd(camera, ident):
-    """Convert identifier to visit,ccd pair"""
+    """Convert identifier to visit,ccd pair
+
+    @param camera: Name of camera
+    @param ident: identifier
+    @return visit, ccd
+    """
     if camera.lower() == "hsc":
         return ident//200, ident % 200
     if camera.lower() == "sc":
@@ -46,6 +56,10 @@ class InspectCoaddTask(CmdLineTask):
         return parser
 
     def run(self, dataRef):
+        """Run on a coadd
+
+        Displays the coadd and goes interactive to allow inspection.
+        """
         self.butler = dataRef.getButler()
         self.frames = 0
 
@@ -67,6 +81,13 @@ class InspectCoaddTask(CmdLineTask):
         ds9.interact()
 
     def inspect(self, exposure, key, x, y):
+        """ds9 callback to inspect position on coadd
+
+        @param exposure: Coadd exposure
+        @param key: key pressed
+        @param x,y: pixel coordinates on coadd
+        @return False to allow ds9 interactivity to continue
+        """
         originalList = coaddToOriginal(exposure, afwGeom.Point2D(x, y) + afwGeom.Extent2D(exposure.getXY0()))
         if len(originalList) == 0:
             self.log.info("No originals at coadd point %f,%f" % (x,y))
