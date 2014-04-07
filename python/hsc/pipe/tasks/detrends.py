@@ -200,15 +200,26 @@ def getCcdIdListFromExposures(expRefList, level="sensor"):
             name = getCcdName(ccdId, ccdKeys)
             ccdNames.add(name)
 
+    # if ccdKeys is an empty set, then ccdKeys == expKeys and expRefList was split at the 'sensor' level,
+    # so we'll set ccdKeys ourselves to avoid later confusion
+    isExpList = True
+    if len(ccdKeys) == 0:
+        ccdKeys = set(['ccd'])
+        isExpList = False
+
     # Turn the list of CCDs for each exposure into a list of exposures for each CCD
-    ccdLists = dict((k,[]) for k in ccdNames)
+    ccdLists = {}
     for n, ccdIdList in enumerate(expIdList):
         for ccdId in ccdIdList:
             name = getCcdName(ccdId, ccdKeys)
+            if name not in ccdLists:
+                ccdLists[name] = []
             ccdLists[name].append(ccdId)
-        for idList in ccdLists.values():
-            if len(idList) == n:
-                idList.append(None)
+        # 'None' padding only makes sense if it's really an exposureId list.
+        if isExpList:
+            for idList in ccdLists.values():
+                if len(idList) == n:
+                    idList.append(None)
 
     return ccdKeys, ccdLists
 
@@ -228,7 +239,7 @@ class DetrendArgumentParser(ArgumentParser):
     def __init__(self, calibName, *args, **kwargs):
         super(DetrendArgumentParser, self).__init__(*args, **kwargs)
         self.calibName = calibName
-        self.add_id_argument("--id", datasetType="raw", level="visit",
+        self.add_id_argument("--id", datasetType="raw",
                              help="input identifiers, e.g., --id visit=123 ccd=4")
         self.add_argument("--detrendId", nargs="*", action=DetrendIdAction, default={},
                           help="identifiers for detrend, e.g., --detrendId version=1",
