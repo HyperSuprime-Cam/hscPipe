@@ -519,6 +519,17 @@ class DetrendTask(PbsPoolTask):
         self.log.info("Combining %s on %s" % (struct.outputId, NODE))
         detrend = self.combination.run(dataRefList, expScales=struct.scales.expScales,
                                        finalScale=struct.scales.ccdScale)
+
+        # get the visits to record in the fits header
+        visits = set()
+        for dr in dataRefList:
+            if 'visit' in dr.dataId:
+                visits.add(dr.dataId['visit'])
+        # add the visits to metadata with label 'INPUTNNN'
+        md = detrend.getMetadata()
+        for i, v in enumerate(sorted(visits)):
+            md.add("CALIB_INPUT_%03d" % i, v)
+
         self.write(cache.butler, detrend, struct.outputId)
 
     def write(self, butler, exposure, dataId):
