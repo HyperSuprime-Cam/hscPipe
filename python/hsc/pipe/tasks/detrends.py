@@ -6,6 +6,8 @@ import math
 import numpy
 import argparse
 import traceback
+import time
+import commands
 
 from lsst.pex.config import Config, ConfigField, ConfigurableField, Field, ListField
 from lsst.pipe.base import Task, Struct, TaskRunner, ArgumentParser
@@ -531,17 +533,35 @@ class DetrendTask(PbsPoolTask):
         detrend = self.combination.run(dataRefList, expScales=struct.scales.expScales,
                                        finalScale=struct.scales.ccdScale)
 
-        # get the visits to record in the fits header
-        visits = set()
-        for dr in dataRefList:
-            if 'visit' in dr.dataId:
-                visits.add(dr.dataId['visit'])
-        # add the visits to metadata with label 'INPUTNNN'
-        md = detrend.getMetadata()
-        for i, v in enumerate(sorted(visits)):
-            md.add("CALIB_INPUT_%03d" % i, v)
+        self.recordCalibInputs(cache.butler, detrend, struct.ccdIdList)
 
         self.write(cache.butler, detrend, struct.outputId)
+
+
+    def recordCalibInputs(self, butler, detrend, dataIdList):
+        """Record metadata (FITS header) for input visits, date, time, host, and directory.
+
+        @param detrend     The combined detrend exposure.
+        @param dataIdList  List of data identifiers for calibration inputs
+        """
+
+        md = detrend.getMetadata()
+
+        # date, time, host, and root
+        now = time.localtime()
+        md.add("COMBINE_DATE", time.strftime("%Y-%m-%d", now))
+        md.add("COMBINE_TIME", time.strftime("%X %Z", now))
+        md.add("COMBINE_ROOT", butler.mapper.root)
+
+        # Not ideal.  It's a compute node hostname, but it's better than nothing.
+        _status, hostname = commands.getstatusoutput("hostname")
+        if not _status and len(hostname) > 0:
+            md.add("COMBINE_HOST", hostname)
+
+        # visits
+        visits = [dataId['visit'] for dataId in dataIdList if dataId is not None and 'visit' in dataId]
+        for i, v in enumerate(sorted(set(visits))):
+            md.add("CALIB_INPUT_%04d" % (i), v)
 
     def write(self, butler, exposure, dataId):
         """Write the final combined detrend
