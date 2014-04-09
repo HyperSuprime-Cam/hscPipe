@@ -8,6 +8,9 @@ import argparse
 import traceback
 import time
 import commands
+import getpass
+import shutil
+import glob
 
 from lsst.pex.config import Config, ConfigField, ConfigurableField, Field, ListField
 from lsst.pipe.base import Task, Struct, TaskRunner, ArgumentParser
@@ -350,6 +353,8 @@ class DetrendTask(PbsPoolTask):
             except Exception, e:
                 raise RuntimeError("Unable to determine output filename from %s: %s" % (dataId, e))
 
+        self.copyConfig(butler, dataId)
+
         pool = Pool()
         pool.storeSet(butler=butler)
 
@@ -557,11 +562,35 @@ class DetrendTask(PbsPoolTask):
         _status, hostname = commands.getstatusoutput("hostname")
         if not _status and len(hostname) > 0:
             md.add("COMBINE_HOST", hostname)
+        md.add("COMBINE_USER", getpass.getuser())
 
         # visits
         visits = [dataId['visit'] for dataId in dataIdList if dataId is not None and 'visit' in dataId]
         for i, v in enumerate(sorted(set(visits))):
             md.add("CALIB_INPUT_%04d" % (i), v)
+
+    def copyConfig(self, butler, dataId):
+        """Copy the persisted config files to the same output directory as the detrends.
+        """
+
+        # we want to make sure we get all the foo~1, foo~2 old copies, not just the current one.
+        configDir, _configFile   = os.path.split(butler.get('processCcd_config_filename', dataId)[0])
+        configFiles              = glob.glob(os.path.join(configDir, "*"))
+
+        detrendDir, _detrendFile = os.path.split(butler.get(self.calibName+"_filename", dataId)[0])
+        detrendConfigDir         = os.path.join(detrendDir, "config")
+
+        if not os.path.exists(detrendConfigDir):
+            # handle possible race condition on makedirs
+            try:
+                os.makedirs(detrendConfigDir)
+            except OSError, e:
+                pass
+
+        for conFile in configFiles:
+            _configDir, conFileBase = os.path.split(conFile)
+            dst = os.path.join(detrendConfigDir, conFileBase)
+            shutil.copy(conFile, dst)
 
     def write(self, butler, exposure, dataId):
         """Write the final combined detrend
