@@ -119,7 +119,7 @@ class DetrendCombineTask(Task):
                          (NODE, background, finalScale))
             combined *= finalScale / background
 
-        return combined
+        return afwImage.DecoratedImageF(combined)
 
     def getDimensions(self, sensorRefList, inputName="postISRCCD"):
         """Get dimensions of the inputs"""
