@@ -591,6 +591,7 @@ class DetrendTask(PbsPoolTask):
             _configDir, conFileBase = os.path.split(conFile)
             dst = os.path.join(detrendConfigDir, conFileBase)
             shutil.copy(conFile, dst)
+            shutil.copystat(conFile, dst)
 
     def write(self, butler, exposure, dataId):
         """Write the final combined detrend
