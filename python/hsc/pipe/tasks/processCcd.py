@@ -92,12 +92,39 @@ class SubaruProcessCcdTask(ProcessCcdTask):
             super(SubaruProcessCcdTask, self).writeBackgrounds(dataRef, results.backgrounds)
 
         if results.exposure is not None:
+            addCalibInfo(results.exposure, dataRef)
             dataRef.put(results.exposure, 'calexp')
         if results.sources is not None:
             sourceWriteFlags = (0 if self.config.doWriteHeavyFootprintsInSources
                                 else afwTable.SOURCE_IO_NO_HEAVY_FOOTPRINTS)
+            addCalibInfo(results.sources, dataRef)
             dataRef.put(results.sources, 'src', flags=sourceWriteFlags)
         if results.matches is not None:
             dataRef.put(packMatches(results.matches, results.matchMeta), "srcMatch")
             if self.config.doWriteUnpackedMatches:
                 dataRef.put(hscMatches.matchesToCatalog(results.matches, results.matchMeta), "srcMatchFull")
+
+def addCalibInfo(obj, dataRef):
+    """Local function to append calibration versioning info to the metadata
+    """
+
+    haveMeta = hasattr(obj, 'getMetadata')
+    if haveMeta:
+        md = obj.getMetadata()
+    else:
+        return
+
+    # bias, flat, fringe and dark all have the same calibVersion, but dates may (will) differ
+    # put in an entry for each one
+    calibInfo = dict()
+    for calibName in 'bias', 'dark', 'flat', 'fringe':
+
+        calibVersion, calibDate = "not_available", "not_available"
+        try:
+            additionalData = dataRef.getButler().mapper.map(calibName, dataRef.dataId).getAdditionalData()
+            calibVersion = additionalData.get('calibVersion')
+            calibDate    = additionalData.get('calibDate')
+        except:
+            pass
+        md.add(calibName.upper()+"_VERSION", calibVersion)
+        md.add(calibName.upper()+"_DATE", calibDate)
