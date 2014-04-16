@@ -7,8 +7,6 @@ import numpy
 import argparse
 import traceback
 import time
-import commands
-import getpass
 import shutil
 import glob
 
@@ -557,12 +555,6 @@ class DetrendTask(PbsPoolTask):
         md.add("COMBINE_DATE", time.strftime("%Y-%m-%d", now))
         md.add("COMBINE_TIME", time.strftime("%X %Z", now))
         md.add("COMBINE_ROOT", butler.mapper.root)
-
-        # Not ideal.  It's a compute node hostname, but it's better than nothing.
-        _status, hostname = commands.getstatusoutput("hostname")
-        if not _status and len(hostname) > 0:
-            md.add("COMBINE_HOST", hostname)
-        md.add("COMBINE_USER", getpass.getuser())
 
         # visits
         visits = [dataId['visit'] for dataId in dataIdList if dataId is not None and 'visit' in dataId]
