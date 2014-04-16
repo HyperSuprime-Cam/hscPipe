@@ -561,6 +561,20 @@ class DetrendTask(PbsPoolTask):
         for i, v in enumerate(sorted(set(visits))):
             md.add("CALIB_INPUT_%04d" % (i), v)
 
+        for calibName in 'bias', 'dark', 'flat', 'fringe':
+
+            calibPath, calibVersion, calibDate = "not_available", "not_available", "not_available"
+            try:
+                calibPath      = butler.get(calibName+"_filename", dataIdList[0])
+                additionalData = butler.mapper.map(calibName, dataIdList[0]).getAdditionalData()
+                calibVersion   = additionalData.get('calibVersion')
+                calibDate      = additionalData.get('calibDate')
+            except:
+                pass
+            md.add(calibName.upper()+"_VERSION", calibVersion)
+            md.add(calibName.upper()+"_DATE", calibDate)
+            md.add(calibName.upper()+"_PATH", calibPath)
+
     def copyConfig(self, butler, dataId):
         """Copy the persisted config files to the same output directory as the detrends.
         """
