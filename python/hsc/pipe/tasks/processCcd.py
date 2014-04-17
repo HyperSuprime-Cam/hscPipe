@@ -112,10 +112,13 @@ def recordCalibInfo(obj, dataRef):
     one in detrend.py
     """
 
-    haveMeta = hasattr(obj, 'getMetadata')
-    if not haveMeta or obj.getMetadata() is None:
+    try:
+        md = obj.getMetadata()
+    except AttributeError:
         return
-    md = obj.getMetadata()
+    if md is None:
+        return
+
     for calibName in 'bias', 'dark', 'flat', 'fringe':
 
         calibPath, calibVersion, calibDate = "not_available", "not_available", "not_available"
