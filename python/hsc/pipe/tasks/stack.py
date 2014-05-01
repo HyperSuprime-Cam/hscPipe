@@ -381,6 +381,7 @@ class TractDataIdContainer(CoaddDataIdContainer):
                                                                   patch="%d,%d" % patch.getIndex()) for
                                          patch in tract]
 
+        refList = dict()
         for dataId in self.idList:
             for key in validKeys:
                 if key in ("tract"):
@@ -391,12 +392,24 @@ class TractDataIdContainer(CoaddDataIdContainer):
 
             skymap = self.getSkymap(namespace, datasetType)
 
+            if not dataId['tract'] in refList.keys():
+                refList[dataId['tract']] = list()
+
             # tract is required; iterate over it if not provided
             if not "tract" in dataId:
                 addList = [getPatchRefList(tract) for tract in skymap]
             else:
-                addList = [getPatchRefList(skymap[dataId["tract"]])]
-            self.refList += addList
+                if not "patch" in dataId:
+                    # if "patch" is not specified, all patches will be added
+                    addList = getPatchRefList(skymap[dataId["tract"]])
+                else:
+                    addList = [namespace.butler.dataRef(datasetType=datasetType, tract=dataId['tract'], filter=dataId['filter'], patch=dataId['patch'])]
+            # group refList by tract
+            if not addList in refList[dataId['tract']]:
+                refList[dataId['tract']] += addList
+
+        for tract in refList.keys():
+            self.refList += [refList[tract]]
 
 class StackTaskRunner(CoaddTaskRunner):
     @staticmethod
