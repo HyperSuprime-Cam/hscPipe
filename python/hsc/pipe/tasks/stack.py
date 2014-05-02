@@ -230,6 +230,9 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
         statsCtrl.setAndMask(self.getBadPixelMask())
         statsCtrl.setNanSafe(True)
         statsCtrl.setCalcErrorFromInputVariance(True)
+        for plane, threshold in self.config.maskPropagationThresholds.items():
+            bit = afwImage.MaskU.getMaskPlane(plane)
+            statsCtrl.setMaskPropagationThreshold(bit, threshold)
 
         if self.config.doSigmaClip:
             statsFlags = afwMath.MEANCLIP
