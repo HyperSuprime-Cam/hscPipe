@@ -13,6 +13,11 @@ class SubaruProcessCoaddTask(ProcessCoaddTask):
         self.write(dataRef, results)
         return results
 
+    def process(self, dataRef, exposure):
+        results = super(SubaruProcessCoaddTask, self).process(dataRef, exposure)
+        self.write(dataRef, results)
+        return results
+
     def write(self, dataRef, struct):
         prefix = self.config.coaddName + "Coadd_"
         if self.config.doWriteDenormalizedMatches:
