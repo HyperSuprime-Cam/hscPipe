@@ -493,7 +493,10 @@ class StackTask(PbsPoolTask):
         selectDataList = data.selectDataList
         self.log.info("%s: Start warping %s" % (NODE, patchRef.dataId))
         selectDataList = self.selectExposures(patchRef, selectDataList)
-        self.makeCoaddTempExp.run(patchRef, selectDataList)
+        try:
+            self.makeCoaddTempExp.run(patchRef, selectDataList)
+        except:
+            self.log.warn("Failed to warp %s: %s\n" % (patchRef.dataId, e))
         self.log.info("%s: Finished warping %s" % (NODE, patchRef.dataId))
         return selectDataList
 
@@ -512,7 +515,10 @@ class StackTask(PbsPoolTask):
         self.log.info("%s: Start coadding %s" % (NODE, patchRef.dataId))
         coadd = None
         if self.config.doOverwriteCoadd or not patchRef.datasetExists(cache.coaddType):
-            coaddResults = self.assembleCoadd.run(patchRef, selectDataList)
+            try:
+                coaddResults = self.assembleCoadd.run(patchRef, selectDataList)
+            except:
+                self.log.warn("Failed to assemble coadd %s: %s\n" % (patchRef.dataId, e))
             if coaddResults is not None:
                 coadd = coaddResults.coaddExposure
         elif patchRef.datasetExists(cache.coaddType):
@@ -521,7 +527,12 @@ class StackTask(PbsPoolTask):
         if coadd is not None and (self.config.doOverwriteOutput or
                                   not patchRef.datasetExists(cache.coaddType + "_src") or
                                   not patchRef.datasetExists(cache.coaddType + "_calexp")):
-            self.process(patchRef, coadd)
+            try:
+                self.process(patchRef, coadd)
+            except Exception, e:
+                self.log.warn("Failed to process coadd %s: %s\n" % (patchRef.dataId, e))
+                import traceback
+                traceback.print_exc()
 
     def selectExposures(self, patchRef, selectDataList):
         """Select exposures to operate upon, via the SelectImagesTask
