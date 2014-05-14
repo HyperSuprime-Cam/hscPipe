@@ -781,7 +781,7 @@ class ConstructionTask(Task):
         self.makeSubtask("matching")
         self.debug = False
 
-    def run(self, patchRefList, visitList, overlaps, coaddName="deep", visitKeys=["visit"]):
+    def run(self, patchRefList, visitList, overlaps, coaddName="deep", visitKeys=["visit"], ccdKeys=["ccd"]):
         """Construct and write a background reference image from multiple inputs
 
         This is a persistence layer over the main construction
@@ -792,6 +792,7 @@ class ConstructionTask(Task):
         @param overlaps: Dict of patch overlaps
         @param coaddName: name of coadd
         @param visitKeys: Name of keys that define a visit
+        @param ccdKeys: Name of keys that define a CCD
         """
         warpType = coaddName + "Coadd_tempExp"
         bgRefType = coaddName + "Coadd_bgRef"
@@ -811,6 +812,76 @@ class ConstructionTask(Task):
 
         # Remove patches with no overlap
         patchRefList = [patchRef for patchRef in patchRefList if getPatchIndex(patchRef.dataId) in overlaps]
+
+        toDoCcdList = {}
+        for patchIndex in overlaps:
+            for visit in visitList:
+                if not visit in overlaps[patchIndex]:
+                    continue
+                if not visit in toDoCcdList:
+                    toDoCcdList[visit] = set()
+                for expOverlap in overlaps[patchIndex][visit]:
+                    ccdName = tuple(dataRef.dataId[k] for k in ccdKeys)
+                    toDoCcdList[visit].add(ccdName)
+
+
+        """
+        super(OverlappingExposure, self).__init__(dataRef=dataRef, dataName=getDataName(dataRef),
+                                                  visit=visit, intersection=intersection,
+                                                  overlap=intersection.area()/patchArea)
+
+
+        The returned overlaps is a dict mapping patches (by x,y tuple) to
+        a dict of overlapping visits.  The dict of overlapping visits maps
+        the visit name (tuple of dataId values) to an OverlappingVisit
+        object, which contains a list of OverlappingExposure objects.
+        """
+
+        donePolygonList = []
+
+        while sum(len(toDoCcdList[visit]) for visit in visitList) > 0:
+            for visit in visitList:
+                # Making use of the fact that CCDs within a visit are not overlapping
+                ccdList = []
+                ccdList = self.chooseOverlappingCcds(toDoCcdList[visit], overlaps, donePolygonList)
+
+                ccdList = chooseOverlappingCcds(toDoCcdList[visit], refPolygonList)
+                if len(ccdList) == 0:
+                    ccdList = selectSingleCcd(toDoCcdList[visit])
+
+                # Adding a list of CCDs, but need to parallelise by patch because we don't want to be
+                # transferring reference images between nodes.  This is therefore a bit inefficient, at least
+                # at first when most of the reference image is empty so that some nodes will be just waiting.
+                bgModelByCcd = {}
+                for ccd in ccdList:
+                    bgModelList = mapToPrevious(matchCcdToReference, patchList, ccd)
+                    bgModelByCcd[ccd] = combineBgModelList(bgModelList)
+                mapToPrevious(addCcdToReference, patchList, ccdList, bgModelByCcd)
+                doneCcds[visit] -= ccdList
+
+                refPolygonList += [Polygon(ccd) for ccd in ccdList]
+
+
+    def chooseOverlappingCcds(self, visit, ccdSet, overlaps, donePolygonList):
+        good = set()
+        for patchIndex in overlaps: # Could parallelise over patches?
+            if visit not in overlaps[patchIndex]:
+                continue
+            for expOverlap in overlaps[patchIndex][visit]:
+                ccdName = tuple(dataRef.dataId[k] for k in ccdKeys)
+                if not ccdName in ccdSet or ccdName in good:
+                    continue
+                ccdPoly = expOverlap.intersection
+                for poly in donePolygonList:
+                    if poly.intersects(ccdPoly):
+                        good.add(ccdName)
+        return good
+
+
+
+
+
+
 
         def extractPatchData(visit):
             patchDataList = []
