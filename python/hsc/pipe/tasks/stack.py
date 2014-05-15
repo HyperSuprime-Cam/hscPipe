@@ -338,7 +338,6 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
         return parser
 
 
-
 class StackConfig(Config):
     coaddName = Field(dtype=str, default="deep", doc="Name for coadd")
     select = ConfigurableField(target=BaseSelectImagesTask, doc="Select images to process")
@@ -490,14 +489,9 @@ class StackTask(PbsPoolTask):
         @return selectDataList with non-overlapping elements removed
         """
         patchRef = data.patchRef
-        selectDataList = data.selectDataList
-        self.log.info("%s: Start warping %s" % (NODE, patchRef.dataId))
-        selectDataList = self.selectExposures(patchRef, selectDataList)
-        try:
+        selectDataList = self.selectExposures(patchRef, data.selectDataList)
+        with self.logOperation("warping %s" % (patchRef.dataId,), catch=True):
             self.makeCoaddTempExp.run(patchRef, selectDataList)
-        except:
-            self.log.warn("Failed to warp %s: %s\n" % (patchRef.dataId, e))
-        self.log.info("%s: Finished warping %s" % (NODE, patchRef.dataId))
         return selectDataList
 
     def coadd(self, cache, data):
@@ -512,27 +506,20 @@ class StackTask(PbsPoolTask):
         """
         patchRef = data.patchRef
         selectDataList = data.selectDataList
-        self.log.info("%s: Start coadding %s" % (NODE, patchRef.dataId))
         coadd = None
-        if self.config.doOverwriteCoadd or not patchRef.datasetExists(cache.coaddType):
-            try:
+        with self.logOperation("coadding %s" % (patchRef.dataId,), catch=True):
+            if self.config.doOverwriteCoadd or not patchRef.datasetExists(cache.coaddType):
                 coaddResults = self.assembleCoadd.run(patchRef, selectDataList)
-            except:
-                self.log.warn("Failed to assemble coadd %s: %s\n" % (patchRef.dataId, e))
-            if coaddResults is not None:
-                coadd = coaddResults.coaddExposure
-        elif patchRef.datasetExists(cache.coaddType):
-            coadd = patchRef.get(cache.coaddType, immediate=True)
-        self.log.info("%s: Finished coadding %s" % (NODE, patchRef.dataId))
+                if coaddResults is not None:
+                    coadd = coaddResults.coaddExposure
+            elif patchRef.datasetExists(cache.coaddType):
+                self.log.info("%s: Reading coadd %s" % (NODE, patchRef.dataId))
+                coadd = patchRef.get(cache.coaddType, immediate=True)
+
         if coadd is not None and (self.config.doOverwriteOutput or
                                   not patchRef.datasetExists(cache.coaddType + "_src") or
                                   not patchRef.datasetExists(cache.coaddType + "_calexp")):
-            try:
                 self.process(patchRef, coadd)
-            except Exception, e:
-                self.log.warn("Failed to process coadd %s: %s\n" % (patchRef.dataId, e))
-                import traceback
-                traceback.print_exc()
 
     def selectExposures(self, patchRef, selectDataList):
         """Select exposures to operate upon, via the SelectImagesTask
@@ -554,19 +541,17 @@ class StackTask(PbsPoolTask):
         return [inputs[key(dataRef)] for dataRef in dataRefList]
 
     def process(self, patchRef, coadd):
-        self.log.info("%s: Start processing %s" % (NODE, patchRef.dataId))
-        try:
-            #self.processCoadd.process(patchRef, coadd)
-            self.processCoadd.run(patchRef)
-        except LsstCppException as e:
-            self.log.warn("LsstCppException %s" % NODE)
-            if (isinstance(e.message, InvalidParameterException) and
-                re.search("St. dev. must be > 0:", e.message.what())):
-                # All the good pixels are outside the area of interest
-                self.log.warn("No usable area for detection: %s" % patchRef.dataId)
-                return
-            raise
-        self.log.info("%s: Finished processing %s" % (NODE, patchRef.dataId))
+        with self.logOperation("processing %s" % (patchRef.dataId,), catch=True):
+            try:
+                self.processCoadd.run(patchRef)
+            except LsstCppException as e:
+                self.log.warn("LsstCppException %s" % NODE)
+                if (isinstance(e.message, InvalidParameterException) and
+                    re.search("St. dev. must be > 0:", e.message.what())):
+                    # All the good pixels are outside the area of interest; allow to proceed
+                    self.log.warn("No usable area for detection: %s" % patchRef.dataId)
+                else:
+                    raise
 
     def writeMetadata(self, dataRef):
         pass
