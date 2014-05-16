@@ -556,7 +556,8 @@ class StackTask(PbsPoolTask):
     def process(self, patchRef, coadd):
         self.log.info("%s: Start processing %s" % (NODE, patchRef.dataId))
         try:
-            self.processCoadd.process(patchRef, coadd)
+            #self.processCoadd.process(patchRef, coadd)
+            self.processCoadd.run(patchRef)
         except LsstCppException as e:
             self.log.warn("LsstCppException %s" % NODE)
             if (isinstance(e.message, InvalidParameterException) and
