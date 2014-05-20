@@ -28,6 +28,8 @@ import hsc.pipe.base.butler as hscButler
 from hsc.pipe.base.pbs import PbsPoolTask
 from hsc.pipe.base.pool import Pool, NODE
 
+from . import checksum
+
 class DetrendStatsConfig(Config):
     """Parameters controlling background statistics"""
     stat = Field(doc="Statistic to use to estimate background (from lsst.afw.math)", dtype=int,
@@ -575,6 +577,10 @@ class DetrendTask(PbsPoolTask):
             md.add(calibName.upper()+"_DATE", calibDate)
             md.add(calibName.upper()+"_PATH", calibPath)
 
+        sumObj = checksum.ImageCheckSum(stride=8)
+        sumImg = sumObj(detrend)
+        md.add("CHECKSUM", sumImg)
+            
     def copyConfig(self, butler, dataId):
         """Copy the persisted config files to the same output directory as the detrends.
         """
