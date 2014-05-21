@@ -7,9 +7,23 @@ import lsst.afw.image as afwImage
 
 class CheckSum(object):
 
+    exposureTypes = (
+        afwImage.ExposureF, afwImage.ExposureD,
+        )
+    maskedImageTypes = (
+        afwImage.MaskedImageF, afwImage.MaskedImageD,
+        )
+    decoratedImageTypes = (
+        afwImage.DecoratedImageF, afwImage.DecoratedImageD,
+        )
+    imageTypes = (
+        afwImage.ImageF, afwImage.ImageD, afwImage.ImageI,
+        )
+    
+    protocol = 2
     sumFunctions = {
-        "CRC32" : lambda obj: zlib.crc32(pickle.dumps(obj)),
-        "MD5"   : lambda obj: hashlib.md5(pickle.dumps(obj)).hexdigest()
+        "CRC32" : lambda obj: zlib.crc32(pickle.dumps(obj, CheckSum.protocol)),
+        "MD5"   : lambda obj: hashlib.md5(pickle.dumps(obj, CheckSum.protocol)).hexdigest(),
     }
     
     def __init__(self, sumType='MD5'):
@@ -22,39 +36,32 @@ class CheckSum(object):
             raise ValueError("Sum type must be in: "+",".join(self.sumFunctions.keys()))
 
     def __call__(self, obj):
-        return self.sumFunctions[self.sumType](obj)
 
-        
-class ImageCheckSum(CheckSum):
+        func = self.sumFunctions[self.sumType]
+        sum = {}
 
-    maskedImageTypes = (
-        afwImage.MaskedImageF, afwImage.MaskedImageD,
-        afwImage.DecoratedImageF, afwImage.DecoratedImageD,
-        )
-    exposureTypes = (
-        afwImage.ExposureF, afwImage.ExposureD,
-        )
-    imageTypes = (
-        afwImage.ImageF, afwImage.ImageI, afwImage.ImageD,
-        )
-    
-    def __init__(self, stride=8, **kwargs):
-        self.stride = stride
-        super(ImageCheckSum, self).__init__(**kwargs)
-        
-    def __call__(self, obj):
-        
-        if isinstance(obj, self.exposureTypes):
-            mimg = obj.getMaskedImage()
-            img = mimg.getImage()
-        elif isinstance(obj, self.maskedImageTypes):
-            img = obj.getImage()
-        elif isinstance(obj, self.imageTypes):
-            img = obj
-        else:
-            raise RuntimeError("ImageCheckSum only works on afw Image,MaskedImage, and Exposure objects.")
+        # handle maskedImages
+        if isinstance(obj, (self.exposureTypes, self.maskedImageTypes)):
+            if isinstance(obj, self.exposureTypes):
+                mimg = obj.getMaskedImage()
+            else:
+                mimg = obj
+            sum[self.sumType + "_IMG"] = func(mimg.getImage())
+            sum[self.sumType + "_MSK"] = func(mimg.getMask())
+            sum[self.sumType + "_VAR"] = func(mimg.getVariance())
             
-        nimg = img.getArray()[::self.stride,::self.stride]
-        sum = super(ImageCheckSum, self).__call__(nimg)
-        
+        # handle Images
+        elif isinstance(obj, (self.decoratedImageTypes, self.imageTypes)):
+            if isinstance(obj, self.decoratedImageTypes):
+                img = obj.getImage()
+            else:
+                img = obj
+            sum[self.sumType + "_IMG"] = func(img)
+            
+        # handle everything else
+        else:
+            sum[self.sumType] = func(obj)
+            
         return sum
+
+        

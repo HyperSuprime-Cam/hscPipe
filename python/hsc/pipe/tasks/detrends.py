@@ -577,9 +577,9 @@ class DetrendTask(PbsPoolTask):
             md.add(calibName.upper()+"_DATE", calibDate)
             md.add(calibName.upper()+"_PATH", calibPath)
 
-        sumObj = checksum.ImageCheckSum(stride=8)
-        sumImg = sumObj(detrend)
-        md.add("CHECKSUM", sumImg)
+        sums = checksum.CheckSum()(detrend)
+        for k,v in sums.iteritems():
+            md.add(k, v)
             
     def copyConfig(self, butler, dataId):
         """Copy the persisted config files to the same output directory as the detrends.
