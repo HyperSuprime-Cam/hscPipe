@@ -693,7 +693,7 @@ class MatchBackgroundsTask(Task):
 class ConstructionConfig(Config):
     taper = ConfigurableField(target=RadiusTaperWeightImage, doc="Object to provide tapered weight image")
     scaling = ConfigurableField(target=ScaleZeroPointTask, doc="Scale warps to common zero point")
-    mask = ListField(dtype=str, default=["BAD", "SAT", "EDGE",], doc="Mask planes to mask")
+    mask = ListField(dtype=str, default=["BAD", "SAT", "NO_DATA",], doc="Mask planes to mask")
     matching = ConfigurableField(target=MatchBackgroundsTask, doc="Background matching")
     bgSize = Field(dtype=int, default=256, doc="Merged background model bin size (tract pixels)")
     clobber = Field(dtype=bool, default=False, doc="Clobber existing outputs?")
