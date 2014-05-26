@@ -495,7 +495,7 @@ class StackTask(PbsPoolTask):
         selectDataList = self.selectExposures(patchRef, selectDataList)
         try:
             self.makeCoaddTempExp.run(patchRef, selectDataList)
-        except:
+        except Exception, e:
             self.log.warn("Failed to warp %s: %s\n" % (patchRef.dataId, e))
         self.log.info("%s: Finished warping %s" % (NODE, patchRef.dataId))
         return selectDataList
@@ -517,7 +517,7 @@ class StackTask(PbsPoolTask):
         if self.config.doOverwriteCoadd or not patchRef.datasetExists(cache.coaddType):
             try:
                 coaddResults = self.assembleCoadd.run(patchRef, selectDataList)
-            except:
+            except Exception, e:
                 self.log.warn("Failed to assemble coadd %s: %s\n" % (patchRef.dataId, e))
             if coaddResults is not None:
                 coadd = coaddResults.coaddExposure
