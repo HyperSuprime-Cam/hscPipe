@@ -489,9 +489,8 @@ class StackTask(PbsPoolTask):
         @return selectDataList with non-overlapping elements removed
         """
         patchRef = data.patchRef
-        selectDataList = data.selectDataList
-        with self.logOperation("warping %s" % (patchRef.dataId,), True):
-            selectDataList = self.selectExposures(patchRef, selectDataList)
+        selectDataList = self.selectExposures(patchRef, data.selectDataList)
+        with self.logOperation("warping %s" % (patchRef.dataId,), catch=True):
             self.makeCoaddTempExp.run(patchRef, selectDataList)
         return selectDataList
 
@@ -508,7 +507,7 @@ class StackTask(PbsPoolTask):
         patchRef = data.patchRef
         selectDataList = data.selectDataList
         coadd = None
-        with self.logOperation("coadding %s" % (patchRef.dataId,), True):
+        with self.logOperation("coadding %s" % (patchRef.dataId,), catch=True):
             if self.config.doOverwriteCoadd or not patchRef.datasetExists(cache.coaddType):
                 coaddResults = self.assembleCoadd.run(patchRef, selectDataList)
                 if coaddResults is not None:
@@ -542,7 +541,7 @@ class StackTask(PbsPoolTask):
         return [inputs[key(dataRef)] for dataRef in dataRefList]
 
     def process(self, patchRef, coadd):
-        with self.logOperation("processing %s" % (patchRef.dataId,), True):
+        with self.logOperation("processing %s" % (patchRef.dataId,), catch=True):
             try:
                 self.processCoadd.process(patchRef, coadd)
             except LsstCppException as e:
