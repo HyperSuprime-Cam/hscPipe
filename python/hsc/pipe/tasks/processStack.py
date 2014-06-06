@@ -76,19 +76,19 @@ class ProcessStackTask(ProcessImageTask):
         var   *= vrat
 
     @pipeBase.timeMethod
-    def fixEdgeNaNs(self, exposure):
-        """Replace NaN pixels that are also marked as EDGE with 0.
+    def fixNoDataNaNs(self, exposure):
+        """Replace NaN pixels that are also marked as NO_DATA with 0.
 
         It might be more efficient to do this with C++ code, but NumPy makes it
         really easy to write.
         """
-        self.log.log(self.log.INFO, "Setting NaN EDGE pixels to zero.")
+        self.log.log(self.log.INFO, "Setting NaN NO_DATA pixels to zero.")
         image = exposure.getMaskedImage().getImage().getArray()
         mask = exposure.getMaskedImage().getMask().getArray()
-        edgeBitMask = afwImage.MaskU.getPlaneBitMask("EDGE")
+        nodataBitMask = afwImage.MaskU.getPlaneBitMask("NO_DATA")
         toReplace = numpy.logical_and(
             numpy.isnan(image),
-            mask & edgeBitMask
+            mask & nodataBitMask
             )
         image[toReplace] = 0.0
 
@@ -127,7 +127,7 @@ class ProcessStackTask(ProcessImageTask):
                 self.log.warn("Could not load initial PSF; dataset does not exist")
             if self.config.doScaleVariance:
                 self.scaleVariance(coadd)
-            self.fixEdgeNaNs(coadd)
+            self.fixNoDataNaNs(coadd)
         else:
             coadd = None
 
