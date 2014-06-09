@@ -1,4 +1,4 @@
-from lsst.pipe.base import ArgumentParser
+from lsst.pipe.base import ArgumentParser, TaskRunner
 from lsst.pex.config import Config, Field, ConfigurableField
 from lsst.pipe.tasks.forcedPhotCcd import ForcedPhotCcdTask, CcdForcedSrcDataIdContainer
 from hsc.pipe.tasks.stack import TractDataIdContainer
@@ -38,12 +38,37 @@ class ForcedCcdConfig(Config):
         if self.forcedPhotCcd.references.coaddName != self.coaddName:
             raise RuntimeError("forcedPhotCcd.references.coaddName and coaddName don't match")
 
+class ButlerInitializedTaskRunner(TaskRunner):
+    """A TaskRunner for CmdLineTasks that require a 'butler' keyword argument to be passed to
+    their constructor.
+    """
+    def makeTask(self, parsedCmd=None, args=None):
+        """A variant of the base version that passes a butler argument to the task's constructor
+
+        parsedCmd or args must be specified
+        """
+        if parsedCmd is not None:
+            butler = parsedCmd.butler
+        elif args is not None:
+            dataRef, kwargs = args
+            butler = dataRef[0].butlerSubset.butler
+        else:
+            raise RuntimeError("parsedCmd or args must be specified")
+        return self.TaskClass(config=self.config, log=self.log, butler=butler)
+
 class ForcedCcdTask(PbsPoolTask):
+    RunnerClass = ButlerInitializedTaskRunner
     ConfigClass = ForcedCcdConfig
     _DefaultName = "forcedCcd"
 
     def __init__(self, *args, **kwargs):
+        try:
+            butler = kwargs.pop("butler")
+        except Exception, e:
+            butler = None
         super(ForcedCcdTask, self).__init__(*args, **kwargs)
+        if butler:
+            self.makeSubtask("forcedPhotCcd", butler=butler)
 
     @classmethod
     def _makeArgumentParser(cls, doPbs=False, **kwargs):
@@ -60,8 +85,7 @@ class ForcedCcdTask(PbsPoolTask):
         return time*numTargets/float(numNodes*numProcs)
 
     @abortOnError
-    def run(self, patchRefList):
-        print patchRefList
+    def run(self, dataRefList):
         """Run forced measurement on invididual ccd images
 
         All nodes execute this method, though the master and slaves
@@ -70,14 +94,14 @@ class ForcedCcdTask(PbsPoolTask):
         @param tractRef: Data reference for tract
         """
         pool = Pool("forcedCcd")
-        coaddData = [patchRef for patchRef in patchRefList]
-        pool.map(self.forced, coaddData)
+        ccdData = [dataRef for dataRef in dataRefList]
+        pool.map(self.forced, ccdData)
 
-    def forced(self, cache, patchRef):
-        self.log.info("%s: Start forcedPhotCcd %s" % (NODE, patchRef.dataId))
-        self.makeSubtask("forcedPhotCcd", butler=patchRef.getButler())
-        self.forcedPhotCcd.run(patchRef)
-        self.log.info("%s: Finished forcedPhotCcd %s" % (NODE, patchRef.dataId))
+    def forced(self, cache, dataRef):
+        self.log.info("%s: Start forcedPhotCcd %s" % (NODE, dataRef.dataId))
+        self.makeSubtask("forcedPhotCcd", butler=dataRef.getButler())
+        self.forcedPhotCcd.run(dataRef)
+        self.log.info("%s: Finished forcedPhotCcd %s" % (NODE, dataRef.dataId))
 
     def writeMetadata(self, dataRef):
         pass

@@ -1,4 +1,4 @@
-from lsst.pipe.base import ArgumentParser
+from lsst.pipe.base import ArgumentParser, TaskRunner
 from lsst.pex.config import Config, Field, ConfigurableField
 from lsst.pipe.tasks.forcedPhotCoadd import ForcedPhotCoaddTask
 from hsc.pipe.tasks.stack import TractDataIdContainer
@@ -13,12 +13,37 @@ class ForcedCoaddConfig(Config):
         if self.forcedPhotCoadd.coaddName != self.coaddName:
             raise RuntimeError("forcedPhotCoadd.coaddName and coaddName don't match")
 
+class ButlerInitializedTaskRunner(TaskRunner):
+    """A TaskRunner for CmdLineTasks that require a 'butler' keyword argument to be passed to
+    their constructor.
+    """
+    def makeTask(self, parsedCmd=None, args=None):
+        """A variant of the base version that passes a butler argument to the task's constructor
+
+        parsedCmd or args must be specified
+        """
+        if parsedCmd is not None:
+            butler = parsedCmd.butler
+        elif args is not None:
+            dataRef, kwargs = args
+            butler = dataRef[0].butlerSubset.butler
+        else:
+            raise RuntimeError("parsedCmd or args must be specified")
+        return self.TaskClass(config=self.config, log=self.log, butler=butler)
+
 class ForcedCoaddTask(PbsPoolTask):
+    RunnerClass = ButlerInitializedTaskRunner
     ConfigClass = ForcedCoaddConfig
     _DefaultName = "forcedCoadd"
 
     def __init__(self, *args, **kwargs):
+        try:
+            butler = kwargs.pop("butler")
+        except Exception, e:
+            butler = None
         super(ForcedCoaddTask, self).__init__(*args, **kwargs)
+        if butler:
+            self.makeSubtask("forcedPhotCoadd", butler=butler)
 
     @classmethod
     def _makeArgumentParser(cls, doPbs=False, **kwargs):
