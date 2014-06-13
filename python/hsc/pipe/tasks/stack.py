@@ -376,17 +376,17 @@ class TractDataIdContainer(CoaddDataIdContainer):
         generate a list of data references for patches within the tract.
         """
         datasetType = namespace.config.coaddName + "Coadd"
-        validKeys = set(["tract", "filter"])
+        validKeys = set(["tract", "filter", "patch",])
 
         getPatchRefList = lambda tract: [namespace.butler.dataRef(datasetType=datasetType, tract=tract.getId(),
                                                                   filter=dataId["filter"],
                                                                   patch="%d,%d" % patch.getIndex()) for
                                          patch in tract]
 
-        refList = dict()
+        tractRefs = {} # Data references for each tract
         for dataId in self.idList:
             for key in validKeys:
-                if key in ("tract"):
+                if key in ("tract", "patch",):
                     # Will deal with these explicitly
                     continue
                 if key not in dataId:
@@ -394,24 +394,21 @@ class TractDataIdContainer(CoaddDataIdContainer):
 
             skymap = self.getSkymap(namespace, datasetType)
 
-            if not dataId['tract'] in refList.keys():
-                refList[dataId['tract']] = list()
-
-            # tract is required; iterate over it if not provided
-            if not "tract" in dataId:
-                addList = [getPatchRefList(tract) for tract in skymap]
-            else:
-                if not "patch" in dataId:
-                    # if "patch" is not specified, all patches will be added
-                    addList = getPatchRefList(skymap[dataId["tract"]])
+            if "tract" in dataId:
+                tractId = dataId["tract"]
+                if tractId not in tractRefs:
+                    tractRefs[tractId] = []
+                if "patch" in dataId:
+                    tractRefs[tractId].append(namespace.butler.dataRef(datasetType=datasetType, tract=tractId,
+                                                                       filter=dataId['filter'],
+                                                                       patch=dataId['patch']))
                 else:
-                    addList = [namespace.butler.dataRef(datasetType=datasetType, tract=dataId['tract'], filter=dataId['filter'], patch=dataId['patch'])]
-            # group refList by tract
-            if not addList in refList[dataId['tract']]:
-                refList[dataId['tract']] += addList
+                    tractRefs[tractId] += getPatchRefList(skymap[tractId])
+            else:
+                tractRefs = dict((tract.getId(), tractRefs.get(tract.getId(), []) + getPatchRefList(tract)) for
+                                 tract in skymap)
 
-        for tract in refList.keys():
-            self.refList += [refList[tract]]
+        self.refList = tractRefs.values()
 
 class StackTaskRunner(CoaddTaskRunner):
     @staticmethod
