@@ -3,6 +3,8 @@ import argparse
 
 import numpy
 
+from lsst.geom import convexHull
+
 import lsst.afw.geom as afwGeom
 import lsst.afw.math as afwMath
 import lsst.afw.image as afwImage
@@ -414,7 +416,9 @@ class StackTaskRunner(CoaddTaskRunner):
     @staticmethod
     def getTargetList(parsedCmd, **kwargs):
         """Get bare butler into Task"""
-        return CoaddTaskRunner.getTargetList(parsedCmd, butler=parsedCmd.butler, **kwargs)
+        kwargs["butler"] = parsedCmd.butler
+        kwargs["selectDataList"] = parsedCmd.selectId.dataList
+        return [(parsedCmd.id.refList, kwargs),]
 
 class StackTask(PbsPoolTask):
     ConfigClass = StackConfig
@@ -450,7 +454,33 @@ class StackTask(PbsPoolTask):
         return time*numTargets/float(numNodes*numProcs)
 
     @abortOnError
-    def run(self, patchRefList, butler, selectDataList=[]):
+    def run(self, tractPatchRefList, butler, selectDataList=[]):
+        """Determine which tracts are non-empty before processing"""
+        pool = Pool("tracts")
+        pool.storeSet(skymap=butler.get(self.config.coaddName + "Coadd_skyMap"))
+        tractIdList = []
+        for patchRefList in tractPatchRefList:
+            tractSet = set([patchRef.dataId["tract"] for patchRef in patchRefList])
+            assert len(tractSet) == 1
+            tractIdList.append(tractSet.pop())
+
+        # Remove data references for faster MPI
+        selectDataListCopy = [selectData.copy() for selectData in selectDataList]
+        for selectData in selectDataListCopy:
+            selectData.dataRef = None
+
+        nonEmptyList = pool.mapNoBalance(self.checkTract, tractIdList, selectDataListCopy)
+        tractPatchRefList = [patchRefList for patchRefList, nonEmpty in
+                             zip(tractPatchRefList, nonEmptyList) if nonEmpty]
+        self.log.info("Non-empty tracts (%d): %s" % (len(tractPatchRefList),
+                                                     [patchRefList[0].dataId["tract"] for patchRefList in
+                                                      tractPatchRefList]))
+
+        # Process the non-empty tracts
+        return [self.runTract(patchRefList, butler, selectDataList) for patchRefList in tractPatchRefList]
+
+    @abortOnError
+    def runTract(self, patchRefList, butler, selectDataList=[]):
         """Run stacking on a tract
 
         All nodes execute this method, though the master and slaves
@@ -473,6 +503,34 @@ class StackTask(PbsPoolTask):
         coaddData = [Struct(patchRef=patchRef, selectDataList=lookup[refNamer(patchRef)]) for
                      patchRef in patchRefList]
         pool.map(self.coadd, coaddData)
+
+    def checkTract(self, cache, tractId, selectDataList):
+        """Check whether a tract has any overlapping inputs
+
+        This method only runs on slave nodes.
+
+        @param cache: Pool cache
+        @param tractId: Data identifier for tract
+        @param selectDataList: List of selection data
+        @return whether tract has any overlapping inputs
+        """
+        skymap = cache.skymap
+        tract = skymap[tractId]
+        tractWcs = tract.getWcs()
+        tractPoly = convexHull([tractWcs.pixelToSky(afwGeom.Point2D(coord)).getVector() for
+                                coord in tract.getBBox().getCorners()])
+
+        for selectData in selectDataList:
+            if hasattr(selectData, "poly"):
+                poly = selectData.poly
+            else:
+                wcs = selectData.wcs
+                dims = selectData.dims
+                box = afwGeom.Box2D(afwGeom.Point2D(0, 0), afwGeom.Point2D(*dims))
+                selectData.poly = convexHull([wcs.pixelToSky(coord).getVector() for coord in box.getCorners()])
+            if tractPoly.intersects(selectData.poly):
+                return True
+        return False
 
     def warp(self, cache, data):
         """Warp all images for a patch
