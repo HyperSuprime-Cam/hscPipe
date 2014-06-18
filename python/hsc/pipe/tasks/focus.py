@@ -3,6 +3,7 @@ import scipy.interpolate as spInterpolate
 
 from lsst.pex.config import Config, Field, ListField
 
+import lsst.afw.math as afwMath
 import lsst.afw.geom as afwGeom
 import lsst.afw.cameraGeom as afwCG
 import hsc.pipe.base.camera as hscCamera
@@ -117,8 +118,10 @@ def getDistanceFromFocus(d_icSrc, d_ccdObj, d_dims, zemaxFilename, config, plot_
 
     # get ZEMAX values
     d = np.loadtxt(zemaxFilename)
-    s_alpha = spInterpolate.InterpolatedUnivariateSpline(d[:,0], d[:,1])
-    s_d0 = spInterpolate.InterpolatedUnivariateSpline(d[:,0], d[:,2])
+
+    interpStyle = afwMath.stringToInterpStyle("NATURAL_SPLINE")
+    s_alpha = afwMath.makeInterpolate(d[:,0], d[:,1], interpStyle).interpolate
+    s_d0 = afwMath.makeInterpolate(d[:,0], d[:,2], interpStyle).interpolate
 
     # calculate rms^2 for each CCD pair
     l_ccd_pair = zip(config.belowList, config.aboveList)
