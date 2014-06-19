@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 
 import os
-import hsc.pipe.base.pbs as hscPbs
+import hsc.pipe.base.parallel as hscParallel
 
 
 if __name__ == "__main__":
-    parser = hscPbs.PbsArgumentParser(usage="""
-    Reduce frames using PBS.
+    parser = hscParallel.BatchArgumentParser(usage="""
+    Reduce frames using batch system.
 
     Command line:
         reduceFrames [OPTIONS] FRAME_ID [FRAME_ID ...]
@@ -20,7 +20,7 @@ if __name__ == "__main__":
     parser.add_argument("-C", "--calib-dir", dest="calibRoot", help="directory of calibration data (e.g., /data/Subaru/HSC/CALIB)")
     parser.add_argument("-c", "--configfile", dest="configFile", help="config override file")
     parser.add_argument("frame", nargs='*', help="Frame numbers to reduce")
-    pbs, args = parser.parse_args()
+    batch, args = parser.parse_args()
 
     if len(args.frame) == 0:
         print "No frames provided to process"
@@ -31,4 +31,4 @@ if __name__ == "__main__":
                                                                    args.root, args.outputRoot,args.calibRoot, 
                                                                       args.configFile,
                                                                    " ".join(args.frame))
-    pbs.run(command, repeats=len(args.frame), threads=10 if args.instrument == "suprimecam" else None)
+    batch.run(command, repeats=len(args.frame), threads=10 if args.instrument == "suprimecam" else None)

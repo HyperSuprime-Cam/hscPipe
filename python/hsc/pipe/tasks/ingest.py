@@ -2,11 +2,11 @@ from glob import glob
 from lsst.pex.config import Config, ConfigurableField
 from lsst.obs.subaru.ingest import HscIngestTask, HscIngestArgumentParser
 from hsc.pipe.base.pool import Pool, startPool, abortOnError
-from hsc.pipe.base.pbs import PbsCmdLineTask
+from hsc.pipe.base.parallel import BatchCmdLineTask
 
-class PoolIngestTask(PbsCmdLineTask, HscIngestTask):
+class PoolIngestTask(BatchCmdLineTask, HscIngestTask):
     @classmethod
-    def pbsWallTime(cls, time, parsedCmd, numNodes, numProcs):
+    def batchWallTime(cls, time, parsedCmd, numNodes, numProcs):
         return float(time)*len(parsedCmd.files)/numNodes
 
     @classmethod
