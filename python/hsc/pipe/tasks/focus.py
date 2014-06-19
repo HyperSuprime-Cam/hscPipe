@@ -1,5 +1,4 @@
 import numpy as np
-import scipy.interpolate as spInterpolate
 
 from lsst.pex.config import Config, Field, ListField
 
