@@ -1,7 +1,7 @@
 import math
 import collections
 
-from lsst.pex.config import Config, DictField, ConfigField, ConfigurableField
+from lsst.pex.config import Config, Field, DictField, ConfigField, ConfigurableField
 import lsst.afw.table as afwTable
 import lsst.afw.cameraGeom as afwCG
 import lsst.afw.cameraGeom.utils as afwCGU
@@ -27,6 +27,7 @@ class ProcessFocusConfig(Config):
     detection = ConfigurableField(target=measAlg.SourceDetectionTask, doc="Source detection")
     measurement = ConfigurableField(target=measAlg.SourceMeasurementTask, doc="Source measurement")
     starSelector = measAlg.starSelectorRegistry.makeField("Star selection algorithm", default="secondMoment")
+    doWrite = Field(dtype=bool, default=True, doc="Write processed image?")
 
 
 class ProcessFocusTask(PbsPoolTask):
@@ -147,8 +148,11 @@ class ProcessFocusTask(PbsPoolTask):
                             ctype=ds9.GREEN if s.get("calib.psf.candidate") else ds9.RED)
             import pdb;pdb.set_trace()
 
-        dataRef.put(sources, "icSrc")
         filterName = exp.getFilter().getName()
+
+        if self.config.doWrite:
+            dataRef.put(sources, "icSrc")
+            dataRef.put(exp, "visitim")
 
         return Struct(sources=sources, ccdId=dataRef.dataId["ccd"], filterName=filterName,
                       dims=exp.getDimensions())
