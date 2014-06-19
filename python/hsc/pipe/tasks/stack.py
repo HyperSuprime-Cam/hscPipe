@@ -20,7 +20,7 @@ from lsst.pipe.tasks.assembleCoadd import (AssembleCoaddTask, AssembleCoaddConfi
 from hsc.pipe.tasks.processCoadd import SubaruProcessCoaddTask
 from lsst.pipe.tasks.coaddHelpers import groupPatchExposures, getGroupDataRef
 from lsst.pipe.base import Struct, DataIdContainer, ArgumentParser
-from hsc.pipe.base.pbs import PbsPoolTask
+from hsc.pipe.base.parallel import BatchPoolTask
 from hsc.pipe.base.pool import Pool, abortOnError, NODE
 from hsc.pipe.tasks.background import BackgroundReferenceTask, MatchBackgroundsTask
 
@@ -420,7 +420,7 @@ class StackTaskRunner(CoaddTaskRunner):
         kwargs["selectDataList"] = parsedCmd.selectId.dataList
         return [(parsedCmd.id.refList, kwargs),]
 
-class StackTask(PbsPoolTask):
+class StackTask(BatchPoolTask):
     ConfigClass = StackConfig
     _DefaultName = "stacker" # "stack" conflicts with hscMosaic's StackTask.
     RunnerClass = StackTaskRunner
@@ -434,22 +434,22 @@ class StackTask(PbsPoolTask):
         self.makeSubtask("processCoadd")
 
     @classmethod
-    def _makeArgumentParser(cls, doPbs=False, **kwargs):
+    def _makeArgumentParser(cls, doBatch=False, **kwargs):
         """
         Selection references are not cheap (reads Wcs), so are generated
-        only if we're not doing a PBS submission.
+        only if we're not doing a batch submission.
         """
         parser = ArgumentParser(name=cls._DefaultName)
         parser.add_id_argument("--id", "deepCoadd", help="data ID, e.g. --id tract=12345 patch=1,2",
                                ContainerClass=TractDataIdContainer)
-        # We don't want to be reading all the WCSes if we're only in the act of submitting to PBS
-        SelectContainerClass = DataIdContainer if doPbs else SelectDataIdContainer
+        # We don't want to be reading all the WCSes if we're only in the act of submitting to batch system
+        SelectContainerClass = DataIdContainer if doBatch else SelectDataIdContainer
         parser.add_id_argument("--selectId", "raw", help="data ID, e.g. --selectId visit=6789 ccd=0..9",
                                ContainerClass=SelectContainerClass)
         return parser
 
     @classmethod
-    def pbsWallTime(cls, time, parsedCmd, numNodes, numProcs):
+    def batchWallTime(cls, time, parsedCmd, numNodes, numProcs):
         numTargets = len(parsedCmd.selectId.refList)
         return time*numTargets/float(numNodes*numProcs)
 

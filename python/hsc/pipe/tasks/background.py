@@ -22,7 +22,7 @@ import lsst.afw.cameraGeom.utils as afwCgu
 import lsst.meas.algorithms as measAlg
 
 from hsc.pipe.base.pool import Pool, Debugger, NODE
-from hsc.pipe.base.pbs import PbsPoolTask
+from hsc.pipe.base.parallel import BatchPoolTask
 
 def imagePoly(dataRef, log=None, imageName="calexp"):
     """Generate a SphericalConvexPolygon from an image
@@ -1041,7 +1041,7 @@ class BackgroundReferenceConfig(Config):
     assign = ConfigurableField(target=AssignTask, doc="Task to assign inputs to patches")
     construct = ConfigurableField(target=ConstructionTask, doc="Task to construct background reference")
 
-class BackgroundReferenceTask(PbsPoolTask):
+class BackgroundReferenceTask(BatchPoolTask):
     _DefaultName = "bgRef"
     ConfigClass = BackgroundReferenceConfig
     RunnerClass = CoaddTaskRunner

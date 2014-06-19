@@ -12,7 +12,7 @@ from lsst.pex.config import Config, Field, ConfigurableField
 from hsc.pipe.tasks.processCcd import SubaruProcessCcdTask
 from hsc.pipe.tasks.photometricSolution import PhotometricSolutionTask
 from hsc.pipe.base.pool import abortOnError, NODE, Pool, Debugger
-from hsc.pipe.base.pbs import PbsPoolTask
+from hsc.pipe.base.parallel import BatchPoolTask
 from hsc.meas.tansip.solvetansip import SolveTansipTask
 
 Debugger().enabled = True
@@ -35,7 +35,7 @@ class ProcessExposureConfig(Config):
         self.processCcd.doFinalWrite = False
 
 
-class ProcessExposureTask(PbsPoolTask):
+class ProcessExposureTask(BatchPoolTask):
     """Process an entire exposure at once.
 
     We use MPI to gather the match lists for exposure-wide astrometric and
@@ -58,7 +58,7 @@ class ProcessExposureTask(PbsPoolTask):
         self.makeSubtask("solveTansip")
 
     @classmethod
-    def pbsWallTime(cls, time, parsedCmd, numNodes, numProcs):
+    def batchWallTime(cls, time, parsedCmd, numNodes, numProcs):
         numCcds = sum(1 for raft in parsedCmd.butler.get("camera") for ccd in afwCg.cast_Raft(raft))
         numCycles = int(math.ceil(numCcds/float(numNodes*numProcs)))
         numExps = len(cls.RunnerClass.getTargetList(parsedCmd))
@@ -66,7 +66,7 @@ class ProcessExposureTask(PbsPoolTask):
 
     @classmethod
     def _makeArgumentParser(cls, *args, **kwargs):
-        doPbs = kwargs.pop("doPbs", False)
+        doBatch = kwargs.pop("doBatch", False)
         parser = ArgumentParser(name="processExposure", *args, **kwargs)
         parser.add_id_argument("--id", datasetType="raw", level="visit",
                                help="data ID, e.g. --id visit=12345")
