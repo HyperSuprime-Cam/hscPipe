@@ -8,16 +8,21 @@ import lsst.afw.cameraGeom as afwCG
 import hsc.pipe.base.camera as hscCamera
 
 class FocusConfig(Config):
-    corrCoeff = ListField(dtype=float, default=[],
+    # Defaults are appropriate for HSC, but also shouldn't get in the way for Suprime-Cam
+    # (because Suprime-Cam CCDs aren't indexed over 10).
+    corrCoeff = ListField(dtype=float, default=[8.238421, 1.607829, 1.563773, 0.029580],
                           doc="Correction polynomial coefficients: reconstructed_focus = corr(true_focus)")
-    aboveList = ListField(dtype=int, default=[], doc="Indices of CCDs above focus")
-    belowList = ListField(dtype=int, default=[], doc="Indices of CCDs below focus")
+    aboveList = ListField(dtype=int, default=[107, 104, 111, 108], doc="Indices of CCDs above focus")
+    belowList = ListField(dtype=int, default=[105, 106, 109, 110], doc="Indices of CCDs below focus")
     offset = Field(dtype=float, default=0.12, doc="Focus offset for CCDs")
-    radialBinEdges = ListField(dtype=float, default=[], doc="Radii edges for bins")
-    radialBinCenters = ListField(dtype=float, default=[], doc="Radii centers for bins")
+    radialBinEdges = ListField(dtype=float, default=[16600, 17380.580580580579, 17728.128128128126, 18000],
+                               doc="Radii edges for bins")
+    radialBinCenters = ListField(dtype=float,
+                                 default=[17112.514461756149, 17563.380665628181, 17868.148132145379],
+                                 doc="Radii centers for bins")
     doPlot = Field(dtype=bool, default=False, doc="Plot focus calculation?")
     shape = Field(dtype=str, default="shape.sdss", doc="Measurement to use for shape")
-    pixelScale = Field(dtype=float, default=1.0, doc="Conversion factor for pixel scale --> mm")
+    pixelScale = Field(dtype=float, default=0.015, doc="Conversion factor for pixel scale --> mm")
 
     def isFocusCcd(self, ccdId):
         return ccdId in self.aboveList or ccdId in self.belowList

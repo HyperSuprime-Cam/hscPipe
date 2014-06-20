@@ -1,3 +1,4 @@
+import os
 import math
 import collections
 
@@ -28,6 +29,40 @@ class ProcessFocusConfig(Config):
     measurement = ConfigurableField(target=measAlg.SourceMeasurementTask, doc="Source measurement")
     starSelector = measAlg.starSelectorRegistry.makeField("Star selection algorithm", default="secondMoment")
     doWrite = Field(dtype=bool, default=True, doc="Write processed image?")
+
+    def setDefaults(self):
+        """These defaults are suitable for HSC, but may be useful
+        for other cameras if the focus code is employed elsewhere.
+        """
+        super(ProcessFocusConfig, self).setDefaults()
+        zemaxBase = os.path.join(os.environ["OBS_SUBARU_DIR"], "hsc", "zemax_config%d_0.0.dat")
+        root.zemax = dict([(f, zemaxBase % n) for f,n in [('g', 9), ('r', 1), ('i', 3), ('z', 5), ('y', 7)]])
+        root.load(os.path.join(os.environ["OBS_SUBARU_DIR"], "config", "hsc", "isr.py"))
+        root.initialPsf.fwhm = 1.5 # arcsec
+        root.initialPsf.size = 21 # pixels
+        root.detection.includeThresholdMultiplier = 3.0
+        root.measurement.centroider.name = "centroid.gaussian"
+        root.measurement.slots.centroid = "centroid.gaussian"
+        # set up simple shape
+        try:
+            import lsst.meas.extensions.simpleShape
+            root.measurement.algorithms.names.add("shape.simple")
+            root.measurement.algorithms["shape.simple"].sigma = 5.0 # pixels
+            root.measurement.slots.shape = "shape.simple"
+        except ImportError:
+            print "WARNING: unable to import lsst.meas.extensions.simpleShape for focus"
+        # set up background estimate
+        root.background.ignoredPixelMask = ['EDGE', 'NO_DATA', 'DETECTED', 'DETECTED_NEGATIVE', 'BAD']
+        root.detection.background.algorithm='LINEAR'
+        root.starSelector.name = "objectSize"
+        root.starSelector["objectSize"].badFlags = ["flags.pixel.edge",
+                                                    "flags.pixel.interpolated.center",
+                                                    "flags.pixel.saturated.center",
+                                                    "flags.pixel.bad",
+                                                    ]
+        root.starSelector["objectSize"].sourceFluxField = "flux.gaussian"
+        root.starSelector["objectSize"].widthMax = 20.0
+        root.starSelector["objectSize"].widthStdAllowed = 5.0
 
 
 class ProcessFocusTask(PbsPoolTask):
@@ -116,7 +151,8 @@ class ProcessFocusTask(PbsPoolTask):
                        dims: exposure dimensions
                        )
         """
-        display = False
+        import lsstDebug
+        display = lsstDebug.Info(__name__).display
 
         exp = self.isr.run(dataRef).exposure
 
@@ -146,7 +182,7 @@ class ProcessFocusTask(PbsPoolTask):
                 for s in sources:
                     ds9.dot("o", s.getX(), s.getY(), frame=3,
                             ctype=ds9.GREEN if s.get("calib.psf.candidate") else ds9.RED)
-            import pdb;pdb.set_trace()
+            import pdb;pdb.set_trace() # pause to allow inspection
 
         filterName = exp.getFilter().getName()
 
