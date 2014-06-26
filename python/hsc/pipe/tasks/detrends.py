@@ -25,7 +25,7 @@ from lsst.pipe.tasks.repair import RepairTask
 import lsst.obs.subaru.isr as hscIsr
 
 import hsc.pipe.base.butler as hscButler
-from hsc.pipe.base.pbs import PbsPoolTask
+from hsc.pipe.base.parallel import BatchPoolTask
 from hsc.pipe.base.pool import Pool, NODE
 
 class DetrendStatsConfig(Config):
@@ -295,7 +295,7 @@ class DetrendTaskRunner(TaskRunner):
                 result = result,
             )
 
-class DetrendTask(PbsPoolTask):
+class DetrendTask(BatchPoolTask):
     """Base class for constructing detrends.
 
     This should be subclassed for each of the required detrend types.
@@ -318,7 +318,7 @@ class DetrendTask(PbsPoolTask):
         self.makeSubtask("combination")
 
     @classmethod
-    def pbsWallTime(cls, time, parsedCmd, numNodes, numProcs):
+    def batchWallTime(cls, time, parsedCmd, numNodes, numProcs):
         numCcds = sum(1 for raft in parsedCmd.butler.get("camera") for ccd in cameraGeom.cast_Raft(raft))
         numExps = len(cls.RunnerClass.getTargetList(parsedCmd)[0]['expRefList'])
         numCycles = int(numCcds/float(numNodes*numProcs) + 0.5)
@@ -326,7 +326,7 @@ class DetrendTask(PbsPoolTask):
 
     @classmethod
     def _makeArgumentParser(cls, *args, **kwargs):
-        doPbs = kwargs.pop("doPbs", False)
+        doBatch = kwargs.pop("doBatch", False)
         return DetrendArgumentParser(calibName=cls.calibName, name=cls._DefaultName, *args, **kwargs)
 
     def run(self, expRefList, butler, detrendId):
