@@ -3,6 +3,8 @@ import argparse
 
 import numpy
 
+from lsst.geom import convexHull
+
 import lsst.afw.geom as afwGeom
 import lsst.afw.math as afwMath
 import lsst.afw.image as afwImage
@@ -376,17 +378,17 @@ class TractDataIdContainer(CoaddDataIdContainer):
         generate a list of data references for patches within the tract.
         """
         datasetType = namespace.config.coaddName + "Coadd"
-        validKeys = set(["tract", "filter"])
+        validKeys = set(["tract", "filter", "patch",])
 
         getPatchRefList = lambda tract: [namespace.butler.dataRef(datasetType=datasetType, tract=tract.getId(),
                                                                   filter=dataId["filter"],
                                                                   patch="%d,%d" % patch.getIndex()) for
                                          patch in tract]
 
-        refList = dict()
+        tractRefs = {} # Data references for each tract
         for dataId in self.idList:
             for key in validKeys:
-                if key in ("tract"):
+                if key in ("tract", "patch",):
                     # Will deal with these explicitly
                     continue
                 if key not in dataId:
@@ -394,30 +396,29 @@ class TractDataIdContainer(CoaddDataIdContainer):
 
             skymap = self.getSkymap(namespace, datasetType)
 
-            if not dataId['tract'] in refList.keys():
-                refList[dataId['tract']] = list()
-
-            # tract is required; iterate over it if not provided
-            if not "tract" in dataId:
-                addList = [getPatchRefList(tract) for tract in skymap]
-            else:
-                if not "patch" in dataId:
-                    # if "patch" is not specified, all patches will be added
-                    addList = getPatchRefList(skymap[dataId["tract"]])
+            if "tract" in dataId:
+                tractId = dataId["tract"]
+                if tractId not in tractRefs:
+                    tractRefs[tractId] = []
+                if "patch" in dataId:
+                    tractRefs[tractId].append(namespace.butler.dataRef(datasetType=datasetType, tract=tractId,
+                                                                       filter=dataId['filter'],
+                                                                       patch=dataId['patch']))
                 else:
-                    addList = [namespace.butler.dataRef(datasetType=datasetType, tract=dataId['tract'], filter=dataId['filter'], patch=dataId['patch'])]
-            # group refList by tract
-            if not addList in refList[dataId['tract']]:
-                refList[dataId['tract']] += addList
+                    tractRefs[tractId] += getPatchRefList(skymap[tractId])
+            else:
+                tractRefs = dict((tract.getId(), tractRefs.get(tract.getId(), []) + getPatchRefList(tract)) for
+                                 tract in skymap)
 
-        for tract in refList.keys():
-            self.refList += [refList[tract]]
+        self.refList = tractRefs.values()
 
 class StackTaskRunner(CoaddTaskRunner):
     @staticmethod
     def getTargetList(parsedCmd, **kwargs):
         """Get bare butler into Task"""
-        return CoaddTaskRunner.getTargetList(parsedCmd, butler=parsedCmd.butler, **kwargs)
+        kwargs["butler"] = parsedCmd.butler
+        kwargs["selectDataList"] = parsedCmd.selectId.dataList
+        return [(parsedCmd.id.refList, kwargs),]
 
 class StackTask(BatchPoolTask):
     ConfigClass = StackConfig
@@ -453,7 +454,33 @@ class StackTask(BatchPoolTask):
         return time*numTargets/float(numNodes*numProcs)
 
     @abortOnError
-    def run(self, patchRefList, butler, selectDataList=[]):
+    def run(self, tractPatchRefList, butler, selectDataList=[]):
+        """Determine which tracts are non-empty before processing"""
+        pool = Pool("tracts")
+        pool.storeSet(skymap=butler.get(self.config.coaddName + "Coadd_skyMap"))
+        tractIdList = []
+        for patchRefList in tractPatchRefList:
+            tractSet = set([patchRef.dataId["tract"] for patchRef in patchRefList])
+            assert len(tractSet) == 1
+            tractIdList.append(tractSet.pop())
+
+        # Remove data references for faster MPI
+        selectDataListCopy = [selectData.copy() for selectData in selectDataList]
+        for selectData in selectDataListCopy:
+            selectData.dataRef = None
+
+        nonEmptyList = pool.mapNoBalance(self.checkTract, tractIdList, selectDataListCopy)
+        tractPatchRefList = [patchRefList for patchRefList, nonEmpty in
+                             zip(tractPatchRefList, nonEmptyList) if nonEmpty]
+        self.log.info("Non-empty tracts (%d): %s" % (len(tractPatchRefList),
+                                                     [patchRefList[0].dataId["tract"] for patchRefList in
+                                                      tractPatchRefList]))
+
+        # Process the non-empty tracts
+        return [self.runTract(patchRefList, butler, selectDataList) for patchRefList in tractPatchRefList]
+
+    @abortOnError
+    def runTract(self, patchRefList, butler, selectDataList=[]):
         """Run stacking on a tract
 
         All nodes execute this method, though the master and slaves
@@ -476,6 +503,34 @@ class StackTask(BatchPoolTask):
         coaddData = [Struct(patchRef=patchRef, selectDataList=lookup[refNamer(patchRef)]) for
                      patchRef in patchRefList]
         pool.map(self.coadd, coaddData)
+
+    def checkTract(self, cache, tractId, selectDataList):
+        """Check whether a tract has any overlapping inputs
+
+        This method only runs on slave nodes.
+
+        @param cache: Pool cache
+        @param tractId: Data identifier for tract
+        @param selectDataList: List of selection data
+        @return whether tract has any overlapping inputs
+        """
+        skymap = cache.skymap
+        tract = skymap[tractId]
+        tractWcs = tract.getWcs()
+        tractPoly = convexHull([tractWcs.pixelToSky(afwGeom.Point2D(coord)).getVector() for
+                                coord in tract.getBBox().getCorners()])
+
+        for selectData in selectDataList:
+            if hasattr(selectData, "poly"):
+                poly = selectData.poly
+            else:
+                wcs = selectData.wcs
+                dims = selectData.dims
+                box = afwGeom.Box2D(afwGeom.Point2D(0, 0), afwGeom.Point2D(*dims))
+                selectData.poly = convexHull([wcs.pixelToSky(coord).getVector() for coord in box.getCorners()])
+            if tractPoly.intersects(selectData.poly):
+                return True
+        return False
 
     def warp(self, cache, data):
         """Warp all images for a patch
