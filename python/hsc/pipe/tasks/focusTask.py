@@ -177,4 +177,4 @@ class ProcessFocusTask(PbsPoolTask):
         filterName = filterSet.pop()
         zemax = self.config.zemax[filterName]
 
-        return getDistanceFromFocus(sources, ccds, dims, zemax, self.config.focus, plot_filename=plotFilename)
+        return getDistanceFromFocus(sources, ccds, dims, zemax, self.config.focus, plotFilename=plotFilename)
