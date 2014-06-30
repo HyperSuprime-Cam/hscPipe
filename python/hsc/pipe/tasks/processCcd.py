@@ -21,7 +21,6 @@ class SubaruProcessCcdConfig(ProcessCcdTask.ConfigClass):
         doc=("Write the denormalized match table as well as the normalized match table (in the final write)?")
     )
     qa = pexConfig.ConfigurableField(target = QaTask, doc = "QA analysis")
-    ignoreCcdList = pexConfig.ListField(dtype=int, default=[], doc="List of CCD numbers to ignore")
 
 
 def applyOverrides(root):
@@ -46,10 +45,6 @@ class SubaruProcessCcdTask(ProcessCcdTask):
         self.makeSubtask("qa")
 
     def run(self, sensorRef):
-        ccdNum = sensorRef.dataId['ccd']
-        if ccdNum in self.config.ignoreCcdList:
-            raise RuntimeError("Refusing to process CCD %d: in ignoreCcdList" % ccdNum)
-
         result = ProcessCcdTask.run(self, sensorRef)
         if self.config.qa.useIcsources and self.config.doCalibrate:
             self.qa.run(sensorRef, result.exposure, result.calib.sources)
@@ -61,7 +56,7 @@ class SubaruProcessCcdTask(ProcessCcdTask):
 
         return result
 
-    def write(self, dataRef, results, wcs=None, fluxMag0=None):
+    def write(self, dataRef, results, wcs=None, fluxMag0=None, focusMd=None):
         if wcs is None:
             self.log.warn("WARNING: No new WCS provided")
         else:
@@ -78,6 +73,9 @@ class SubaruProcessCcdTask(ProcessCcdTask):
 
         if fluxMag0 is not None:
             results.exposure.getCalib().setFluxMag0(fluxMag0)
+
+        if focusMd is not None:
+            results.exposure.getMetadata().combine(focusMd)
 
         if self.config.doCalibrate:
             if results.calib.matches is not None and results.calib.matchMeta is not None:

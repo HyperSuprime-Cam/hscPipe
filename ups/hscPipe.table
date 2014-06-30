@@ -13,7 +13,7 @@ setupOptional(meas_extensions_photometryKron)
 setupOptional(meas_extensions_rotAngle)
 setupOptional(meas_extensions_shapeHSM)
 setupOptional(meas_extensions_shapeMiyatake)
-
+setupOptional(meas_extensions_simpleShape)
 
 pathPrepend(PATH, ${PRODUCT_DIR}/bin)
 pathPrepend(PYTHONPATH, ${PRODUCT_DIR}/python)

@@ -3,6 +3,7 @@ import math
 import collections
 
 import hsc.pipe.tasks.plotSetup
+import lsst.daf.base as dafBase
 import lsst.afw.table as afwTable
 import lsst.afw.image as afwImage
 import lsst.afw.cameraGeom as afwCg
@@ -11,6 +12,7 @@ from lsst.pipe.base import Struct, ArgumentParser
 from lsst.pex.config import Config, Field, ConfigurableField
 from hsc.pipe.tasks.processCcd import SubaruProcessCcdTask
 from hsc.pipe.tasks.photometricSolution import PhotometricSolutionTask
+from hsc.pipe.tasks.focusTask import ProcessFocusTask
 from hsc.pipe.base.pool import abortOnError, NODE, Pool, Debugger
 from hsc.pipe.base.parallel import BatchPoolTask
 from hsc.meas.tansip.solvetansip import SolveTansipTask
@@ -20,11 +22,13 @@ Debugger().enabled = True
 
 class ProcessExposureConfig(Config):
     processCcd = ConfigurableField(target=SubaruProcessCcdTask, doc="CCD processing task")
+    focus = ConfigurableField(target=ProcessFocusTask, doc="Focus processing task")
     photometricSolution = ConfigurableField(target=PhotometricSolutionTask, doc="Global photometric solution")
     instrument = Field(dtype=str, default="suprimecam", doc="Instrument name, for solvetansip")
     doSolveTansip = Field(dtype=bool, default=True, doc="Run solvetansip?")
     solveTansip = ConfigurableField(target=SolveTansipTask, doc="Global astrometric solution")
     doPhotometricSolution = Field(dtype=bool, default=False, doc="Run global photometric solution?")
+    doFocus = Field(dtype=bool, default=False, doc="Run focus analysis?")
 
     def setDefaults(self):
         # We will do persistence ourselves
@@ -54,6 +58,7 @@ class ProcessExposureTask(BatchPoolTask):
         """
         super(ProcessExposureTask, self).__init__(*args, **kwargs)
         self.makeSubtask("processCcd")
+        self.makeSubtask("focus")
         self.makeSubtask("photometricSolution", schema=self.processCcd.schema)
         self.makeSubtask("solveTansip")
 
@@ -94,17 +99,20 @@ class ProcessExposureTask(BatchPoolTask):
             self.log.warn("All CCDs in exposure failed")
             return
 
-        # Gathered: global WCS solution
+        # Gathered: global solutions (photometry, astrometry, focus)
         matchLists = self.getMatchLists(dataIdList, structList)
         wcsList = self.solveAstrometry(matchLists, butler.mapper.camera)
-        fluxMag0 = self.solvePhotometry(matchLists.values(), self.getFilterName(structList))
+        filterName = self.getFilterName(structList)
+        fluxMag0 = self.solvePhotometry(matchLists.values(), filterName)
+        focusMd = self.solveFocus(expRef, [s.focus for s in structList if
+                                           s is not None and s.focus is not None])
         ccdIdList = dataIdList.keys()
 
         # Scatter with data from root: save CCDs with update astrometric/photometric solutions
         solutionList = [Struct(ccdId=ccdId, fluxMag0=fluxMag0, dataId=dataIdList[ccdId],
                                wcs=wcsList[ccdId] if ccdId in wcsList else None)
                         for ccdId in ccdIdList]
-        pool.mapToPrevious(self.write, solutionList)
+        pool.mapToPrevious(self.write, solutionList, focusMd)
 
     def process(self, cache, dataId):
         """Process a single CCD and save the results for a later write.
@@ -113,30 +121,31 @@ class ProcessExposureTask(BatchPoolTask):
         """
         dataRef = hscButler.getDataRef(cache.butler, dataId)
         ccdId = dataRef.get("ccdExposureId")
-        self.log.info("Started processing %s (ccdId=%d) on %s" % (dataId, ccdId, NODE))
-        try:
-            result = self.processCcd.run(dataRef)
-        except Exception, e:
-            self.log.warn("Failed to process %s: %s\n" % (dataId, e))
-            import traceback
-            traceback.print_exc()
+        with self.logOperation("processing %s (ccdId=%d)" % (dataId, ccdId)):
+            matches = None
+            filterName = None
+            focus = None
             cache.result = None
-            return None
+            try:
+                if self.config.doFocus:
+                    focus = self.focus.run(dataRef)
+                result = self.processCcd.run(dataRef) if focus is None else None
+            except Exception, e:
+                self.log.warn("Failed to process %s: %s\n" % (dataId, e))
+                import traceback
+                traceback.print_exc()
+                return None
 
-        # Cache the results (in particular, the image)
-        cache.result = result
-        filterName = result.exposure.getFilter().getName()
+            if result is not None:
+                # Cache the results (in particular, the image)
+                cache.result = result
+                filterName = result.exposure.getFilter().getName()
 
-        # Reformat the matches for MPI transfer
-        matches, numMatches = None, 0
-        if result.matches is not None and result.matchMeta is not None:
-            matches = afwTable.ReferenceMatchVector(result.matches)
-            numMatches = len(matches)
+                # Reformat the matches for MPI transfer
+                if result.matches is not None and result.matchMeta is not None:
+                    matches = afwTable.ReferenceMatchVector(result.matches)
 
-        self.log.info("Finished processing %s (ccdId=%d) on %s with %d matches" %
-                      (dataId, ccdId, NODE, numMatches))
-
-        return Struct(ccdId=ccdId, matches=matches, filterName=filterName)
+            return Struct(ccdId=ccdId, matches=matches, filterName=filterName, focus=focus)
 
     def getFilterName(self, structList):
         """Determine the filter name from the list of structs returned by process().
@@ -146,6 +155,9 @@ class ProcessExposureTask(BatchPoolTask):
         filterList = [s.filterName if s is not None else None for s in structList]
         filterSet = set(filterList)
         filterSet.discard(None) # Just in case
+        if len(filterSet) == 0:
+            self.log.warn("Unable to determine filter name")
+            return None
         if len(filterSet) != 1:
             raise RuntimeError("Multiple filters over exposure: %s" % filterSet)
         return filterSet.pop()
@@ -188,7 +200,25 @@ class ProcessExposureTask(BatchPoolTask):
             self.log.warn("Failed to determine global photometric zero-point: %s" % e)
         return None
 
-    def write(self, cache, struct):
+    def solveFocus(self, dataRef, focusList):
+        if not self.config.doFocus:
+            return None
+
+        camera = dataRef.get("camera")
+        plotName = dataRef.get("focusPlot_filename")
+        focus = self.focus.measureFocus(focusList, camera, plotName)
+        self.log.info("Focus solution: %s" % (focus,))
+
+        metadata = dafBase.PropertyList()
+        metadata.set("FOCUS_CORRECTION_VALUE", focus[0])
+        metadata.set("FOCUS_CORRECTION_ERROR", focus[1])
+        metadata.set("FOCUS_CORRECTION_UNCORRECTED_VALUE", focus[2])
+        metadata.set("FOCUS_CORRECTION_UNCORRECTED_ERROR", focus[3])
+
+        return metadata
+
+
+    def write(self, cache, struct, focusMd=None):
         """Write the outputs.
 
         The cached results are written along with revised astrometric and photometric solutions.
@@ -201,15 +231,10 @@ class ProcessExposureTask(BatchPoolTask):
 
         dataId = struct.dataId
         ccdId = struct.ccdId
-        dataRef = hscButler.getDataRef(cache.butler, dataId)
-        self.log.info("Start writing %s (ccdId=%d) on %s" % (dataId, ccdId, NODE))
-        wcs = struct.wcs
-        fluxMag0 = struct.fluxMag0
+        with self.logOperation("writing CCD %s (ccdId=%d)" % (dataId, ccdId)):
+            dataRef = hscButler.getDataRef(cache.butler, dataId)
+            wcs = struct.wcs
+            fluxMag0 = struct.fluxMag0
 
-        try:
-            self.processCcd.write(dataRef, cache.result, wcs=wcs, fluxMag0=fluxMag0)
+            self.processCcd.write(dataRef, cache.result, wcs=wcs, fluxMag0=fluxMag0, focusMd=focusMd)
             del cache.result
-        except Exception, e:
-            self.log.warn('ERROR: Failed to write %s (ccdId=%d): %s\n' % (dataId, ccdId, e))
-
-        self.log.info("Finished writing CCD %s (ccdId=%d) on %s" % (dataId, ccdId, NODE))
