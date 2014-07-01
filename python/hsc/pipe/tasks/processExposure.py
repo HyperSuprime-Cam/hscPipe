@@ -125,11 +125,14 @@ class ProcessExposureTask(PbsPoolTask):
             matches = None
             filterName = None
             focus = None
+            result = None
             cache.result = None
             try:
-                if self.config.doFocus:
-                    focus = self.focus.run(dataRef)
-                result = self.processCcd.run(dataRef) if focus is None else None
+                if self.focus.isFocus(dataRef):
+                    if self.config.doFocus:
+                        focus = self.focus.run(dataRef)
+                else:
+                    result = self.processCcd.run(dataRef)
             except Exception, e:
                 self.log.warn("Failed to process %s: %s\n" % (dataId, e))
                 import traceback
