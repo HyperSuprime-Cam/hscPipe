@@ -13,7 +13,7 @@ from lsst.pipe.tasks.calibrate import CalibrateTask, InitialPsfConfig
 from lsst.obs.subaru.isr import SubaruIsrTask
 
 from hsc.pipe.base.pool import Pool
-from hsc.pipe.base.pbs import PbsPoolTask
+from hsc.pipe.base.parallel import BatchPoolTask
 from hsc.pipe.base.butler import getDataRef
 
 from .focus import FocusConfig, getDistanceFromFocus
@@ -36,36 +36,36 @@ class ProcessFocusConfig(Config):
         """
         super(ProcessFocusConfig, self).setDefaults()
         zemaxBase = os.path.join(os.environ["OBS_SUBARU_DIR"], "hsc", "zemax_config%d_0.0.dat")
-        root.zemax = dict([(f, zemaxBase % n) for f,n in [('g', 9), ('r', 1), ('i', 3), ('z', 5), ('y', 7)]])
-        root.load(os.path.join(os.environ["OBS_SUBARU_DIR"], "config", "hsc", "isr.py"))
-        root.initialPsf.fwhm = 1.5 # arcsec
-        root.initialPsf.size = 21 # pixels
-        root.detection.includeThresholdMultiplier = 3.0
-        root.measurement.centroider.name = "centroid.gaussian"
-        root.measurement.slots.centroid = "centroid.gaussian"
+        self.zemax = dict([(f, zemaxBase % n) for f,n in [('g', 9), ('r', 1), ('i', 3), ('z', 5), ('y', 7)]])
+        self.load(os.path.join(os.environ["OBS_SUBARU_DIR"], "config", "hsc", "isr.py"))
+        self.initialPsf.fwhm = 1.5 # arcsec
+        self.initialPsf.size = 21 # pixels
+        self.detection.includeThresholdMultiplier = 3.0
+        self.measurement.centroider.name = "centroid.gaussian"
+        self.measurement.slots.centroid = "centroid.gaussian"
         # set up simple shape
         try:
             import lsst.meas.extensions.simpleShape
-            root.measurement.algorithms.names.add("shape.simple")
-            root.measurement.algorithms["shape.simple"].sigma = 5.0 # pixels
-            root.measurement.slots.shape = "shape.simple"
+            self.measurement.algorithms.names.add("shape.simple")
+            self.measurement.algorithms["shape.simple"].sigma = 5.0 # pixels
+            self.measurement.slots.shape = "shape.simple"
         except ImportError:
             print "WARNING: unable to import lsst.meas.extensions.simpleShape for focus"
         # set up background estimate
-        root.background.ignoredPixelMask = ['EDGE', 'NO_DATA', 'DETECTED', 'DETECTED_NEGATIVE', 'BAD']
-        root.detection.background.algorithm='LINEAR'
-        root.starSelector.name = "objectSize"
-        root.starSelector["objectSize"].badFlags = ["flags.pixel.edge",
+        self.background.ignoredPixelMask = ['EDGE', 'NO_DATA', 'DETECTED', 'DETECTED_NEGATIVE', 'BAD']
+        self.detection.background.algorithm='LINEAR'
+        self.starSelector.name = "objectSize"
+        self.starSelector["objectSize"].badFlags = ["flags.pixel.edge",
                                                     "flags.pixel.interpolated.center",
                                                     "flags.pixel.saturated.center",
                                                     "flags.pixel.bad",
                                                     ]
-        root.starSelector["objectSize"].sourceFluxField = "flux.gaussian"
-        root.starSelector["objectSize"].widthMax = 20.0
-        root.starSelector["objectSize"].widthStdAllowed = 5.0
+        self.starSelector["objectSize"].sourceFluxField = "flux.gaussian"
+        self.starSelector["objectSize"].widthMax = 20.0
+        self.starSelector["objectSize"].widthStdAllowed = 5.0
 
 
-class ProcessFocusTask(PbsPoolTask):
+class ProcessFocusTask(BatchPoolTask):
     ConfigClass = ProcessFocusConfig
     _DefaultName = "processFocus"
     installInitialPsf = CalibrateTask.__dict__["installInitialPsf"]
@@ -84,7 +84,7 @@ class ProcessFocusTask(PbsPoolTask):
         )
 
     @classmethod
-    def pbsWallTime(cls, time, parsedCmd, numNodes, numProcs):
+    def batchWallTime(cls, time, parsedCmd, numNodes, numProcs):
         config = parsedCmd.config
         numCcds = len(config.focus.aboveList) + len(config.focus.belowList)
         numCycles = int(math.ceil(numCcds/float(numNodes*numProcs)))
@@ -93,7 +93,7 @@ class ProcessFocusTask(PbsPoolTask):
 
     @classmethod
     def _makeArgumentParser(cls, *args, **kwargs):
-        doPbs = kwargs.pop("doPbs", False)
+        doBatch = kwargs.pop("doBatch", False)
         parser = ArgumentParser(name="processFocus", *args, **kwargs)
         parser.add_id_argument("--id", datasetType="raw", level="visit",
                                help="data ID, e.g. --id visit=12345")
@@ -103,7 +103,7 @@ class ProcessFocusTask(PbsPoolTask):
         """Measure focus for exposure
 
         This method is the top-level for running the focus measurement
-        as a stand-alone PbsPoolTask.
+        as a stand-alone BatchPoolTask.
 
         Only the master node runs this method.
         """
