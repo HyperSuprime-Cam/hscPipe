@@ -791,11 +791,11 @@ class MeasureSeeingMitakaTask(Task):
                 yc += yGridSize
                 xc = xGridSize * 0.5
 
-            m.drawLabels()
+            psfGridImage = m.makeMosaic(mode=nx)
                 # See afw.display.utils.py:L129.
                 #    Mosaic.makeMoasic() seems to accept nx*ny mosaic, in addition to 'square', 'x', and 'y'.
                 #    m.setMode(nx)
-            psfGridImage = m.makeMosaic(mode=nx)
+            m.drawLabels()
 
             if display:
                 ds9.mtv(psfGridImage, frame=0)
@@ -846,8 +846,8 @@ class MeasureSeeingMitakaTask(Task):
                 yc += yGridSize
                 xc = xGridSize * 0.5
 
-            m.drawLabels()
             psfModelGridImage = m.makeMosaic(mode=nx)
+            m.drawLabels()
 
             if display:
                 ds9.mtv(psfModelGridImage, frame=1)
