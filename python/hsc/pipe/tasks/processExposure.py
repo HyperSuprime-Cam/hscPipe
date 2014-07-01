@@ -130,7 +130,7 @@ class ProcessExposureTask(PbsPoolTask):
             try:
                 if self.focus.isFocus(dataRef):
                     if self.config.doFocus:
-                        focus = self.focus.run(dataRef)
+                        focus = self.focus.process(dataRef)
                 else:
                     result = self.processCcd.run(dataRef)
             except Exception, e:
