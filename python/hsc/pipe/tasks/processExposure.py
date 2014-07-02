@@ -28,7 +28,7 @@ class ProcessExposureConfig(Config):
     doSolveTansip = Field(dtype=bool, default=True, doc="Run solvetansip?")
     solveTansip = ConfigurableField(target=SolveTansipTask, doc="Global astrometric solution")
     doPhotometricSolution = Field(dtype=bool, default=False, doc="Run global photometric solution?")
-    doFocus = Field(dtype=bool, default=False, doc="Run focus analysis?")
+    doFocus = Field(dtype=bool, default=True, doc="Run focus analysis?")
 
     def setDefaults(self):
         # We will do persistence ourselves
