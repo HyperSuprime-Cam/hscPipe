@@ -22,7 +22,7 @@ class FocusConfig(Config):
                                  default=[17112.514461756149, 17563.380665628181, 17868.148132145379],
                                  doc="Radii centers for bins")
     doPlot = Field(dtype=bool, default=False, doc="Plot focus calculation?")
-    shape = Field(dtype=str, default="shape.sdss", doc="Measurement to use for shape")
+    shape = Field(dtype=str, default="shape.simple", doc="Measurement to use for shape")
     pixelScale = Field(dtype=float, default=0.015, doc="Conversion factor for pixel scale --> mm")
 
     def isFocusCcd(self, ccdId):
