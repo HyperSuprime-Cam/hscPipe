@@ -188,7 +188,6 @@ def run(rerun, frameId, doPlot = False):
 
     butler = hscCamera.getButler("HSC", rerun)
     config = FocusConfig()
-    config.update(**hscFocusConfig.toDict()) # copying hscConfig
     config.doPlot = doPlot
     config.freeze()
 
