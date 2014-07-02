@@ -36,33 +36,33 @@ class ProcessFocusConfig(Config):
         """
         super(ProcessFocusConfig, self).setDefaults()
         zemaxBase = os.path.join(os.environ["OBS_SUBARU_DIR"], "hsc", "zemax_config%d_0.0.dat")
-        root.zemax = dict([(f, zemaxBase % n) for f,n in [('g', 9), ('r', 1), ('i', 3), ('z', 5), ('y', 7)]])
-        root.load(os.path.join(os.environ["OBS_SUBARU_DIR"], "config", "hsc", "isr.py"))
-        root.initialPsf.fwhm = 1.5 # arcsec
-        root.initialPsf.size = 21 # pixels
-        root.detection.includeThresholdMultiplier = 3.0
-        root.measurement.centroider.name = "centroid.gaussian"
-        root.measurement.slots.centroid = "centroid.gaussian"
+        self.zemax = dict([(f, zemaxBase % n) for f,n in [('g', 9), ('r', 1), ('i', 3), ('z', 5), ('y', 7)]])
+        self.load(os.path.join(os.environ["OBS_SUBARU_DIR"], "config", "hsc", "isr.py"))
+        self.initialPsf.fwhm = 1.5 # arcsec
+        self.initialPsf.size = 21 # pixels
+        self.detection.includeThresholdMultiplier = 3.0
+        self.measurement.centroider.name = "centroid.gaussian"
+        self.measurement.slots.centroid = "centroid.gaussian"
         # set up simple shape
         try:
             import lsst.meas.extensions.simpleShape
-            root.measurement.algorithms.names.add("shape.simple")
-            root.measurement.algorithms["shape.simple"].sigma = 5.0 # pixels
-            root.measurement.slots.shape = "shape.simple"
+            self.measurement.algorithms.names.add("shape.simple")
+            self.measurement.algorithms["shape.simple"].sigma = 5.0 # pixels
+            self.measurement.slots.shape = "shape.simple"
         except ImportError:
             print "WARNING: unable to import lsst.meas.extensions.simpleShape for focus"
         # set up background estimate
-        root.background.ignoredPixelMask = ['EDGE', 'NO_DATA', 'DETECTED', 'DETECTED_NEGATIVE', 'BAD']
-        root.detection.background.algorithm='LINEAR'
-        root.starSelector.name = "objectSize"
-        root.starSelector["objectSize"].badFlags = ["flags.pixel.edge",
+        self.background.ignoredPixelMask = ['EDGE', 'NO_DATA', 'DETECTED', 'DETECTED_NEGATIVE', 'BAD']
+        self.detection.background.algorithm='LINEAR'
+        self.starSelector.name = "objectSize"
+        self.starSelector["objectSize"].badFlags = ["flags.pixel.edge",
                                                     "flags.pixel.interpolated.center",
                                                     "flags.pixel.saturated.center",
                                                     "flags.pixel.bad",
                                                     ]
-        root.starSelector["objectSize"].sourceFluxField = "flux.gaussian"
-        root.starSelector["objectSize"].widthMax = 20.0
-        root.starSelector["objectSize"].widthStdAllowed = 5.0
+        self.starSelector["objectSize"].sourceFluxField = "flux.gaussian"
+        self.starSelector["objectSize"].widthMax = 20.0
+        self.starSelector["objectSize"].widthStdAllowed = 5.0
 
 
 class ProcessFocusTask(PbsPoolTask):
