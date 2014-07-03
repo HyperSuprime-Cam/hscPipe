@@ -52,7 +52,8 @@ class ProcessFocusConfig(Config):
         except ImportError:
             print "WARNING: unable to import lsst.meas.extensions.simpleShape for focus"
         # set up background estimate
-        self.background.ignoredPixelMask = ['EDGE', 'NO_DATA', 'DETECTED', 'DETECTED_NEGATIVE', 'BAD']
+###        self.background.ignoredPixelMask = ['EDGE', 'NO_DATA', 'DETECTED', 'DETECTED_NEGATIVE', 'BAD']
+        self.background.ignoredPixelMask = ['EDGE', 'DETECTED', 'DETECTED_NEGATIVE', 'BAD']
         self.detection.background.algorithm='LINEAR'
         self.starSelector.name = "objectSize"
         self.starSelector["objectSize"].badFlags = ["flags.pixel.edge",
