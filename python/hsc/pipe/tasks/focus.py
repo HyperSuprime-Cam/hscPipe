@@ -8,12 +8,12 @@ import lsst.afw.cameraGeom as afwCG
 import lsst.pex.exceptions as pexExceptions
 import hsc.pipe.base.camera as hscCamera
 
-haveShapeSimple = False
+haveSimpleShape = False
 try:
-    import lsst.meas.extensions.shapeSimple
-    haveShapeSimple = True
+    import lsst.meas.extensions.simpleShape
+    haveSimpleShape = True
 except ImportError:
-    print "WARNING: unable to import lsst.meas.extensions.shapeSimple"
+    print "WARNING: unable to import lsst.meas.extensions.simpleShape"
 
 
 class FocusConfig(Config):
@@ -30,7 +30,7 @@ class FocusConfig(Config):
                                  default=[17112.514461756149, 17563.380665628181, 17868.148132145379],
                                  doc="Radii centers for bins")
     doPlot = Field(dtype=bool, default=False, doc="Plot focus calculation?")
-    shape = Field(dtype=str, default="shape.simple" if haveShapeSimple else "shape.sdss",
+    shape = Field(dtype=str, default="shape.simple" if haveSimpleShape else "shape.sdss",
                   doc="Measurement to use for shape")
     pixelScale = Field(dtype=float, default=0.015, doc="Conversion factor for pixel scale --> mm")
 
