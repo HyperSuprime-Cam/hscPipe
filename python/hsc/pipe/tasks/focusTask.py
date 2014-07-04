@@ -1,12 +1,15 @@
 import os
 import math
 import collections
+import numpy as np
 
 from lsst.pex.config import Config, Field, DictField, ConfigField, ConfigurableField
 import lsst.afw.table as afwTable
+import lsst.afw.geom as afwGeom
 import lsst.afw.cameraGeom as afwCG
 import lsst.afw.cameraGeom.utils as afwCGU
 import lsst.meas.algorithms as measAlg
+import lsst.meas.deblender as measDeblender
 from lsst.pipe.base import Task, Struct, ArgumentParser
 from lsst.pipe.tasks.calibrate import CalibrateTask, InitialPsfConfig
 
@@ -26,8 +29,10 @@ class ProcessFocusConfig(Config):
     background = ConfigField(dtype=measAlg.estimateBackground.ConfigClass, doc="Background removal")
     initialPsf = ConfigField(dtype=InitialPsfConfig, doc=InitialPsfConfig.__doc__)
     detection = ConfigurableField(target=measAlg.SourceDetectionTask, doc="Source detection")
+    deblend = ConfigurableField(target=measDeblender.SourceDeblendTask, doc="Source deblender")
     measurement = ConfigurableField(target=measAlg.SourceMeasurementTask, doc="Source measurement")
     starSelector = measAlg.starSelectorRegistry.makeField("Star selection algorithm", default="secondMoment")
+    edgeRadius = Field(dtype=float, default=17600, doc="Radius of edge of FOV. Objects inside of this radius will be used for solving focus")
     doWrite = Field(dtype=bool, default=True, doc="Write processed image?")
 
     def setDefaults(self):
@@ -75,6 +80,7 @@ class ProcessFocusTask(BatchPoolTask):
         self.makeSubtask("isr")
         self.schema = afwTable.SourceTable.makeMinimalSchema()
         self.makeSubtask("detection", schema=self.schema)
+        self.makeSubtask("deblend", schema=self.schema)
         self.makeSubtask("measurement", schema=self.schema)
         self.starSelector = self.config.starSelector.apply()
         self.candidateKey = self.schema.addField(
@@ -82,6 +88,12 @@ class ProcessFocusTask(BatchPoolTask):
             doc=("Flag set if the source was a candidate for PSF determination, "
                  "as determined by the '%s' star selector.") % self.config.starSelector.name
         )
+        self.inFieldKey = self.schema.addField(
+            "in-field", type="Flag",
+            doc=("Flag set if the source was a candidate for PSF determination, "
+                 "as determined by the '%s' star selector.")
+            )
+
 
     @classmethod
     def batchWallTime(cls, time, parsedCmd, numNodes, numProcs):
@@ -169,7 +181,36 @@ class ProcessFocusTask(BatchPoolTask):
         table = afwTable.SourceTable.make(self.schema, afwTable.IdFactory.makeSimple())
         detRet = self.detection.makeSourceCatalog(table, exp)
         sources = detRet.sources
+        self.deblend.run(exp, sources, exp.getPsf())
+        sources = sources.copy(deep=True)
         self.measurement.run(exp, sources)
+
+        ccd = afwCG.cast_Ccd(exp.getDetector())
+        x1, y1 = exp.getDimensions()
+        uLlc, vLlc = ccd.getPositionFromPixel(afwGeom.PointD(0., 0.)).getMm()
+        uLrc, vLrc = ccd.getPositionFromPixel(afwGeom.PointD(x1, 0.)).getMm()
+        uUlc, vUlc = ccd.getPositionFromPixel(afwGeom.PointD(0., y1)).getMm()
+        uUrc, vUrc = ccd.getPositionFromPixel(afwGeom.PointD(x1, y1)).getMm()
+
+        for source in sources:
+            x = source.getX()
+            y = source.getY()
+            uL = (uLrc-uLlc)/x1*x+uLlc
+            uU = (uUrc-uUlc)/x1*x+uUlc
+            u = (uU-uL)/y1*y+uL
+
+            vL = (vLrc-vLlc)/x1*x+vLlc
+            vU = (vUrc-vUlc)/x1*x+vUlc
+            v = (vU-vL)/y1*y+vL
+
+            mr = np.sqrt(u**2+v**2)
+
+            # mask where r > r0
+            if mr < self.config.edgeRadius:
+                source.set(self.inFieldKey, True)
+
+        sources = sources[sources.get("in-field")==True].copy(deep=True)
+
         psfCandidateList = self.starSelector.selectStars(exp, sources)
         if psfCandidateList:
             for cand in psfCandidateList:
