@@ -16,7 +16,7 @@ from hsc.pipe.base.pool import Pool
 from hsc.pipe.base.parallel import BatchPoolTask
 from hsc.pipe.base.butler import getDataRef
 
-from .focus import FocusConfig, getDistanceFromFocus
+from .focus import FocusConfig, getDistanceFromFocus, haveSimpleShape
 
 class ProcessFocusConfig(Config):
     focus = ConfigField(dtype=FocusConfig, doc="Focus determination")
@@ -43,14 +43,12 @@ class ProcessFocusConfig(Config):
         self.detection.includeThresholdMultiplier = 3.0
         self.measurement.centroider.name = "centroid.gaussian"
         self.measurement.slots.centroid = "centroid.gaussian"
-        # set up simple shape
-        try:
-            import lsst.meas.extensions.simpleShape
+        # set up simple shape, if available (because focus calibrations are for that)
+        # If it's not available, we'll crash later; but we don't want to crash here (brings everything down)!
+        if haveSimpleShape:
             self.measurement.algorithms.names.add("shape.simple")
             self.measurement.algorithms["shape.simple"].sigma = 5.0 # pixels
             self.measurement.slots.shape = "shape.simple"
-        except ImportError:
-            print "WARNING: unable to import lsst.meas.extensions.simpleShape for focus"
         # set up background estimate
         self.background.ignoredPixelMask = ['EDGE', 'NO_DATA', 'DETECTED', 'DETECTED_NEGATIVE', 'BAD']
         self.detection.background.algorithm='LINEAR'
