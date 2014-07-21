@@ -137,7 +137,11 @@ class ProcessFocusTask(BatchPoolTask):
         @param dataId: Data identifier for CCD
         @return Processing results (from 'process' method)
         """
-        return self.process(getDataRef(cache.butler, dataId))
+        try:
+            return self.process(getDataRef(cache.butler, dataId))
+        except Exception as e:
+            self.log.warn("Failed to process %s (%s): %s" % (dataId, e.__class__.__name__, e))
+            return None
 
     def process(self, dataRef):
         """Process focus CCD in preparation for focus measurement
