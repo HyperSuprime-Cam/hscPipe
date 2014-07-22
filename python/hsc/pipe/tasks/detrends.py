@@ -28,6 +28,8 @@ import hsc.pipe.base.butler as hscButler
 from hsc.pipe.base.parallel import BatchPoolTask
 from hsc.pipe.base.pool import Pool, NODE
 
+from . import checksum
+
 class DetrendStatsConfig(Config):
     """Parameters controlling background statistics"""
     stat = Field(doc="Statistic to use to estimate background (from lsst.afw.math)", dtype=int,
@@ -536,12 +538,12 @@ class DetrendTask(BatchPoolTask):
         detrend = self.combination.run(dataRefList, expScales=struct.scales.expScales,
                                        finalScale=struct.scales.ccdScale)
 
-        self.recordCalibInputs(cache.butler, detrend, struct.ccdIdList)
+        self.recordCalibInputs(cache.butler, detrend, struct.ccdIdList, struct.outputId)
 
         self.write(cache.butler, detrend, struct.outputId)
 
 
-    def recordCalibInputs(self, butler, detrend, dataIdList):
+    def recordCalibInputs(self, butler, detrend, dataIdList, outputId):
         """Record metadata (FITS header) for input visits, date, time, host, and directory.
 
         @param detrend     The combined detrend exposure.
@@ -561,20 +563,41 @@ class DetrendTask(BatchPoolTask):
         for i, v in enumerate(sorted(set(visits))):
             md.add("CALIB_INPUT_%04d" % (i), v)
 
+
         for calibName in 'bias', 'dark', 'flat', 'fringe':
 
+            # default to 'not_available'
             calibPath, calibVersion, calibDate = "not_available", "not_available", "not_available"
-            try:
-                calibPath      = butler.get(calibName+"_filename", dataIdList[0])
-                additionalData = butler.mapper.map(calibName, dataIdList[0]).getAdditionalData()
-                calibVersion   = additionalData.get('calibVersion')
-                calibDate      = additionalData.get('calibDate')
-            except:
-                pass
+
+            # If they ran with do<detrend> = False, be more specific ... say 'not_applied'
+            # But note that doFoo=False for reduceFoo.py.
+            doDetrend = getattr(self.config.isr, "do"+calibName.capitalize())
+            if not doDetrend and calibName != self.calibName:
+                calibPath, calibVersion, calibDate = "not_applied", "not_applied", "not_applied"
+
+            else:
+
+                # for the detrend we're running, we need the outputId ... dataIdList contains inputs
+                dataId = dataIdList[0]
+                if calibName == self.calibName:
+                    dataId = outputId
+
+                try:
+                    calibPath      = butler.get(calibName+"_filename", dataId)
+                    additionalData = butler.mapper.map(calibName, dataId).getAdditionalData()
+                    calibVersion   = additionalData.get('calibVersion')
+                    calibDate      = additionalData.get('calibDate')
+                except:
+                    pass
+
             md.add(calibName.upper()+"_VERSION", calibVersion)
             md.add(calibName.upper()+"_DATE", calibDate)
             md.add(calibName.upper()+"_PATH", calibPath)
 
+        sums = checksum.CheckSum()(detrend)
+        for k,v in sums.iteritems():
+            md.add(k, v)
+            
     def copyConfig(self, butler, dataId):
         """Copy the persisted config files to the same output directory as the detrends.
         """
