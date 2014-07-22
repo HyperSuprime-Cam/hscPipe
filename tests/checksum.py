@@ -40,8 +40,8 @@ class CheckSumTest(unittest.TestCase):
             'CRC32_IMG': -660391333,
             
             # values for an afwImage.Mask initialized with zeros
-            'MD5_MSK'  : '293eb420586c72e65096a48e0b24438c',
-            'CRC32_MSK': -175411100,
+            'MD5_MSK'  : '17d2c6554aefb075d4c24e5202cc365f',
+            'CRC32_MSK': 814355089,
 
             # values for the native list object
             'MD5'      : 'a32f230cdf14635312fdd6ba0f75c7f6',
