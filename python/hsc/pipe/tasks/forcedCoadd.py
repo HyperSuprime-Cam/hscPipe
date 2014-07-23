@@ -47,10 +47,6 @@ class ForcedCoaddTask(PbsPoolTask):
 
     @classmethod
     def _makeArgumentParser(cls, doPbs=False, **kwargs):
-        """
-        Selection references are not cheap (reads Wcs), so are generated
-        only if we're not doing a PBS submission.
-        """
         parser = ArgumentParser(name=cls._DefaultName)
         parser.add_id_argument("--id", "deepCoadd", help="data ID, e.g. --id tract=12345 patch=1,2",
                                ContainerClass=TractDataIdContainer)
@@ -70,7 +66,7 @@ class ForcedCoaddTask(PbsPoolTask):
         All nodes execute this method, though the master and slaves
         take different routes through it.
 
-        @param tractRef: Data reference for tract
+        @param patchRefList: Data references to run measurement
         """
         pool = Pool("forcedCoadd")
         coaddData = [patchRef for patchRef in patchRefList]

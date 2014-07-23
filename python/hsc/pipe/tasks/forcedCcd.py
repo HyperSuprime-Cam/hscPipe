@@ -1,7 +1,7 @@
+import argparse
 from lsst.pipe.base import ArgumentParser, TaskRunner
 from lsst.pex.config import Config, Field, ConfigurableField
 from lsst.pipe.tasks.forcedPhotCcd import ForcedPhotCcdTask, CcdForcedSrcDataIdContainer
-from hsc.pipe.tasks.stack import TractDataIdContainer
 from hsc.pipe.base.pbs import PbsPoolTask
 from hsc.pipe.base.pool import Pool, abortOnError, NODE
 
@@ -91,7 +91,7 @@ class ForcedCcdTask(PbsPoolTask):
         All nodes execute this method, though the master and slaves
         take different routes through it.
 
-        @param tractRef: Data reference for tract
+        @param dataRefList: Data references to run measurement
         """
         pool = Pool("forcedCcd")
         ccdData = [dataRef for dataRef in dataRefList]
