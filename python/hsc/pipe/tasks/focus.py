@@ -8,6 +8,14 @@ import lsst.afw.cameraGeom as afwCG
 import lsst.pex.exceptions as pexExceptions
 import hsc.pipe.base.camera as hscCamera
 
+haveSimpleShape = False
+try:
+    import lsst.meas.extensions.simpleShape
+    haveSimpleShape = True
+except ImportError:
+    print "WARNING: unable to import lsst.meas.extensions.simpleShape"
+
+
 class FocusConfig(Config):
     # Defaults are appropriate for HSC, but also shouldn't get in the way for Suprime-Cam
     # (because Suprime-Cam CCDs aren't indexed over 10).
@@ -147,6 +155,9 @@ def getDistanceFromFocus(dIcSrc, dCcd, dCcdDims, zemaxFilename, config, plotFile
     llFocurErrors = list()
     for ccdPair in lCcdPairs:
         lFocusErrors = list()
+        if (ccdPair[0] not in dlRmssq or ccdPair[1] not in dlRmssq or
+            dlRmssq[ccdPair[0]] is None or dlRmssq[ccdPair[1]] is None):
+            continue
         for i, radialBinCenter in enumerate(lRadialBinCenters):
             rmssqAbove = dlRmssq[ccdPair[1]][i]
             rmssqBelow = dlRmssq[ccdPair[0]][i]
