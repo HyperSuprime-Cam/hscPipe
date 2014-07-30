@@ -96,8 +96,7 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
 
         if self.config.doInterp:
             fwhmPixels = self.config.interpFwhm / skyInfo.wcs.pixelScale().asArcseconds()
-            self.interpImage.interpolateOnePlane(maskedImage=coaddExp.getMaskedImage(), planeName="NO_DATA",
-                                                 fwhmPixels=fwhmPixels)
+            self.interpImage.interpolateOnePlane(coaddExp.getMaskedImage(), "NO_DATA", coaddExp.getPsf())
 
         if self.config.doWrite:
             self.writeCoaddOutput(dataRef, coaddExp)
