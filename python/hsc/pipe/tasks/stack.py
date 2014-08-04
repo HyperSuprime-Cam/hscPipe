@@ -95,7 +95,6 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
                                  inputData.weightList, inputData.bgModelList)
 
         if self.config.doInterp:
-            fwhmPixels = self.config.interpFwhm / skyInfo.wcs.pixelScale().asArcseconds()
             self.interpImage.interpolateOnePlane(coaddExp.getMaskedImage(), "NO_DATA", coaddExp.getPsf())
 
         if self.config.doWrite:
