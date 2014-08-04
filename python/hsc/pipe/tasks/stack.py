@@ -333,7 +333,7 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
         parser.add_id_argument("--id", cls.ConfigClass().coaddName + "Coadd_tempExp",
                                help="data ID, e.g. --id tract=12345 patch=1,2",
                                ContainerClass=AssembleCoaddDataIdContainer)
-        parser.add_id_argument("--selectId", "raw", help="data ID, e.g. --selectId visit=6789 ccd=0..9",
+        parser.add_id_argument("--selectId", "calexp", help="data ID, e.g. --selectId visit=6789 ccd=0..9",
                                ContainerClass=SelectDataIdContainer)
         return parser
 
@@ -442,7 +442,7 @@ class StackTask(BatchPoolTask):
                                ContainerClass=TractDataIdContainer)
         # We don't want to be reading all the WCSes if we're only in the act of submitting to batch system
         SelectContainerClass = DataIdContainer if doBatch else SelectDataIdContainer
-        parser.add_id_argument("--selectId", "raw", help="data ID, e.g. --selectId visit=6789 ccd=0..9",
+        parser.add_id_argument("--selectId", "calexp", help="data ID, e.g. --selectId visit=6789 ccd=0..9",
                                ContainerClass=SelectContainerClass)
         return parser
 
