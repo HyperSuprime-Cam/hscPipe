@@ -9,7 +9,7 @@ import lsst.afw.geom as afwGeom
 import lsst.afw.math as afwMath
 import lsst.afw.image as afwImage
 import lsst.coadd.utils as coaddUtils
-from lsst.meas.algorithms import CoaddPsf
+from lsst.meas.algorithms import CoaddPsf, makeCoaddApCorrMap
 from lsst.pex.config import Config, Field, ConfigurableField
 from lsst.pex.exceptions import LsstCppException, InvalidParameterException
 from lsst.pipe.tasks.coaddBase import CoaddDataIdContainer, SelectDataIdContainer, CoaddTaskRunner
@@ -288,6 +288,9 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
         else:
             psf = CoaddPsf(coaddInputs.ccds, coaddExposure.getWcs())
         coaddExposure.setPsf(psf)
+        apCorrMap = makeCoaddApCorrMap(coaddInputs.ccds, coaddExposure.getBBox(afwImage.PARENT),
+                                       coaddExposure.getWcs())
+        coaddExposure.getInfo().setApCorrMap(apCorrMap)
 
     def assembleSubregion(self, coaddExposure, bbox, tempExpRefList, imageScalerList, weightList,
                           bgModelList, statsFlags, statsCtrl):
