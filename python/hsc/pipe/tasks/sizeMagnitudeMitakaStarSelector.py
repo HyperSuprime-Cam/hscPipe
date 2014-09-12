@@ -695,7 +695,8 @@ class SizeMagnitudeMitakaStarSelector(object):
         # extracting the given number of most compact sources
 
         if True:
-            # first pick n compact sources, then pick n bright sources of them
+            # (1) first pick n compact sources, then pick n bright sources of them
+            #  -- better in poor condition, where PSF objects getting fainter than extended objects
             if self.config.doUndistort:
                 indicesSourcesSmall = numpy.argsort(fwhmUndistListForRoughFwhm)[:self.config.nSmallSampleRoughFwhm]
             else:
@@ -704,7 +705,8 @@ class SizeMagnitudeMitakaStarSelector(object):
             indicesSourcesBrightOfSmall = numpy.argsort(magListForRoughFwhmSmall)[:self.config.nBrightSampleRoughFwhm]
             indicesSourcesPsfLike = indicesSourcesSmall[indicesSourcesBrightOfSmall]
         elif False:
-            # first pick n brightest sources, then pick n compact sources of them
+            # (2) first pick n brightest sources, then pick n compact sources of them
+            #  -- better in good condition, where PSF objects reliably brighter than extended objects
             indicesSourcesBright = numpy.argsort(magListForRoughFwhm)[:self.config.nBrightSampleRoughFwhm]
             if self.config.doUndistort:
                 fwhmUndistListForRoughFwhmBright = fwhmUndistListForRoughFwhm[indicesSourcesBright]
