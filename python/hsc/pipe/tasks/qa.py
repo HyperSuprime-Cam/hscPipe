@@ -3,11 +3,16 @@ from lsst.pipe.base import Task
 from . import measSeeingQa
 from . import sizeMagnitudeMitakaStarSelector as starSel
 import os
+import numpy
+import lsst.afw.image as afwImage
+import lsst.afw.cameraGeom as cameraGeom
+
 
 class QaConfig(Config):
     ##seeing = ConfigurableField(target=measSeeingQa.MeasureSeeingTask, doc="Measure seeing")
     seeing = ConfigurableField(target=measSeeingQa.MeasureSeeingMitakaTask, doc="Measure seeing ver. Mitaka")
     useIcsources = Field(dtype=bool, default=False, doc="Use icsources(calib.sources) rather than final sources") 
+    doWriteMeta = Field(dtype=bool, default=False, doc="Write Qa metadata for CCD as FITS")
 
 class QaTask(Task):
     ConfigClass = QaConfig
@@ -100,7 +105,18 @@ class QaTask(Task):
         metadata = exposure.getMetadata()
         for key in self.metadata.names():
             metadata.set(key, self.metadata.get(key))
-            #print '*** qa local metadata: %s = %s is set to exposure' % (key, str(self.metadata.get(key)))
+
+        if self.config.doWriteMeta:
+            # preparing exposure object which holds exposureQA metadata
+            expQaMeta = afwImage.ExposureI(0,0)
+            expQaMeta.setCalib(exposure.getCalib())
+            expQaMeta.setMetadata(metadata)
+            self.log.info("writing an QA metadata for ccd %d at %s" % (ccd, dataRef.get('ccdMetadata_filename')[0]))
+            try:
+                dataRef.put(expQaMeta, 'ccdMetadata')
+            except Exception, e:
+                self.log.warn("Could not write an QA metadata for ccd: %s" % str(e))
+
 
     def getRerunName(self, sensorRef):
         """ derive rerun name from the file path, assuming the parent directory 'xxx/rerun' precedes the rerun name """
