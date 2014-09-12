@@ -13,6 +13,12 @@ class QaConfig(Config):
     seeing = ConfigurableField(target=measSeeingQa.MeasureSeeingMitakaTask, doc="Measure seeing ver. Mitaka")
     useIcsources = Field(dtype=bool, default=False, doc="Use icsources(calib.sources) rather than final sources") 
     doWriteMeta = Field(dtype=bool, default=False, doc="Write Qa metadata for CCD as FITS")
+    magzeroExpected = DictField(keytype=str, itemtype=float, 
+                                default={'g': 29.0, 'r': 29.0, 'i': 28.6, 'z': 27.7, 'y': 27.4},
+                                doc="Expected magnzero (e/sec) in the case of ideal weather condition: for calcTransp")
+    flatScale = DictField(keytype=str, itemtype=float, 
+                                default={'g': 1.0, 'r': 1.0, 'i': 1.0, 'z': 1.0, 'y': 1.0},
+                                doc="Count levels of the FOV center of flat field in each band: for calcTransp")
 
 class QaTask(Task):
     ConfigClass = QaConfig
@@ -38,6 +44,7 @@ class QaTask(Task):
         self.metadata.set('ELL_MED', -9999.0)
         self.metadata.set('ELL_PA_MED', -9999.0)
         self.metadata.set("magLim", 99.0)
+        self.metadata.set("TRANSP", -9999.0)
         self.metadata.set("fwhmRough", -9999.0)
         self.metadata.set("fwhmRobust", -9999.0)
         self.metadata.set("ellRobust", -9999.0)
@@ -57,6 +64,8 @@ class QaTask(Task):
         #metadata.combine(self.metadata)
 
         self.seeing.run(dataRef, sources, exposure)
+
+        self.calcTransp(dataRef, exposure)
 
         # = info for qa process and result
         # config
@@ -112,7 +121,7 @@ class QaTask(Task):
             expQaMeta.setCalib(exposure.getCalib())
             expQaMeta.setMetadata(metadata)
             self.log.info("writing an QA metadata for ccd %d at %s" % (ccd, dataRef.get('ccdMetadata_filename')[0]))
-            try:
+             try:
                 dataRef.put(expQaMeta, 'ccdMetadata')
             except Exception, e:
                 self.log.warn("Could not write an QA metadata for ccd: %s" % str(e))
@@ -133,3 +142,67 @@ class QaTask(Task):
         except:
             catalogName = 'NOT_SET'
         self.metadata.set('REFCAT', catalogName)
+
+
+    def calcTransp(self, dataRef, exposure):
+        """
+        Procedure of estimating transparency based on magzero, setting values in related keywords
+        """
+
+        # Check if photocal succeeded
+        try:
+            fluxmag0 = exposure.getCalib().getFluxMag0()[0]
+            if fluxmag0 <= 0:
+                raise
+        except Exception, e:
+            self.log.warn("calcTransp: valid FLUXMAG0 is not present. Set to -9999.0: %s" % str(e))
+            exposure.getCalib().setFluxMag0(-9999.0, -9999.0)
+            self.metadata.set('MAGZERO', 99.0)
+            transp = -9999.0
+            self.log.info('calcTransp: transparency(estimated) is set to %f' % transp)
+            return
+
+        self.log.info("calcTransp: FLUXMAG0: %f" % fluxmag0)
+
+        # magzero is available, then proceed.
+        filter = exposure.getFilter().getName()
+        self.log.info('calcTransp: filter = %s' % filter)
+
+        metadata = exposure.getMetadata()
+        try:
+            # gain from amp info
+            det = exposure.getDetector()
+            ccd = cameraGeom.cast_Ccd(det)
+            gainList = []
+            for a in ccd:
+                gain = a.getElectronicParams().getGain()
+                gainList.append(gain)
+            gain = numpy.mean(gainList)
+            self.log.info('calcTransp: gainList: %s - meanGain = %f' % (str(gainList), gain))
+            if False:
+                gain = metadata.get('GAIN')
+                if gain == 0.0: # HSC
+                    gain1 = metadata.get('T_GAIN1')
+                    gain2 = metadata.get('T_GAIN2')
+                    gain3 = metadata.get('T_GAIN3')
+                    gain4 = metadata.get('T_GAIN4')
+                    gain = (gain1 + gain2 + gain3 + gain4)/4.0
+
+            # scaling magzero's to (mag/e/sec)
+            flatScale =  self.config.flatScale[filter]
+            magzeroAduMeasured = metadata.get('MAGZERO') # mag/adu/sec
+            magzeroMeasured = magzeroAduMeasured + 2.5*numpy.log10(gain * flatScale) # mag/e/sec
+            magzeroExpected = self.config.magzeroExpected[filter] # mag/e/sec
+
+            self.log.info('calcTransp: fluxscale used in flatfield = %f' % flatScale)
+            self.log.info('calcTransp: magzero(measured) = %f (mag/e/s)' % magzeroMeasured)
+            self.log.info('calcTransp: magzero(expected) = %f (mag/e/s)' % magzeroExpected)
+            transp = (10.0**(0.4 * magzeroMeasured)) / (10.0**(0.4 * magzeroExpected))
+            self.log.info('calcTransp: debug:transparency(estimated) = %f' % transp)
+        except Exception, e:
+            self.log.warn("Could not get gain or magzero: %s" % str(e))
+            transp = -9999.0
+            self.log.info('calcTransp: transparency(estimated) = %f' % transp)
+
+        self.metadata.set('TRANSP', transp)
+
