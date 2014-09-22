@@ -121,7 +121,7 @@ class QaTask(Task):
             expQaMeta.setCalib(exposure.getCalib())
             expQaMeta.setMetadata(metadata)
             self.log.info("writing an QA metadata for ccd %d at %s" % (ccd, dataRef.get('ccdMetadata_filename')[0]))
-             try:
+            try:
                 dataRef.put(expQaMeta, 'ccdMetadata')
             except Exception, e:
                 self.log.warn("Could not write an QA metadata for ccd: %s" % str(e))
