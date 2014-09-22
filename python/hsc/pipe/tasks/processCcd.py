@@ -16,6 +16,10 @@ class SubaruProcessCcdConfig(ProcessCcdTask.ConfigClass):
         dtype=bool, default=True,
         doc="Write all outputs at end?  If so, you also likely want doWriteCalibrate=False."
         )
+    doFinalWriteCorr = pexConfig.Field(
+        dtype=bool, default=True,
+        doc="Write CORR file at end? This is effective only when doFinalWrite=True. And if this is False with doFinalWrite=True, writing CORR is skipped."
+        )
     doWriteUnpackedMatches = pexConfig.Field(
         dtype=bool, default=True,
         doc=("Write the denormalized match table as well as the normalized match table (in the final write)?")
@@ -91,7 +95,7 @@ class SubaruProcessCcdTask(ProcessCcdTask):
         if results.backgrounds is not None:
             super(SubaruProcessCcdTask, self).writeBackgrounds(dataRef, results.backgrounds)
 
-        if results.exposure is not None:
+        if self.config.doFinalWriteCorr and results.exposure is not None:
             recordCalibInfo(results.exposure, dataRef)
             dataRef.put(results.exposure, 'calexp')
         if results.sources is not None:
