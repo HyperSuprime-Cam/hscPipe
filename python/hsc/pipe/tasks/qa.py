@@ -1,4 +1,4 @@
-from lsst.pex.config import Config, ConfigurableField, Field
+from lsst.pex.config import Config, ConfigurableField, Field, DictField
 from lsst.pipe.base import Task
 from . import measSeeingQa
 from . import sizeMagnitudeMitakaStarSelector as starSel
