@@ -138,32 +138,40 @@ class MeasureSeeingMitakaTask(Task):
             starSel = StarSelMitaka.SizeMagnitudeMitakaStarSelector(
                 config=StarSelMitaka.SizeMagnitudeMitakaStarSelectorConfig(),  schema=None, metadata=self.metadata)
 
-        psfCandidateList, dataPsfLike = starSel.selectStars(exposure, catalog, dataRef=dataRef, outputStruct=True)
+        try:
+            # getting a final psf-like source candidates
+            psfCandidateList, dataPsfLike = starSel.selectStars(exposure, catalog, dataRef=dataRef, outputStruct=True)
+        except Exception, e:
+            raise RuntimeError("psf-like source candidates cannot be determined in measSeeingQa: %s" % str(e))
 
-        if dataPsfLike:
-            # getting a final fwhm
+        # getting a final seeing
+        if not dataPsfLike:
+            raise RuntimeError("psf-like source candidates does not contain any valid data in measSeeingQa")
+        try:
             dataPsfLike = starSel.getFwhmRobust(dataRef, dataPsfLike, dataPsfLike.fwhmRough, exposure)
+        except Exception, e:
+            raise RuntimeError("failed to get robust seeing from the final psf-like candidates in measSeeingQa: %s" % str(e))
 
-            print '*** seeing:', dataPsfLike.fwhmRobust
-            print '*** ellipticity:', dataPsfLike.ellRobust
-            print '*** elongationPa:', dataPsfLike.ellPaRobust
+        print '*** seeing:', dataPsfLike.fwhmRobust
+        print '*** ellipticity:', dataPsfLike.ellRobust
+        print '*** elongationPa:', dataPsfLike.ellPaRobust
 
-            # setting local metadata in measSeeing (incl.starsel) into exposure.metadata
-            # self.metadata = starSel.metadata
-            self.setMetadata(exposure)
+        # setting local metadata in measSeeing (incl.starsel) into exposure.metadata
+        # self.metadata = starSel.metadata
+        self.setMetadata(exposure)
 
-            if self.config.doPlots:
-                self.plotSeeingMap(dataRef, dataPsfLike, exposure)
-                self.plotEllipseMap(dataRef, dataPsfLike, exposure)
-                self.plotEllipticityMap(dataRef, dataPsfLike, exposure)
-                self.plotFwhmGrid(dataRef, dataPsfLike, exposure)
-                self.plotEllipseGrid(dataRef, dataPsfLike, exposure)
-                self.plotEllipticityGrid(dataRef, dataPsfLike, exposure)
-                self.plotPsfContourGrid(dataRef, exposure, psfCandidateList, psfType=self.config.psfContourType)
-                if True:
-                    self.writeSeeingMapList(dataRef, dataPsfLike, exposure)
-                    self.writeSeeingGridList(dataRef, dataPsfLike, exposure)
-                    self.writeSeeingGridFits(dataRef, dataPsfLike, exposure)
+        if self.config.doPlots:
+            self.plotSeeingMap(dataRef, dataPsfLike, exposure)
+            self.plotEllipseMap(dataRef, dataPsfLike, exposure)
+            self.plotEllipticityMap(dataRef, dataPsfLike, exposure)
+            self.plotFwhmGrid(dataRef, dataPsfLike, exposure)
+            self.plotEllipseGrid(dataRef, dataPsfLike, exposure)
+            self.plotEllipticityGrid(dataRef, dataPsfLike, exposure)
+            self.plotPsfContourGrid(dataRef, exposure, psfCandidateList, psfType=self.config.psfContourType)
+            if True:
+                self.writeSeeingMapList(dataRef, dataPsfLike, exposure)
+                self.writeSeeingGridList(dataRef, dataPsfLike, exposure)
+                self.writeSeeingGridFits(dataRef, dataPsfLike, exposure)
 
         del dataPsfLike
         del psfCandidateList

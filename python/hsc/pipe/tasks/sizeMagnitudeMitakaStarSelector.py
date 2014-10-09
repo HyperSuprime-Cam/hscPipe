@@ -244,27 +244,27 @@ class SizeMagnitudeMitakaStarSelector(object):
         # determine mag limit for clean psf candidates, dynamically based on the image
         magLimPsfSeq = self.getMagLimit(dataRef, goodData, exposure)
         if magLimPsfSeq is None:
-            if outputStruct:
-                return None, None
-            else:
-                return None
+            raise RuntimeError("maglim cannot be determined in selectStars")
 
         # getting a decent median fwhm
         #   fwhm = -9999.0 is returned in cases of failure 
-        fwhmRough = self.getFwhmRough(dataRef, goodData, magLimPsfSeq, exposure)
+        try:
+            fwhmRough = self.getFwhmRough(dataRef, goodData, magLimPsfSeq, exposure)
+        except Exception, e:
+            raise RuntimeError("failed to get rough fwhm of psf-like candidates in rough estimation in selectStars: %s" % str(e))
 
         # extract a list of psf-like sources
         # goodData is updated as same as dataPsfLike in getStarCandidateList()
         if self.config.doUndistort:
             fwhmRough = goodData.fwhmUndistRough
-        dataPsfLike = self.getStarCandidateList(dataRef, goodData, fwhmRough, magLimPsfSeq)
 
+        try:
+            dataPsfLike = self.getStarCandidateList(dataRef, goodData, fwhmRough, magLimPsfSeq)
+        except Exception, e:
+            raise RuntimeError("failed to get psf-like candidates for robust estimation in selectStars: %s" % str(e))
+            
         if dataPsfLike is None:
-            self.log.warn("psf-like candadate list from seeing rough estimation is empty")
-            if outputStruct:
-                return None, None
-            else:
-                return None
+            raise RuntimeError("psf-like candadate list for robust estimation in selectStars rough is empty")
 
         # merging local metadata into exposure metadata
         # n.g., when called from QaTask, this is done again in the QaTask.run() in current version.
@@ -275,11 +275,7 @@ class SizeMagnitudeMitakaStarSelector(object):
             #print '*** local.metadata: %s = %s is set to exposure' % (key, str(self.metadata.get(key)))
 
         if len(catalog) != len(dataPsfLike.xListAll):
-            self.log.warn("Number of catalog sources %d mismatch with gooddata list %d" % (len(catalog), len(dataPsfLike.xListAll)))
-            if outputStruct:
-                return None, None
-            else:
-                return None
+            raise RuntimeError("Number of catalog sources %d mismatch with gooddata list %d in selectStars" % (len(catalog), len(dataPsfLike.xListAll)))
 
         xCcdSize, yCcdSize = exposure.getWidth(), exposure.getHeight()
         psfCandidateList = []
@@ -963,11 +959,9 @@ class SizeMagnitudeMitakaStarSelector(object):
 
             numFwhmPsfLikeRobust = len(indicesSourcesPsfLikeRobust)
             if numFwhmPsfLikeRobust < 1:
-                self.log.warn("No sources selected in robust seeing estimation")
-                return None
+                raise RuntimeError("No sources selected in robust seeing estimation")
         else:
-            self.log.warn("No sources selected in psf sequence candidates for robust seeing estimation")
-            return None
+            raise RuntimeError("No sources selected in psf sequence candidates for robust seeing estimation")
 
         print '*** medianFwhmPsfSeq:', medianFwhmPsfSeq
         self.metadata.set("medianFwhmPsfSeq", medianFwhmPsfSeq)

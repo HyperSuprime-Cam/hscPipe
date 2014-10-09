@@ -51,7 +51,11 @@ class QaTask(Task):
         #metadata = exposure.getMetadata()
         #metadata.combine(self.metadata)
 
-        self.seeing.run(dataRef, sources, exposure)
+        try:
+            self.seeing.run(dataRef, sources, exposure)
+        except Exception, e:
+            self.log.warn("measSeeingQa task failed to determine seeing: %s" % str(e))
+        
 
         # = info for qa process and result
         # config
