@@ -540,6 +540,8 @@ class DetrendTask(BatchPoolTask):
 
         self.recordCalibInputs(cache.butler, detrend, struct.ccdIdList, struct.outputId)
 
+        self.maskNans(detrend)
+
         self.write(cache.butler, detrend, struct.outputId)
 
 
@@ -598,6 +600,11 @@ class DetrendTask(BatchPoolTask):
         for k,v in sums.iteritems():
             md.add(k, v)
             
+
+    def maskNans(self, exposure):
+        """Mask NANs in the combined exposure"""
+        self.isr.maskAndInterpNan(exposure)
+
     def copyConfig(self, butler, dataId):
         """Copy the persisted config files to the same output directory as the detrends.
         """
