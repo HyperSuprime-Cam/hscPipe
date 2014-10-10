@@ -601,9 +601,17 @@ class DetrendTask(BatchPoolTask):
             md.add(k, v)
             
 
-    def maskNans(self, exposure):
-        """Mask NANs in the combined exposure"""
-        self.isr.maskAndInterpNan(exposure)
+    def maskNans(self, image):
+        """Mask NANs in the combined image"""
+        if hasattr(image, "getMaskedImage"): # Deal with Exposure vs Image
+            self.maskNans(image.getMaskedImage().getVariance())
+            image = image.getMaskedImage().getImage()
+        if hasattr(image, "getImage"): # Deal with DecoratedImage or MaskedImage vs Image
+            image = image.getImage()
+        array = image.getArray()
+        bad = numpy.isnan(array)
+        array[bad] = numpy.median(array[numpy.logical_not(bad)])
+
 
     def copyConfig(self, butler, dataId):
         """Copy the persisted config files to the same output directory as the detrends.
