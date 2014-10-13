@@ -9,7 +9,7 @@ import lsst.afw.image as afwImage
 import lsst.afw.cameraGeom as afwCg
 import hsc.pipe.base.butler as hscButler
 from lsst.pipe.base import Struct, ArgumentParser
-from lsst.pex.config import Config, Field, ConfigurableField
+from lsst.pex.config import Config, Field, ConfigurableField, ListField
 from hsc.pipe.tasks.processCcd import SubaruProcessCcdTask
 from hsc.pipe.tasks.photometricSolution import PhotometricSolutionTask
 from hsc.pipe.tasks.focusTask import ProcessFocusTask
@@ -29,6 +29,7 @@ class ProcessExposureConfig(Config):
     solveTansip = ConfigurableField(target=SolveTansipTask, doc="Global astrometric solution")
     doPhotometricSolution = Field(dtype=bool, default=False, doc="Run global photometric solution?")
     doFocus = Field(dtype=bool, default=True, doc="Run focus analysis?")
+    ignoreCcdList = ListField(dtype=int, default=[], doc="List of CCDs to ignore when processing")
 
     def setDefaults(self):
         # We will do persistence ourselves
@@ -119,6 +120,10 @@ class ProcessExposureTask(BatchPoolTask):
 
         Only slaves execute this method.
         """
+        cache.result = None
+        if dataId["ccd"] in self.config.ignoreCcdList:
+            self.log.warn("Ignoring %s: CCD in ignoreCcdList" % (dataId,))
+            return None
         dataRef = hscButler.getDataRef(cache.butler, dataId)
         ccdId = dataRef.get("ccdExposureId")
         with self.logOperation("processing %s (ccdId=%d)" % (dataId, ccdId)):
@@ -126,7 +131,6 @@ class ProcessExposureTask(BatchPoolTask):
             filterName = None
             focus = None
             result = None
-            cache.result = None
             try:
                 if self.focus.isFocus(dataRef):
                     if self.config.doFocus:
@@ -205,6 +209,9 @@ class ProcessExposureTask(BatchPoolTask):
 
     def solveFocus(self, dataRef, focusList):
         if not self.config.doFocus:
+            return None
+        if len(focusList) == 0:
+            self.log.warn("Unable to solve focus: no focus inputs")
             return None
 
         camera = dataRef.get("camera")
