@@ -451,7 +451,6 @@ class MeasureSeeingMitakaTask(Task):
         # For latter use; this may be a bit entangled way.
         data.nxGrid = nx
         data.nyGrid = ny
-        data.yGridList = yGridList
         data.xGridList = xGridList
         data.yGridList = yGridList
         data.fwhmGridList = fwhmList
@@ -479,8 +478,10 @@ class MeasureSeeingMitakaTask(Task):
         pltFwhm.set_xlabel('X (pix)')
         pltFwhm.set_ylabel('Y (pix)')
 
-        pltFwhm.set_xticks([ xc+xGridSize/2. for xc in xGridList ])
-        pltFwhm.set_yticks([ yc+yGridSize/2. for yc in yGridList ])
+        xTicks = numpy.unique(numpy.sort([ xc+xGridSize/2. for xc in xGridList ]))
+        yTicks = numpy.unique(numpy.sort([ yc+yGridSize/2. for yc in yGridList ]))
+        pltFwhm.set_xticks(xTicks)
+        pltFwhm.set_yticks(yTicks)
         pltFwhm.grid()
 
         fname = getFilename(dataRef, "plotFwhmGrid")
@@ -580,8 +581,10 @@ class MeasureSeeingMitakaTask(Task):
         pltEllipse.add_patch(ell)
         fig.text(0.2 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
 
-        pltEllipse.set_xticks([ xc+xGridSize/2. for xc in xGridList ])
-        pltEllipse.set_yticks([ yc+yGridSize/2. for yc in yGridList ])
+        xTicks = numpy.unique(numpy.sort([ xc+xGridSize/2. for xc in xGridList ]))
+        yTicks = numpy.unique(numpy.sort([ yc+yGridSize/2. for yc in yGridList ]))
+        pltEllipse.set_xticks(xTicks)
+        pltEllipse.set_yticks(yTicks)
         pltEllipse.grid()
 
         fname = getFilename(dataRef, "plotEllipseGrid")
@@ -683,8 +686,10 @@ class MeasureSeeingMitakaTask(Task):
             )
         pltEll.quiverkey(Q, 0.05, 1.05, 0.05, 'e=0.05', labelpos='W')
 
-        pltEll.set_xticks([ xc+xGridSize/2. for xc in xGridList ])
-        pltEll.set_yticks([ yc+yGridSize/2. for yc in yGridList ])
+        xTicks = numpy.unique(numpy.sort([ xc+xGridSize/2. for xc in xGridList ]))
+        yTicks = numpy.unique(numpy.sort([ yc+yGridSize/2. for yc in yGridList ]))
+        pltEll.set_xticks(xTicks)
+        pltEll.set_yticks(yTicks)
         pltEll.grid()
 
         pltEll.set_title('Ellipticity of PSF sources')
@@ -1571,8 +1576,10 @@ class MeasureSeeingTask(Task):
         pltFwhm.set_xlabel('X (pix)')
         pltFwhm.set_ylabel('Y (pix)')
 
-        pltFwhm.set_xticks([ xc+xGridSize/2. for xc in xGridList ])
-        pltFwhm.set_yticks([ yc+yGridSize/2. for yc in yGridList ])
+        xTicks = numpy.unique(numpy.sort([ xc+xGridSize/2. for xc in xGridList ]))
+        yTicks = numpy.unique(numpy.sort([ yc+yGridSize/2. for yc in yGridList ]))
+        pltFwhm.set_xticks(xTicks)
+        pltFwhm.set_yticks(yTicks)
         pltFwhm.grid()
 
         fname = getFilename(dataRef, "plotFwhmGrid")
@@ -1655,8 +1662,10 @@ class MeasureSeeingTask(Task):
         pltEllipse.add_patch(ell)
         fig.text(0.1 * xSize, 0.9 * ySize, 'fwhm=%4.1f pix' % fwhmPix, ha='center', va='top')
 
-        pltEllipse.set_xticks([ xc+xGridSize/2. for xc in xGridList ])
-        pltEllipse.set_yticks([ yc+yGridSize/2. for yc in yGridList ])
+        xTicks = numpy.unique(numpy.sort([ xc+xGridSize/2. for xc in xGridList ]))
+        yTicks = numpy.unique(numpy.sort([ yc+yGridSize/2. for yc in yGridList ]))
+        pltEllipse.set_xticks(xTicks)
+        pltEllipse.set_yticks(yTicks)
         pltEllipse.grid()
 
         fname = getFilename(dataRef, "plotEllipseGrid")
@@ -1743,8 +1752,10 @@ class MeasureSeeingTask(Task):
             )
         #plt.quiverkey(Q, 0.05, 1.05, 0.05, 'e=0.05', labelpos='W')
 
-        pltEll.set_xticks([ xc+xGridSize/2. for xc in xGridList ])
-        pltEll.set_yticks([ yc+yGridSize/2. for yc in yGridList ])
+        xTicks = numpy.unique(numpy.sort([ xc+xGridSize/2. for xc in xGridList ]))
+        yTicks = numpy.unique(numpy.sort([ yc+yGridSize/2. for yc in yGridList ]))
+        pltEll.set_xticks(xTicks)
+        pltEll.set_yticks(yTicks)
         pltEll.grid()
 
         pltEll.set_title('Ellipticity of PSF sources')
