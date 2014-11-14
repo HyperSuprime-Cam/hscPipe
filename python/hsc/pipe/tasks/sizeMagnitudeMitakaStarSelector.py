@@ -244,9 +244,13 @@ class SizeMagnitudeMitakaStarSelector(object):
         # determine mag limit for clean psf candidates, dynamically based on the image
         magLimPsfSeq = self.getMagLimit(dataRef, goodData, exposure)
         if magLimPsfSeq is None:
-            return
+            if outputStruct:
+                return None, None
+            else:
+                return None
 
         # getting a decent median fwhm
+        #   fwhm = -9999.0 is returned in cases of failure 
         fwhmRough = self.getFwhmRough(dataRef, goodData, magLimPsfSeq, exposure)
 
         # extract a list of psf-like sources
@@ -254,6 +258,13 @@ class SizeMagnitudeMitakaStarSelector(object):
         if self.config.doUndistort:
             fwhmRough = goodData.fwhmUndistRough
         dataPsfLike = self.getStarCandidateList(dataRef, goodData, fwhmRough, magLimPsfSeq)
+
+        if dataPsfLike is None:
+            self.log.warn("psf-like candadate list from seeing rough estimation is empty")
+            if outputStruct:
+                return None, None
+            else:
+                return None
 
         # merging local metadata into exposure metadata
         # n.g., when called from QaTask, this is done again in the QaTask.run() in current version.
@@ -264,8 +275,11 @@ class SizeMagnitudeMitakaStarSelector(object):
             #print '*** local.metadata: %s = %s is set to exposure' % (key, str(self.metadata.get(key)))
 
         if len(catalog) != len(dataPsfLike.xListAll):
-            print "Number of catalog sources %d mismatch with gooddata list %d" % (len(catalog), len(dataPsfLike.xListAll))
-            return
+            self.log.warn("Number of catalog sources %d mismatch with gooddata list %d" % (len(catalog), len(dataPsfLike.xListAll)))
+            if outputStruct:
+                return None, None
+            else:
+                return None
 
         xCcdSize, yCcdSize = exposure.getWidth(), exposure.getHeight()
         psfCandidateList = []
@@ -802,27 +816,32 @@ class SizeMagnitudeMitakaStarSelector(object):
 
         # deriving final representative values of seeing, ellipticity and pa of elongation
 
-        fwhmMin = fwhmRough - self.config.fwhmMarginFinal
-        fwhmMax = fwhmRough + self.config.fwhmMarginFinal
-        nbin = (fwhmMax-fwhmMin) / self.config.fwhmBinSize
-        # finding the mode
-        histFwhm = numpy.histogram(data.fwhmListForPsfSeq, range=(fwhmMin, fwhmMax), bins=nbin)
-        minval=0
-        for i, num in enumerate(histFwhm[0]):
-            if num > minval:
-                icand = i
-                minval = num
+        if data:
+            fwhmMin = fwhmRough - self.config.fwhmMarginFinal
+            fwhmMax = fwhmRough + self.config.fwhmMarginFinal
+            nbin = (fwhmMax-fwhmMin) / self.config.fwhmBinSize
+            # finding the mode
+            histFwhm = numpy.histogram(data.fwhmListForPsfSeq, range=(fwhmMin, fwhmMax), bins=nbin)
+            minval=0
+            for i, num in enumerate(histFwhm[0]):
+                if num > minval:
+                    icand = i
+                    minval = num
 
-        numFwhmRobust = histFwhm[0][icand]
-        fwhmRobust = histFwhm[1][icand] + 0.5*self.config.fwhmBinSize
-        ellRobust = numpy.median(data.ellListPsfLikeRobust)
-        ellPaRobust = numpy.median(data.ellPaListPsfLikeRobust)
+            numFwhmRobust = histFwhm[0][icand]
+            fwhmRobust = histFwhm[1][icand] + 0.5*self.config.fwhmBinSize
+            ellRobust = numpy.median(data.ellListPsfLikeRobust)
+            ellPaRobust = numpy.median(data.ellPaListPsfLikeRobust)
 
-        if fwhmRobust is None or numpy.isnan(fwhmRobust) or fwhmRobust <= 0:
+            if fwhmRobust is None or numpy.isnan(fwhmRobust) or fwhmRobust <= 0:
+                fwhmRobust = -9999.0
+            if ellRobust is None or numpy.isnan(ellRobust) or ellRobust <= 0:
+                ellRobust = -9999.0
+            if ellPaRobust is None or numpy.isnan(ellPaRobust) or ellPaRobust < -90 or ellPaRobust > 90:
+                ellPaRobust = -9999.0
+        else:
             fwhmRobust = -9999.0
-        if ellRobust is None or numpy.isnan(ellRobust) or ellRobust <= 0:
             ellRobust = -9999.0
-        if ellPaRobust is None or numpy.isnan(ellPaRobust) or ellPaRobust < -90 or ellPaRobust > 90:
             ellPaRobust = -9999.0
 
         self.log.info("Robust quantities: %f %f %f" % (fwhmRobust, ellRobust, ellPaRobust))
@@ -830,7 +849,7 @@ class SizeMagnitudeMitakaStarSelector(object):
         self.metadata.set("ellRobust", ellRobust)
         self.metadata.set("ellPaRobust", ellPaRobust)
 
-        if self.config.doPlots and dataRef is not None:
+        if self.config.doPlots and dataRef is not None and data is not None:
             fig = figure.Figure()
             canvas = FigCanvas(fig)
             #fig = plt.figure()
@@ -925,24 +944,29 @@ class SizeMagnitudeMitakaStarSelector(object):
         fwhmStat = afwMath.MEDIAN
         sigmaStat = afwMath.STDEVCLIP
         sctrl = afwMath.StatisticsControl(clipSigma, nIter)
-        stats = afwMath.makeStatistics(fwhmListForPsfSeqToEval, fwhmStat | sigmaStat, sctrl)
-        medianFwhmPsfSeq = stats.getValue(fwhmStat)
-        sigmaFwhmPsfSeq = stats.getValue(sigmaStat)
 
-        # extracting psf candidates by limting given number of sigma around the psf sequence
-        # maglim is extended toward the faint end if desired
-        magLimPsfCand = magLimPsfSeq + self.config.magLimitFaintExtension
+        if len(fwhmListForPsfSeqToEval) > 0:
+            stats = afwMath.makeStatistics(fwhmListForPsfSeqToEval, fwhmStat | sigmaStat, sctrl)
+            medianFwhmPsfSeq = stats.getValue(fwhmStat)
+            sigmaFwhmPsfSeq = stats.getValue(sigmaStat)
 
-        fwhmPsfSeqMin = medianFwhmPsfSeq - self.config.fwhmMarginNsigma*sigmaFwhmPsfSeq
-        fwhmPsfSeqMax = medianFwhmPsfSeq + self.config.fwhmMarginNsigma*sigmaFwhmPsfSeq
+            # extracting psf candidates by limting given number of sigma around the psf sequence
+            # maglim is extended toward the faint end if desired
+            magLimPsfCand = magLimPsfSeq + self.config.magLimitFaintExtension
 
-        indicesSourcesPsfLikeRobust = [ i for i in data.indicesSourcesFwhmRange if
-                                       fwhmListAllToEval[i] > fwhmPsfSeqMin and fwhmListAllToEval[i] < fwhmPsfSeqMax 
-                                        and data.magListAll[i] < magLimPsfCand  ]
+            fwhmPsfSeqMin = medianFwhmPsfSeq - self.config.fwhmMarginNsigma*sigmaFwhmPsfSeq
+            fwhmPsfSeqMax = medianFwhmPsfSeq + self.config.fwhmMarginNsigma*sigmaFwhmPsfSeq
 
-        numFwhmPsfLikeRobust = len(indicesSourcesPsfLikeRobust)
-        if numFwhmPsfLikeRobust < 1:
-            self.log.warn("No sources selected in robust seeing estimation")
+            indicesSourcesPsfLikeRobust = [ i for i in data.indicesSourcesFwhmRange if
+                                            fwhmListAllToEval[i] > fwhmPsfSeqMin and fwhmListAllToEval[i] < fwhmPsfSeqMax 
+                                            and data.magListAll[i] < magLimPsfCand  ]
+
+            numFwhmPsfLikeRobust = len(indicesSourcesPsfLikeRobust)
+            if numFwhmPsfLikeRobust < 1:
+                self.log.warn("No sources selected in robust seeing estimation")
+                return None
+        else:
+            self.log.warn("No sources selected in psf sequence candidates for robust seeing estimation")
             return None
 
         print '*** medianFwhmPsfSeq:', medianFwhmPsfSeq

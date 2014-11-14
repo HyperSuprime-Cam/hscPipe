@@ -140,30 +140,30 @@ class MeasureSeeingMitakaTask(Task):
 
         psfCandidateList, dataPsfLike = starSel.selectStars(exposure, catalog, dataRef=dataRef, outputStruct=True)
 
-        # getting a final fwhm
-        dataPsfLike = starSel.getFwhmRobust(dataRef, dataPsfLike, dataPsfLike.fwhmRough, exposure)
+        if dataPsfLike:
+            # getting a final fwhm
+            dataPsfLike = starSel.getFwhmRobust(dataRef, dataPsfLike, dataPsfLike.fwhmRough, exposure)
 
-        print '*** seeing:', dataPsfLike.fwhmRobust
-        print '*** ellipticity:', dataPsfLike.ellRobust
-        print '*** elongationPa:', dataPsfLike.ellPaRobust
+            print '*** seeing:', dataPsfLike.fwhmRobust
+            print '*** ellipticity:', dataPsfLike.ellRobust
+            print '*** elongationPa:', dataPsfLike.ellPaRobust
 
-        # setting local metadata in measSeeing (incl.starsel) into exposure.metadata
-        #self.metadata = starSel.metadata
-        self.setMetadata(exposure)
+            # setting local metadata in measSeeing (incl.starsel) into exposure.metadata
+            # self.metadata = starSel.metadata
+            self.setMetadata(exposure)
 
-        if self.config.doPlots:
-            self.plotSeeingMap(dataRef, dataPsfLike, exposure)
-            self.plotEllipseMap(dataRef, dataPsfLike, exposure)
-            self.plotEllipticityMap(dataRef, dataPsfLike, exposure)
-            self.plotFwhmGrid(dataRef, dataPsfLike, exposure)
-            self.plotEllipseGrid(dataRef, dataPsfLike, exposure)
-            self.plotEllipticityGrid(dataRef, dataPsfLike, exposure)
-            self.plotPsfContourGrid(dataRef, exposure, psfCandidateList, psfType=self.config.psfContourType)
-            if True:
-                self.writeSeeingMapList(dataRef, dataPsfLike, exposure)
-                self.writeSeeingGridList(dataRef, dataPsfLike, exposure)
-                self.writeSeeingGridFits(dataRef, dataPsfLike, exposure)
-
+            if self.config.doPlots:
+                self.plotSeeingMap(dataRef, dataPsfLike, exposure)
+                self.plotEllipseMap(dataRef, dataPsfLike, exposure)
+                self.plotEllipticityMap(dataRef, dataPsfLike, exposure)
+                self.plotFwhmGrid(dataRef, dataPsfLike, exposure)
+                self.plotEllipseGrid(dataRef, dataPsfLike, exposure)
+                self.plotEllipticityGrid(dataRef, dataPsfLike, exposure)
+                self.plotPsfContourGrid(dataRef, exposure, psfCandidateList, psfType=self.config.psfContourType)
+                if True:
+                    self.writeSeeingMapList(dataRef, dataPsfLike, exposure)
+                    self.writeSeeingGridList(dataRef, dataPsfLike, exposure)
+                    self.writeSeeingGridFits(dataRef, dataPsfLike, exposure)
 
         del dataPsfLike
         del psfCandidateList
