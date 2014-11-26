@@ -102,7 +102,7 @@ class ProcessExposureTask(BatchPoolTask):
 
         # Gathered: global solutions (photometry, astrometry, focus)
         matchLists = self.getMatchLists(dataIdList, structList)
-        wcsList = self.solveAstrometry(matchLists, butler.mapper.camera)
+        wcsList = self.solveAstrometry(matchLists, expRef, butler)
         filterName = self.getFilterName(structList)
         fluxMag0 = self.solvePhotometry(matchLists.values(), filterName)
         focusMd = self.solveFocus(expRef, [s.focus for s in structList if
@@ -179,7 +179,7 @@ class ProcessExposureTask(BatchPoolTask):
         lookup = dict((s.ccdId, s.matches) for s in structList if s is not None)
         return collections.OrderedDict((ccdId, lookup.get(ccdId, None)) for ccdId in dataIdList)
 
-    def solveAstrometry(self, matchLists, cameraGeom):
+    def solveAstrometry(self, matchLists, expRef, butler):
         """Determine a global astrometric solution for the exposure.
 
         Only the master executes this method, as the matchLists is only valid there.
@@ -188,10 +188,7 @@ class ProcessExposureTask(BatchPoolTask):
         wcsList = [None] * len(matchLists)
         if self.config.doSolveTansip:
             try:
-                solvetansipIn = [self.solveTansip.convert(ml) if ml is not None else []
-                                 for ml in matchLists.itervalues()]
-
-                wcsList = self.solveTansip.solve(self.config.instrument, cameraGeom, solvetansipIn)
+                wcsList = self.solveTansip.solve(self.config.instrument, butler, expRef, matchLists.values())
             except Exception, e:
                 self.log.warn("WARNING: Global astrometric solution failed: %s\n" % e)
         else:
