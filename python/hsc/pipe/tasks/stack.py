@@ -22,6 +22,7 @@ from lsst.pipe.tasks.coaddHelpers import groupPatchExposures, getGroupDataRef
 from lsst.pipe.base import Struct, DataIdContainer, ArgumentParser
 from hsc.pipe.base.parallel import BatchPoolTask
 from hsc.pipe.base.pool import Pool, abortOnError, NODE
+from hsc.pipe.base.butler import getDataRef
 from hsc.pipe.tasks.background import BackgroundReferenceTask, MatchBackgroundsTask
 
 class NullSelectImagesTask(BaseSelectImagesTask):
@@ -491,17 +492,17 @@ class StackTask(BatchPoolTask):
         @param selectDataList: List of SelectStruct for inputs
         """
         pool = Pool("stacker")
-        pool.storeSet(warpType=self.config.coaddName + "Coadd_tempExp",
+        pool.cacheClear()
+        pool.storeSet(butler=butler, warpType=self.config.coaddName + "Coadd_tempExp",
                       coaddType=self.config.coaddName + "Coadd")
-        warpData = [Struct(patchRef=patchRef, selectDataList=selectDataList) for
-                    patchRef in patchRefList]
-        selectedData = pool.map(self.warp, warpData)
+        patchIdList = [patchRef.dataId for patchRef in patchRefList]
+        selectedData = pool.map(self.warp, patchIdList, selectDataList)
         if self.config.doBackgroundReference:
             self.backgroundReference.run(patchRefList, selectDataList)
 
         refNamer = lambda patchRef: tuple(map(int, patchRef.dataId["patch"].split(",")))
         lookup = dict(zip(map(refNamer, patchRefList), selectedData))
-        coaddData = [Struct(patchRef=patchRef, selectDataList=lookup[refNamer(patchRef)]) for
+        coaddData = [Struct(patchId=patchRef.dataId, selectDataList=lookup[refNamer(patchRef)]) for
                      patchRef in patchRefList]
         pool.map(self.coadd, coaddData)
 
@@ -533,7 +534,7 @@ class StackTask(BatchPoolTask):
                 return True
         return False
 
-    def warp(self, cache, data):
+    def warp(self, cache, patchId, selectDataList):
         """Warp all images for a patch
 
         Only slave nodes execute this method.
@@ -544,8 +545,8 @@ class StackTask(BatchPoolTask):
         @param selectDataList: List of SelectStruct for inputs
         @return selectDataList with non-overlapping elements removed
         """
-        patchRef = data.patchRef
-        selectDataList = self.selectExposures(patchRef, data.selectDataList)
+        patchRef = getDataRef(cache.butler, patchId, cache.coaddType)
+        selectDataList = self.selectExposures(patchRef, selectDataList)
         with self.logOperation("warping %s" % (patchRef.dataId,), catch=True):
             self.makeCoaddTempExp.run(patchRef, selectDataList)
         return selectDataList
@@ -560,7 +561,7 @@ class StackTask(BatchPoolTask):
         @param patchRef: data reference for patch
         @param selectDataList: List of SelectStruct for inputs
         """
-        patchRef = data.patchRef
+        patchRef = getDataRef(cache.butler, data.patchId, cache.coaddType)
         selectDataList = data.selectDataList
         coadd = None
         with self.logOperation("coadding %s" % (patchRef.dataId,), catch=True):
