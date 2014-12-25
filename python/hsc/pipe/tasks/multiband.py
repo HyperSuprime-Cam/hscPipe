@@ -91,7 +91,7 @@ class MultiBandTask(BatchPoolTask):
         BatchPoolTask.__init__(self, *args, **kwargs)
         self.makeSubtask("detectCoaddSources")
         self.makeSubtask("mergeCoaddDetections", schema=self.detectCoaddSources.schema)
-        self.makeSubtask("measureCoaddSources", schema=self.mergeCoaddDetections.schema)
+        self.makeSubtask("measureCoaddSources", schema=self.mergeCoaddDetections.schema, peakSchema=self.mergeCoaddDetections.merged.getPeakSchema())
         self.makeSubtask("mergeCoaddMeasurements", schema=self.measureCoaddSources.schema)
         self.makeSubtask("forcedPhotCoadd", schema=self.mergeCoaddMeasurements.schema)
 
