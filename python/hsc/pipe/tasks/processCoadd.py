@@ -20,6 +20,6 @@ class SubaruProcessCoaddTask(ProcessCoaddTask):
 
     def write(self, dataRef, struct):
         prefix = self.config.coaddName + "Coadd_"
-        if self.config.doWriteDenormalizedMatches:
+        if self.config.doWriteDenormalizedMatches and struct.matches:
             dataRef.put(hscMatches.matchesToCatalog(struct.matches, struct.matchMeta), prefix + "srcMatchFull")
 
