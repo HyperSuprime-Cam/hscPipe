@@ -5,9 +5,11 @@ import numpy
 
 from lsst.geom import convexHull
 
+import lsst.pex.exceptions as pexExceptions
 import lsst.afw.geom as afwGeom
 import lsst.afw.math as afwMath
 import lsst.afw.image as afwImage
+from lsst.afw.fits.fitsLib import FitsError
 import lsst.coadd.utils as coaddUtils
 from lsst.meas.algorithms import CoaddPsf, makeCoaddApCorrMap
 from lsst.pex.config import Config, Field, ConfigurableField
@@ -420,7 +422,7 @@ class StackTaskRunner(CoaddTaskRunner):
     def getTargetList(parsedCmd, **kwargs):
         """Get bare butler into Task"""
         kwargs["butler"] = parsedCmd.butler
-        kwargs["selectDataList"] = parsedCmd.selectId.dataList
+        kwargs["selectIdList"] = parsedCmd.selectId.idList
         return [(parsedCmd.id.refList, kwargs),]
 
 class StackTask(BatchPoolTask):
@@ -445,10 +447,7 @@ class StackTask(BatchPoolTask):
         parser = ArgumentParser(name=cls._DefaultName)
         parser.add_id_argument("--id", "deepCoadd", help="data ID, e.g. --id tract=12345 patch=1,2",
                                ContainerClass=TractDataIdContainer)
-        # We don't want to be reading all the WCSes if we're only in the act of submitting to batch system
-        SelectContainerClass = DataIdContainer if doBatch else SelectDataIdContainer
-        parser.add_id_argument("--selectId", "calexp", help="data ID, e.g. --selectId visit=6789 ccd=0..9",
-                               ContainerClass=SelectContainerClass)
+        parser.add_id_argument("--selectId", "calexp", help="data ID, e.g. --selectId visit=6789 ccd=0..9")
         return parser
 
     @classmethod
@@ -457,27 +456,29 @@ class StackTask(BatchPoolTask):
         return time*numTargets/float(numNodes*numProcs)
 
     @abortOnError
-    def run(self, tractPatchRefList, butler, selectDataList=[]):
+    def run(self, tractPatchRefList, butler, selectIdList=[]):
         """Determine which tracts are non-empty before processing"""
         pool = Pool("tracts")
-        pool.storeSet(skymap=butler.get(self.config.coaddName + "Coadd_skyMap"))
+        pool.storeSet(butler=butler, skymap=butler.get(self.config.coaddName + "Coadd_skyMap"))
         tractIdList = []
         for patchRefList in tractPatchRefList:
             tractSet = set([patchRef.dataId["tract"] for patchRef in patchRefList])
             assert len(tractSet) == 1
             tractIdList.append(tractSet.pop())
 
-        # Remove data references for faster MPI
-        selectDataListCopy = [selectData.copy() for selectData in selectDataList]
-        for selectData in selectDataListCopy:
-            selectData.dataRef = None
+        selectDataList = [data for data in pool.mapNoBalance(self.readSelection, selectIdList) if
+                          data is not None]
 
-        nonEmptyList = pool.mapNoBalance(self.checkTract, tractIdList, selectDataListCopy)
+        nonEmptyList = pool.mapNoBalance(self.checkTract, tractIdList, selectDataList)
         tractPatchRefList = [patchRefList for patchRefList, nonEmpty in
                              zip(tractPatchRefList, nonEmptyList) if nonEmpty]
         self.log.info("Non-empty tracts (%d): %s" % (len(tractPatchRefList),
                                                      [patchRefList[0].dataId["tract"] for patchRefList in
                                                       tractPatchRefList]))
+
+        # Install the dataRef in the selectDataList
+        for data in selectDataList:
+            data.dataRef = getDataRef(butler, data.dataId, "calexp")
 
         # Process the non-empty tracts
         return [self.runTract(patchRefList, butler, selectDataList) for patchRefList in tractPatchRefList]
@@ -497,6 +498,7 @@ class StackTask(BatchPoolTask):
         pool.storeSet(butler=butler, warpType=self.config.coaddName + "Coadd_tempExp",
                       coaddType=self.config.coaddName + "Coadd")
         patchIdList = [patchRef.dataId for patchRef in patchRefList]
+
         selectedData = pool.map(self.warp, patchIdList, selectDataList)
         if self.config.doBackgroundReference:
             self.backgroundReference.run(patchRefList, selectDataList)
@@ -507,7 +509,33 @@ class StackTask(BatchPoolTask):
                      patchRef in patchRefList]
         pool.map(self.coadd, coaddData)
 
-    def checkTract(self, cache, tractId, selectDataList):
+    def readSelection(self, cache, selectId):
+        """Read Wcs of selected inputs
+
+        This method only runs on slave nodes.
+
+        This method is similar to SelectDataIdContainer.makeDataRefList,
+        creating a Struct like a SelectStruct, except with a dataId instead
+        of a dataRef (to ease MPI).
+
+        @param cache: Pool cache
+        @param selectId: Data identifier for selected input
+        @return a SelectStruct with a dataId instead of dataRef
+        """
+        try:
+            ref = getDataRef(cache.butler, selectId, "calexp")
+            self.log.info("Reading Wcs from %s" % (selectId,))
+            md = ref.get("calexp_md", immediate=True)
+            wcs = afwImage.makeWcs(md)
+            data = Struct(dataId=selectId, wcs=wcs, dims=(md.get("NAXIS1"), md.get("NAXIS2")))
+        except pexExceptions.LsstCppException, e:
+            if not isinstance(e.message, FitsError): # Unable to open file
+                raise
+            self.log.warn("Unable to construct Wcs from %s" % (selectId,))
+            return None
+        return data
+
+    def checkTract(self, cache, tractId, selectIdList):
         """Check whether a tract has any overlapping inputs
 
         This method only runs on slave nodes.
@@ -523,10 +551,8 @@ class StackTask(BatchPoolTask):
         tractPoly = convexHull([tractWcs.pixelToSky(afwGeom.Point2D(coord)).getVector() for
                                 coord in tract.getBBox().getCorners()])
 
-        for selectData in selectDataList:
-            if hasattr(selectData, "poly"):
-                poly = selectData.poly
-            else:
+        for selectData in selectIdList:
+            if not hasattr(selectData, "poly"):
                 wcs = selectData.wcs
                 dims = selectData.dims
                 box = afwGeom.Box2D(afwGeom.Point2D(0, 0), afwGeom.Point2D(*dims))
