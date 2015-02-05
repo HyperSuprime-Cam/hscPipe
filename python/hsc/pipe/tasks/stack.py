@@ -422,7 +422,7 @@ class StackTaskRunner(CoaddTaskRunner):
     def getTargetList(parsedCmd, **kwargs):
         """Get bare butler into Task"""
         kwargs["butler"] = parsedCmd.butler
-        kwargs["selectIdList"] = parsedCmd.selectId.idList
+        kwargs["selectIdList"] = [ref.dataId for ref in parsedCmd.selectId.refList]
         return [(parsedCmd.id.refList, kwargs),]
 
 class StackTask(BatchPoolTask):
