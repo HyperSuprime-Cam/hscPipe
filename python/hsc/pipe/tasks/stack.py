@@ -491,10 +491,10 @@ class StackTask(BatchPoolTask):
     def runTract(self, patchRefList, butler, selectDataList=[]):
         """Run stacking on a tract
 
-        All nodes execute this method, though the master and slaves
-        take different routes through it.
+        This method only runs on the master node.
 
-        @param tractRef: Data reference for tract
+        @param patchRefList: List of patch data references for tract
+        @param butler: Data butler
         @param selectDataList: List of SelectStruct for inputs
         """
         pool = Pool("stacker")
