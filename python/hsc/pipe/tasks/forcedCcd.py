@@ -2,7 +2,7 @@ import argparse
 from lsst.pipe.base import ArgumentParser, TaskRunner
 from lsst.pex.config import Config, Field, ConfigurableField
 from lsst.pipe.tasks.forcedPhotCcd import ForcedPhotCcdTask, CcdForcedSrcDataIdContainer
-from hsc.pipe.base.pbs import PbsPoolTask
+from hsc.pipe.base.parallel import BatchPoolTask
 from hsc.pipe.base.pool import Pool, abortOnError, NODE
 
 class ForcedCcdDataIdContainer(CcdForcedSrcDataIdContainer):
@@ -56,7 +56,7 @@ class ButlerInitializedTaskRunner(TaskRunner):
             raise RuntimeError("parsedCmd or args must be specified")
         return self.TaskClass(config=self.config, log=self.log, butler=butler)
 
-class ForcedCcdTask(PbsPoolTask):
+class ForcedCcdTask(BatchPoolTask):
     RunnerClass = ButlerInitializedTaskRunner
     ConfigClass = ForcedCcdConfig
     _DefaultName = "forcedCcd"
@@ -78,7 +78,7 @@ class ForcedCcdTask(PbsPoolTask):
         return parser
 
     @classmethod
-    def pbsWallTime(cls, time, parsedCmd, numNodes, numProcs):
+    def batchWallTime(cls, time, parsedCmd, numNodes, numProcs):
         numTargets = 0
         for refList in parsedCmd.id.refList:
             numTargets += len(refList)
