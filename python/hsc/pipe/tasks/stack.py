@@ -42,7 +42,7 @@ class NullSelectImagesTask(BaseSelectImagesTask):
 
 class SimpleAssembleCoaddConfig(AssembleCoaddConfig):
     matchBackgrounds = ConfigurableField(target=MatchBackgroundsTask, doc="Background matching")
-
+    removeMaskPlanes = ListField(dtype=str, default=["CROSSTALK"], doc="Mask planes to remove before coadding")
 
 class SimpleAssembleCoaddTask(AssembleCoaddTask):
     """Assemble a coadd from a set of coaddTempExp
@@ -323,6 +323,10 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
                 bgImage = bgModel.getImageF()
                 bgImage.setXY0(coaddMaskedImage.getXY0())
                 maskedImage += bgImage.Factory(bgImage, bbox, afwImage.PARENT, False)
+
+            if self.config.removeMaskPlanes:
+                mask = maskedImage.getMask()
+                mask &= ~mask.getPlaneBitMask(self.config.removeMaskPlanes)
 
             maskedImageList.append(maskedImage)
 
