@@ -9,22 +9,28 @@ import lsst.pex.exceptions as pexExceptions
 import lsst.afw.geom as afwGeom
 import lsst.afw.math as afwMath
 import lsst.afw.image as afwImage
+import lsst.afw.table as afwTable
 from lsst.afw.fits.fitsLib import FitsError
 import lsst.coadd.utils as coaddUtils
-from lsst.meas.algorithms import CoaddPsf, makeCoaddApCorrMap
+from lsst.meas.algorithms import CoaddPsf, makeCoaddApCorrMap, SourceMeasurementTask
+from lsst.meas.deblender import SourceDeblendTask
 from lsst.pex.config import Config, Field, ConfigurableField, ListField
 from lsst.pex.exceptions import LsstCppException, InvalidParameterException
-from lsst.pipe.tasks.coaddBase import CoaddDataIdContainer, SelectDataIdContainer, CoaddTaskRunner
+from lsst.pipe.tasks.coaddBase import CoaddDataIdContainer, SelectDataIdContainer, CoaddTaskRunner, getSkyInfo
 from lsst.pipe.tasks.selectImages import BaseSelectImagesTask, WcsSelectImagesTask, BaseExposureInfo
 from lsst.pipe.tasks.makeCoaddTempExp import MakeCoaddTempExpTask
 from lsst.pipe.tasks.assembleCoadd import (AssembleCoaddTask, AssembleCoaddConfig, _subBBoxIter,
                                            AssembleCoaddDataIdContainer,)
-from hsc.pipe.tasks.processCoadd import SubaruProcessCoaddTask
+from lsst.pipe.tasks.setPrimaryFlags import SetPrimaryFlagsTask
+from lsst.pipe.tasks.propagateVisitFlags import PropagateVisitFlagsTask
 from lsst.pipe.tasks.coaddHelpers import groupPatchExposures, getGroupDataRef
-from lsst.pipe.base import Struct, DataIdContainer, ArgumentParser
+from lsst.pipe.base import Struct, DataIdContainer, ArgumentParser, Task
+from lsst.pipe.tasks.multiBand import DetectCoaddSourcesTask
+from lsst.pipe.tasks.astrometry import AstrometryTask
 from hsc.pipe.base.parallel import BatchPoolTask
 from hsc.pipe.base.pool import Pool, abortOnError, NODE
 from hsc.pipe.base.butler import getDataRef
+from hsc.pipe.base.matches import matchesToCatalog
 from hsc.pipe.tasks.background import BackgroundReferenceTask, MatchBackgroundsTask
 
 class NullSelectImagesTask(BaseSelectImagesTask):
@@ -348,6 +354,129 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
                                ContainerClass=SelectDataIdContainer)
         return parser
 
+
+class ProcessCoaddConfig(Config):
+    detectCoaddSources = ConfigurableField(target=DetectCoaddSourcesTask, doc="Detect sources on coadd")
+    deblend = ConfigurableField(target=SourceDeblendTask, doc="Split detections into their components")
+    measurement = ConfigurableField(target=SourceMeasurementTask, doc="Measure deblended detections")
+    astrometry = ConfigurableField(target=AstrometryTask, doc = "Astrometric matching")
+    setPrimaryFlags = ConfigurableField(target=SetPrimaryFlagsTask, doc="Set flags for primary in tract/patch")
+    propagateFlags = ConfigurableField(target=PropagateVisitFlagsTask, doc="Propagate flags to coadd")
+
+    def setDefaults(self):
+        Config.setDefaults(self)
+        self.measurement.doReplaceWithNoise = True
+        self.deblend.maxNumberOfPeaks = 20
+        self.astrometry.forceKnownWcs = True
+        self.astrometry.solver.calculateSip = False
+
+class ProcessCoaddTask(Task):
+    """Process a coadd through detection, deblend and measurement
+
+    This differs from the lsst.pipe.tasks.ProcessCoadd because it uses
+    the DetectCoaddSourcesTask and writes the detections separately so
+    they can be used for the rest of the multiband processing scheme).
+    """
+
+    ConfigClass = ProcessCoaddConfig
+
+    def __init__(self, *args, **kwargs):
+        Task.__init__(self, *args, **kwargs)
+        self.makeSubtask("detectCoaddSources")
+
+        # Because the detectCoaddSources results are saved separately (so we can use for the multiband
+        # processing scheme), we need a separate schema for measurement
+        schema = self.detectCoaddSources.schema
+        self.schemaMapper = afwTable.SchemaMapper(schema)
+        self.schemaMapper.addMinimalSchema(schema)
+        self.schema = self.schemaMapper.getOutputSchema()
+
+        self.makeSubtask("deblend", schema=self.schema)
+        self.makeSubtask("measurement", schema=self.schema)
+        self.makeSubtask("setPrimaryFlags", schema=self.schema)
+        self.makeSubtask("propagateFlags", schema=self.schema)
+        self.makeSubtask("astrometry", schema=self.schema)
+
+    def makeIdFactory(self, dataRef):
+        """Return an IdFactory for setting the detection identifiers
+
+        The actual parameters used in the IdFactory are provided by
+        the butler (through the provided data reference).
+        """
+        expBits = dataRef.get(self.config.coaddName + "Coadd_src" + "_bits")
+        expId = long(dataRef.get(self.config.coaddName + "Coadd_src"))
+        return afwTable.IdFactory.makeSource(expId, 64 - expBits)
+
+    def run(self, patchRef, exposure, coaddType="deepCoadd"):
+        """!Run detection, deblending, measurement and matching to the reference catalog
+
+        @param patchRef: Data reference for patch
+        @param exposure: Coadd exposure to measure
+        @param coaddType: Name of coadd for butler
+        @return Struct(detection: results from DetectCoaddSourcesTask,
+                       sources: SourceCatalog from measurement,
+                       matches: results from source matching
+                       )
+        """
+        idFactory = self.detectCoaddSources.makeIdFactory(patchRef)
+        detResults = self.detectCoaddSources.runDetection(exposure, idFactory.clone()) # incl. background sub
+        self.detectCoaddSources.write(detResults, patchRef)
+        srcName = coaddType + "_src"
+        matchName = coaddType + "_srcMatch"
+        sources = self.measureSources(exposure, detResults.sources, idFactory.clone())
+        skyInfo = getSkyInfo(self.config.coaddName, patchRef)
+        self.setPrimaryFlags.run(sources, skyInfo.skyMap, skyInfo.tractInfo, skyInfo.patchInfo,
+                                 includeDeblend=True)
+        self.propagateFlags.run(patchRef.getButler(), sources,
+                                self.propagateFlags.getCcdInputs(exposure), exposure.getWcs())
+        patchRef.put(sources, srcName)
+        try:
+            matches = self.matchSources(exposure, sources)
+            patchRef.put(matches.normalized, matchName)
+            patchRef.put(matches.full, matchName + "Full")
+        except Exception as e:
+            self.log.warn("Unable to match to reference catalog: %s" % e)
+            matches = None
+        return Struct(detection=detResults, sources=sources, matches=matches)
+
+    def measureSources(self, exposure, detections, idFactory):
+        """!Measure sources on exposure
+
+        We produce a new SourceCatalog with the measurements, because
+        the detections catalog doesn't have the correct schema.
+
+        @param exposure: Coadd exposure to measure
+        @param detections: SourceCatalog of detections
+        @param idFactory: IdFactory for measurement catalog
+        @return SourceCatalog of measurements
+        """
+        # Convert detections catalog to new schema for measurement
+        table = afwTable.SourceTable.make(self.schema, idFactory)
+        sources = afwTable.SourceCatalog(table)
+        sources.extend(detections, self.schemaMapper)
+        self.deblend.run(exposure, sources, exposure.getPsf())
+        self.measurement.run(exposure, sources)
+        return sources
+
+    def matchSources(self, exposure, sources):
+        """!Match the sources to the astrometric reference catalog
+
+        Both normalised and denormalised catalogs are returned.
+
+        @param exposure: Coadd exposure for matching
+        @param detections: Detections to match
+        @return Struct(matches: matched sources;
+                       matchMetadata: metadata from matching;
+                       normalized: normalized match catalog;
+                       full: full (denormalized) match catalog
+                       )
+        """
+        self.log.info("Matching src to reference catalogue")
+        result = self.astrometry.astrometer.useKnownWcs(sources, exposure=exposure)
+        result.normalized = afwTable.packMatches(result.matches)
+        result.normalized.table.setMetadata(result.matchMetadata)
+        result.full = matchesToCatalog(result.matches, result.matchMetadata)
+        return result
 
 class StackConfig(Config):
     coaddName = Field(dtype=str, default="deep", doc="Name for coadd")
