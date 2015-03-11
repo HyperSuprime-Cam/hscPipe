@@ -1,34 +1,10 @@
 import argparse
 from lsst.pipe.base import ArgumentParser, TaskRunner
 from lsst.pex.config import Config, Field, ConfigurableField
-from lsst.pipe.tasks.forcedPhotCcd import ForcedPhotCcdTask, CcdForcedSrcDataIdContainer
+from lsst.pipe.tasks.forcedPhotCcd import ForcedPhotCcdTask
+from lsst.pipe.tasks.dataIds import PerTractCcdDataIdContainer
 from hsc.pipe.base.parallel import BatchPoolTask
 from hsc.pipe.base.pool import Pool, abortOnError, NODE
-
-class ForcedCcdDataIdContainer(CcdForcedSrcDataIdContainer):
-    def makeDataRefList(self, namespace):
-        """Make self.refList from self.idList
-        """
-        refList = dict()
-        for dataId in self.idList:
-            if "tract" not in dataId:
-                raise argparse.ArgumentError(None, "--id must include tract")
-            tract = dataId.pop("tract")
-            if not tract in refList.keys():
-                refList[tract] = list()
-            # making a DataRef for src fills out any missing keys and allows us to iterate
-            for srcDataRef in namespace.butler.subset("src", dataId=dataId):
-                forcedDataId = srcDataRef.dataId.copy()
-                forcedDataId['tract'] = tract
-                dataRef = namespace.butler.dataRef(
-                    datasetType = "forced_src",
-                    dataId = forcedDataId,
-                    )
-                if not dataRef in refList[tract]:
-                    refList[tract].append(dataRef)
-
-        for tract in refList.keys():
-            self.refList += [refList[tract]]
 
 class ForcedCcdConfig(Config):
     coaddName = Field(dtype=str, default="deep", doc="Name for coadd")
@@ -73,8 +49,8 @@ class ForcedCcdTask(BatchPoolTask):
     @classmethod
     def _makeArgumentParser(cls, doPbs=False, **kwargs):
         parser = ArgumentParser(name=cls._DefaultName)
-        parser.add_id_argument("--id", "forced_src", help="data ID, with raw CCD keys + tract",
-                               ContainerClass=ForcedCcdDataIdContainer)
+        parser.add_id_argument("--id", "calexp", help="data ID, with raw CCD keys + tract",
+                               ContainerClass=PerTractCcdDataIdContainer)
         return parser
 
     @classmethod
