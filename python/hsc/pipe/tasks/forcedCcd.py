@@ -14,37 +14,40 @@ class ForcedCcdConfig(Config):
         if self.forcedPhotCcd.references.coaddName != self.coaddName:
             raise RuntimeError("forcedPhotCcd.references.coaddName and coaddName don't match")
 
-class ButlerInitializedTaskRunner(TaskRunner):
-    """A TaskRunner for CmdLineTasks that require a 'butler' keyword argument to be passed to
-    their constructor.
+class ForcedCcdTaskRunner(TaskRunner):
+    """Provide a list of data references as targets instead of just one at a time
+
+    This allows ForcedCcdTask.run to iterate over them using the Pool.
     """
+    @staticmethod
+    def getTargetList(parsedCmd, **kwargs):
+        return [(parsedCmd.id.refList, kwargs)]
+
     def makeTask(self, parsedCmd=None, args=None):
         """A variant of the base version that passes a butler argument to the task's constructor
 
         parsedCmd or args must be specified
+
+        This is like the ButlerInitializedTaskRunner except the 'args' contains
+        a list of data references rather than a single data reference.
         """
         if parsedCmd is not None:
             butler = parsedCmd.butler
         elif args is not None:
-            dataRef, kwargs = args
-            butler = dataRef[0].butlerSubset.butler
+            dataRefList, kwargs = args
+            butler = dataRefList[0].butlerSubset.butler
         else:
             raise RuntimeError("parsedCmd or args must be specified")
         return self.TaskClass(config=self.config, log=self.log, butler=butler)
 
 class ForcedCcdTask(BatchPoolTask):
-    RunnerClass = ButlerInitializedTaskRunner
+    RunnerClass = ForcedCcdTaskRunner
     ConfigClass = ForcedCcdConfig
     _DefaultName = "forcedCcd"
 
-    def __init__(self, *args, **kwargs):
-        try:
-            butler = kwargs.pop("butler")
-        except Exception, e:
-            butler = None
+    def __init__(self, butler, *args, **kwargs):
         super(ForcedCcdTask, self).__init__(*args, **kwargs)
-        if butler:
-            self.makeSubtask("forcedPhotCcd", butler=butler)
+        self.makeSubtask("forcedPhotCcd", butler=butler)
 
     @classmethod
     def _makeArgumentParser(cls, doPbs=False, **kwargs):
@@ -56,8 +59,7 @@ class ForcedCcdTask(BatchPoolTask):
     @classmethod
     def batchWallTime(cls, time, parsedCmd, numNodes, numProcs):
         numTargets = 0
-        for refList in parsedCmd.id.refList:
-            numTargets += len(refList)
+        numTargets = len(parsedCmd.id.refList)
         return time*numTargets/float(numNodes*numProcs)
 
     @abortOnError
@@ -75,7 +77,6 @@ class ForcedCcdTask(BatchPoolTask):
 
     def forced(self, cache, dataRef):
         self.log.info("%s: Start forcedPhotCcd %s" % (NODE, dataRef.dataId))
-        self.makeSubtask("forcedPhotCcd", butler=dataRef.getButler())
         self.forcedPhotCcd.run(dataRef)
         self.log.info("%s: Finished forcedPhotCcd %s" % (NODE, dataRef.dataId))
 
