@@ -11,6 +11,8 @@ from hsc.pipe.base.parallel import BatchPoolTask
 from hsc.pipe.base.pool import Pool, abortOnError
 from hsc.pipe.base.butler import getDataRef
 
+import lsst.afw.table as afwTable
+
 class MultiBandDataIdContainer(CoaddDataIdContainer):
     def makeDataRefList(self, namespace):
         """Make self.refList from self.idList
@@ -90,11 +92,11 @@ class MultiBandTask(BatchPoolTask):
     def __init__(self, *args, **kwargs):
         BatchPoolTask.__init__(self, *args, **kwargs)
         self.makeSubtask("detectCoaddSources")
-        self.makeSubtask("mergeCoaddDetections", schema=self.detectCoaddSources.schema)
-        self.makeSubtask("measureCoaddSources", schema=self.mergeCoaddDetections.schema,
-                         peakSchema=self.mergeCoaddDetections.merged.getPeakSchema())
-        self.makeSubtask("mergeCoaddMeasurements", schema=self.measureCoaddSources.schema)
-        self.makeSubtask("forcedPhotCoadd", schema=self.mergeCoaddMeasurements.schema)
+        self.makeSubtask("mergeCoaddDetections", schema=afwTable.Schema(self.detectCoaddSources.schema))
+        self.makeSubtask("measureCoaddSources", schema=afwTable.Schema(self.mergeCoaddDetections.schema),
+                         peakSchema=afwTable.Schema(self.mergeCoaddDetections.merged.getPeakSchema()))
+        self.makeSubtask("mergeCoaddMeasurements", schema=afwTable.Schema(self.measureCoaddSources.schema))
+        self.makeSubtask("forcedPhotCoadd", schema=afwTable.Schema(self.mergeCoaddMeasurements.schema))
 
     @classmethod
     def _makeArgumentParser(cls, *args, **kwargs):
