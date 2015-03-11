@@ -12,7 +12,7 @@ import lsst.afw.image as afwImage
 from lsst.afw.fits.fitsLib import FitsError
 import lsst.coadd.utils as coaddUtils
 from lsst.meas.algorithms import CoaddPsf, makeCoaddApCorrMap
-from lsst.pex.config import Config, Field, ConfigurableField
+from lsst.pex.config import Config, Field, ConfigurableField, ListField
 from lsst.pex.exceptions import LsstCppException, InvalidParameterException
 from lsst.pipe.tasks.coaddBase import CoaddDataIdContainer, SelectDataIdContainer, CoaddTaskRunner
 from lsst.pipe.tasks.selectImages import BaseSelectImagesTask, WcsSelectImagesTask, BaseExposureInfo
