@@ -76,9 +76,8 @@ class ForcedCcdTask(BatchPoolTask):
         pool.map(self.forced, ccdData)
 
     def forced(self, cache, dataRef):
-        self.log.info("%s: Start forcedPhotCcd %s" % (NODE, dataRef.dataId))
-        self.forcedPhotCcd.run(dataRef)
-        self.log.info("%s: Finished forcedPhotCcd %s" % (NODE, dataRef.dataId))
+        with self.logOperation("forcedPhotCcd on %s" % (dataRef.dataId,)):
+            self.forcedPhotCcd.run(dataRef)
 
     def writeMetadata(self, dataRef):
         pass
