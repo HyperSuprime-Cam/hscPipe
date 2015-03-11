@@ -50,6 +50,10 @@ class SimpleAssembleCoaddConfig(AssembleCoaddConfig):
     matchBackgrounds = ConfigurableField(target=MatchBackgroundsTask, doc="Background matching")
     removeMaskPlanes = ListField(dtype=str, default=["CROSSTALK"], doc="Mask planes to remove before coadding")
 
+    def setDefaults(self):
+        AssembleCoaddConfig.setDefaults(self)
+        self.doWrite = False # Will be done by StackTask
+
 class SimpleAssembleCoaddTask(AssembleCoaddTask):
     """Assemble a coadd from a set of coaddTempExp
     """
@@ -485,7 +489,7 @@ class StackConfig(Config):
     doBackgroundReference = Field(dtype=bool, default=True, doc="Build background reference?")
     backgroundReference = ConfigurableField(target=BackgroundReferenceTask, doc="Build background reference")
     assembleCoadd = ConfigurableField(target=SimpleAssembleCoaddTask, doc="Assemble warps into coadd")
-    processCoadd = ConfigurableField(target=SubaruProcessCoaddTask, doc="Detection and measurement on coadd")
+    processCoadd = ConfigurableField(target=ProcessCoaddTask, doc="Detection and measurement")
     doOverwriteCoadd = Field(dtype=bool, default=False, doc="Overwrite coadd?")
     doOverwriteOutput = Field(dtype=bool, default=False, doc="Overwrite processing outputs?")
 
@@ -495,7 +499,6 @@ class StackConfig(Config):
         self.backgroundReference.select.retarget(NullSelectImagesTask)
         self.assembleCoadd.select.retarget(NullSelectImagesTask)
         self.makeCoaddTempExp.doOverwrite = False
-        self.processCoadd.detection.thresholdType = "pixel_stdev"
         self.assembleCoadd.doMatchBackgrounds = True
         self.makeCoaddTempExp.bgSubtracted = False
 
@@ -733,10 +736,13 @@ class StackTask(BatchPoolTask):
                 self.log.info("%s: Reading coadd %s" % (NODE, patchRef.dataId))
                 coadd = patchRef.get(cache.coaddType, immediate=True)
 
-        if coadd is not None and (self.config.doOverwriteOutput or
-                                  not patchRef.datasetExists(cache.coaddType + "_src") or
-                                  not patchRef.datasetExists(cache.coaddType + "_calexp")):
-                self.process(patchRef, coadd)
+        if coadd is None:
+            return
+
+        with self.logOperation("processing %s" % (patchRef.dataId,), catch=True):
+            self.processCoadd.run(patchRef, coadd, cache.coaddType)
+        self.assembleCoadd.writeCoaddOutput(patchRef, coadd) # now that background subtraction has been done
+
 
     def selectExposures(self, patchRef, selectDataList):
         """Select exposures to operate upon, via the SelectImagesTask
@@ -756,19 +762,6 @@ class StackTask(BatchPoolTask):
         coordList = [wcs.pixelToSky(pos) for pos in cornerPosList]
         dataRefList = self.select.runDataRef(patchRef, coordList, selectDataList=selectDataList).dataRefList
         return [inputs[key(dataRef)] for dataRef in dataRefList]
-
-    def process(self, patchRef, coadd):
-        with self.logOperation("processing %s" % (patchRef.dataId,), catch=True):
-            try:
-                self.processCoadd.run(patchRef)
-            except LsstCppException as e:
-                self.log.warn("LsstCppException %s" % NODE)
-                if (isinstance(e.message, InvalidParameterException) and
-                    re.search("St. dev. must be > 0:", e.message.what())):
-                    # All the good pixels are outside the area of interest; allow to proceed
-                    self.log.warn("No usable area for detection: %s" % patchRef.dataId)
-                else:
-                    raise
 
     def writeMetadata(self, dataRef):
         pass
