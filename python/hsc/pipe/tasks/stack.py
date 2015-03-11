@@ -109,6 +109,9 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
 
         if self.config.doInterp:
             self.interpImage.interpolateOnePlane(coaddExp.getMaskedImage(), "NO_DATA", coaddExp.getPsf())
+            # Non-positive is bad for variance
+            varArray = coaddExp.getMaskedImage().getVariance().getArray()
+            varArray[:] = numpy.where(varArray > 0, varArray, numpy.inf)
 
         if self.config.doWrite:
             self.writeCoaddOutput(dataRef, coaddExp)
