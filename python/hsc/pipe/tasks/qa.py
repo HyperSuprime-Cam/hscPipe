@@ -14,10 +14,10 @@ class QaConfig(Config):
     useIcsources = Field(dtype=bool, default=False, doc="Use icsources(calib.sources) rather than final sources") 
     doWriteMeta = Field(dtype=bool, default=False, doc="Write Qa metadata for CCD as FITS")
     magzeroExpected = DictField(keytype=str, itemtype=float, 
-                                default={'g': 29.0, 'r': 29.0, 'i': 28.6, 'z': 27.7, 'y': 27.4},
+                                default={'g': 29.0, 'r': 29.0, 'i': 28.6, 'z': 27.7, 'y': 27.4, 'N921': 25.7, 'N816': 25.5, 'N515': 25.8},
                                 doc="Expected magnzero (e/sec) in the case of ideal weather condition: for calcTransp")
     flatScale = DictField(keytype=str, itemtype=float, 
-                                default={'g': 1.0, 'r': 1.0, 'i': 1.0, 'z': 1.0, 'y': 1.0},
+                                default={'g': 1.0, 'r': 1.0, 'i': 1.0, 'z': 1.0, 'y': 1.0, 'N921': 1.0, 'N816': 1.0, 'N515': 1.0},
                                 doc="Count levels of the FOV center of flat field in each band: for calcTransp")
 
 class QaTask(Task):
