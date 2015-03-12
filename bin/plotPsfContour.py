@@ -149,7 +149,7 @@ def main():
     parser.add_argument('rerun')
     parser.add_argument('visit', type=int)
     parser.add_argument('ccd', type=int)
-    parser.add_argument('--inroot', default='/data/data1', help='e.g., /data/data1')
+    parser.add_argument('--inroot', default='/work', help='e.g., /work')
     parser.add_argument('--outroot', default='/data/data2', help='e.g., /data/data2/')
     parser.add_argument('--xgridsize', type=int, default=1024, help='mesh size in x for psf sampling')
     parser.add_argument('--ygridsize', type=int, default=1024, help='mesh size in y for psf sampling')

@@ -8,14 +8,6 @@ import lsst.afw.cameraGeom as afwCG
 import lsst.pex.exceptions as pexExceptions
 import hsc.pipe.base.camera as hscCamera
 
-haveSimpleShape = False
-try:
-    import lsst.meas.extensions.simpleShape
-    haveSimpleShape = True
-except ImportError:
-    print "WARNING: unable to import lsst.meas.extensions.simpleShape"
-
-
 class FocusConfig(Config):
     # Defaults are appropriate for HSC, but also shouldn't get in the way for Suprime-Cam
     # (because Suprime-Cam CCDs aren't indexed over 10).
@@ -30,8 +22,7 @@ class FocusConfig(Config):
                                  default=[17112.514461756149, 17563.380665628181, 17868.148132145379],
                                  doc="Radii centers for bins")
     doPlot = Field(dtype=bool, default=False, doc="Plot focus calculation?")
-    shape = Field(dtype=str, default="shape.simple" if haveSimpleShape else "shape.sdss",
-                  doc="Measurement to use for shape")
+    shape = Field(dtype=str, default="shape.sdss", doc="Measurement to use for shape")
     pixelScale = Field(dtype=float, default=0.015, doc="Conversion factor for pixel scale --> mm")
 
     def isFocusCcd(self, ccdId):
@@ -197,6 +188,7 @@ def run(rerun, frameId, doPlot = False):
 
     butler = hscCamera.getButler("HSC", rerun)
     config = FocusConfig()
+    config.update(**hscFocusConfig.toDict()) # copying hscConfig
     config.doPlot = doPlot
     config.freeze()
 
