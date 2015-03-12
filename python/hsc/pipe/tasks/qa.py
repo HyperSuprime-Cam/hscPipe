@@ -118,8 +118,14 @@ class QaTask(Task):
         if self.config.doWriteMeta:
             # preparing exposure object which holds exposureQA metadata
             expQaMeta = afwImage.ExposureI(0,0)
+            expQaMeta.setWcs(exposure.getWcs())
             expQaMeta.setCalib(exposure.getCalib())
             expQaMeta.setMetadata(metadata)
+#            md = exposure.getMetadata()
+#            mdQa = expQaMeta.getMetadata()
+#            mdQa.set('NAXIS1') = md.get('NAXIS1')
+#            mdQa.set('NAXIS2') = md.get('NAXIS2')
+
             self.log.info("writing an QA metadata for ccd %d at %s" % (ccd, dataRef.get('ccdMetadata_filename')[0]))
             try:
                 dataRef.put(expQaMeta, 'ccdMetadata')

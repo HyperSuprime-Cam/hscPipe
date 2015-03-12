@@ -109,5 +109,6 @@ class SubaruProcessCcdOnsiteDbTask(SubaruProcessCcdOnsiteTask):
         self.onsiteDb.end(registId)
         ## === register CORR data QA values
         filename = sensorRef.get('calexp_filename')[0]
+        ##filename = sensorRef.get('ccdMetadata_filename')[0]
         self.onsiteDb.frameMetadata(registId, filename)
         return result
