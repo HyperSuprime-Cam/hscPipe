@@ -40,6 +40,14 @@ class ForcedCcdTaskRunner(TaskRunner):
             raise RuntimeError("parsedCmd or args must be specified")
         return self.TaskClass(config=self.config, log=self.log, butler=butler)
 
+def unpickler(func, args, kwargs):
+    """Function to call a function by its args and kwargs
+
+    Used for unpickling objects by providing a callable (like a class) and
+    its arguments.
+    """
+    return func(*args, **kwargs)
+
 class ForcedCcdTask(BatchPoolTask):
     RunnerClass = ForcedCcdTaskRunner
     ConfigClass = ForcedCcdConfig
@@ -47,7 +55,13 @@ class ForcedCcdTask(BatchPoolTask):
 
     def __init__(self, butler, *args, **kwargs):
         super(ForcedCcdTask, self).__init__(*args, **kwargs)
+        self.butler = butler
         self.makeSubtask("forcedPhotCcd", butler=butler)
+
+    def __reduce__(self):
+        """Pickler"""
+        return unpickler, (self.__class__, (self.butler,), dict(config=self.config, name=self._name,
+                                                                parentTask=self._parentTask, log=None))
 
     @classmethod
     def _makeArgumentParser(cls, doPbs=False, **kwargs):
