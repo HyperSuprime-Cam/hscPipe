@@ -1,34 +1,10 @@
 import argparse
 from lsst.pipe.base import ArgumentParser, TaskRunner
 from lsst.pex.config import Config, Field, ConfigurableField
-from lsst.pipe.tasks.forcedPhotCcd import ForcedPhotCcdTask, CcdForcedSrcDataIdContainer
-from hsc.pipe.base.pbs import PbsPoolTask
+from lsst.pipe.tasks.forcedPhotCcd import ForcedPhotCcdTask
+from lsst.pipe.tasks.dataIds import PerTractCcdDataIdContainer
+from hsc.pipe.base.parallel import BatchPoolTask
 from hsc.pipe.base.pool import Pool, abortOnError, NODE
-
-class ForcedCcdDataIdContainer(CcdForcedSrcDataIdContainer):
-    def makeDataRefList(self, namespace):
-        """Make self.refList from self.idList
-        """
-        refList = dict()
-        for dataId in self.idList:
-            if "tract" not in dataId:
-                raise argparse.ArgumentError(None, "--id must include tract")
-            tract = dataId.pop("tract")
-            if not tract in refList.keys():
-                refList[tract] = list()
-            # making a DataRef for src fills out any missing keys and allows us to iterate
-            for srcDataRef in namespace.butler.subset("src", dataId=dataId):
-                forcedDataId = srcDataRef.dataId.copy()
-                forcedDataId['tract'] = tract
-                dataRef = namespace.butler.dataRef(
-                    datasetType = "forced_src",
-                    dataId = forcedDataId,
-                    )
-                if not dataRef in refList[tract]:
-                    refList[tract].append(dataRef)
-
-        for tract in refList.keys():
-            self.refList += [refList[tract]]
 
 class ForcedCcdConfig(Config):
     coaddName = Field(dtype=str, default="deep", doc="Name for coadd")
@@ -38,50 +14,66 @@ class ForcedCcdConfig(Config):
         if self.forcedPhotCcd.references.coaddName != self.coaddName:
             raise RuntimeError("forcedPhotCcd.references.coaddName and coaddName don't match")
 
-class ButlerInitializedTaskRunner(TaskRunner):
-    """A TaskRunner for CmdLineTasks that require a 'butler' keyword argument to be passed to
-    their constructor.
+class ForcedCcdTaskRunner(TaskRunner):
+    """Provide a list of data references as targets instead of just one at a time
+
+    This allows ForcedCcdTask.run to iterate over them using the Pool.
     """
+    @staticmethod
+    def getTargetList(parsedCmd, **kwargs):
+        return [(parsedCmd.id.refList, kwargs)]
+
     def makeTask(self, parsedCmd=None, args=None):
         """A variant of the base version that passes a butler argument to the task's constructor
 
         parsedCmd or args must be specified
+
+        This is like the ButlerInitializedTaskRunner except the 'args' contains
+        a list of data references rather than a single data reference.
         """
         if parsedCmd is not None:
             butler = parsedCmd.butler
         elif args is not None:
-            dataRef, kwargs = args
-            butler = dataRef[0].butlerSubset.butler
+            dataRefList, kwargs = args
+            butler = dataRefList[0].butlerSubset.butler
         else:
             raise RuntimeError("parsedCmd or args must be specified")
         return self.TaskClass(config=self.config, log=self.log, butler=butler)
 
-class ForcedCcdTask(PbsPoolTask):
-    RunnerClass = ButlerInitializedTaskRunner
+def unpickler(func, args, kwargs):
+    """Function to call a function by its args and kwargs
+
+    Used for unpickling objects by providing a callable (like a class) and
+    its arguments.
+    """
+    return func(*args, **kwargs)
+
+class ForcedCcdTask(BatchPoolTask):
+    RunnerClass = ForcedCcdTaskRunner
     ConfigClass = ForcedCcdConfig
     _DefaultName = "forcedCcd"
 
-    def __init__(self, *args, **kwargs):
-        try:
-            butler = kwargs.pop("butler")
-        except Exception, e:
-            butler = None
+    def __init__(self, butler, *args, **kwargs):
         super(ForcedCcdTask, self).__init__(*args, **kwargs)
-        if butler:
-            self.makeSubtask("forcedPhotCcd", butler=butler)
+        self.butler = butler
+        self.makeSubtask("forcedPhotCcd", butler=butler)
+
+    def __reduce__(self):
+        """Pickler"""
+        return unpickler, (self.__class__, (self.butler,), dict(config=self.config, name=self._name,
+                                                                parentTask=self._parentTask, log=None))
 
     @classmethod
     def _makeArgumentParser(cls, doPbs=False, **kwargs):
         parser = ArgumentParser(name=cls._DefaultName)
-        parser.add_id_argument("--id", "forced_src", help="data ID, with raw CCD keys + tract",
-                               ContainerClass=ForcedCcdDataIdContainer)
+        parser.add_id_argument("--id", "calexp", help="data ID, with raw CCD keys + tract",
+                               ContainerClass=PerTractCcdDataIdContainer)
         return parser
 
     @classmethod
-    def pbsWallTime(cls, time, parsedCmd, numNodes, numProcs):
+    def batchWallTime(cls, time, parsedCmd, numNodes, numProcs):
         numTargets = 0
-        for refList in parsedCmd.id.refList:
-            numTargets += len(refList)
+        numTargets = len(parsedCmd.id.refList)
         return time*numTargets/float(numNodes*numProcs)
 
     @abortOnError
@@ -98,10 +90,8 @@ class ForcedCcdTask(PbsPoolTask):
         pool.map(self.forced, ccdData)
 
     def forced(self, cache, dataRef):
-        self.log.info("%s: Start forcedPhotCcd %s" % (NODE, dataRef.dataId))
-        self.makeSubtask("forcedPhotCcd", butler=dataRef.getButler())
-        self.forcedPhotCcd.run(dataRef)
-        self.log.info("%s: Finished forcedPhotCcd %s" % (NODE, dataRef.dataId))
+        with self.logOperation("forcedPhotCcd on %s" % (dataRef.dataId,)):
+            self.forcedPhotCcd.run(dataRef)
 
     def writeMetadata(self, dataRef):
         pass
