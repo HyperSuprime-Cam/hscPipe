@@ -11,6 +11,8 @@ from hsc.pipe.base.parallel import BatchPoolTask
 from hsc.pipe.base.pool import Pool, abortOnError
 from hsc.pipe.base.butler import getDataRef
 
+import lsst.afw.table as afwTable
+
 class MultiBandDataIdContainer(CoaddDataIdContainer):
     def makeDataRefList(self, namespace):
         """Make self.refList from self.idList
@@ -90,11 +92,11 @@ class MultiBandTask(BatchPoolTask):
     def __init__(self, *args, **kwargs):
         BatchPoolTask.__init__(self, *args, **kwargs)
         self.makeSubtask("detectCoaddSources")
-        self.makeSubtask("mergeCoaddDetections", schema=self.detectCoaddSources.schema)
-        self.makeSubtask("measureCoaddSources", schema=self.mergeCoaddDetections.schema,
-                         peakSchema=self.mergeCoaddDetections.merged.getPeakSchema())
-        self.makeSubtask("mergeCoaddMeasurements", schema=self.measureCoaddSources.schema)
-        self.makeSubtask("forcedPhotCoadd", schema=self.mergeCoaddMeasurements.schema)
+        self.makeSubtask("mergeCoaddDetections", schema=afwTable.Schema(self.detectCoaddSources.schema))
+        self.makeSubtask("measureCoaddSources", schema=afwTable.Schema(self.mergeCoaddDetections.schema),
+                         peakSchema=afwTable.Schema(self.mergeCoaddDetections.merged.getPeakSchema()))
+        self.makeSubtask("mergeCoaddMeasurements", schema=afwTable.Schema(self.measureCoaddSources.schema))
+        self.makeSubtask("forcedPhotCoadd", schema=afwTable.Schema(self.mergeCoaddMeasurements.schema))
 
     @classmethod
     def _makeArgumentParser(cls, *args, **kwargs):
@@ -167,10 +169,11 @@ class MultiBandTask(BatchPoolTask):
         cache: Pool cache, containing butler
         dataId: Data identifier for patch
         """
-        dataRef = getDataRef(cache.butler, dataId, self.config.coaddName + "Coadd")
-        if dataRef.datasetExists(self.config.coaddName + "Coadd_det"):
-            return
-        self.detectCoaddSources.run(dataRef)
+        with self.logOperation("detection on %s" % (dataId,)):
+            dataRef = getDataRef(cache.butler, dataId, self.config.coaddName + "Coadd")
+            if dataRef.datasetExists(self.config.coaddName + "Coadd_det"):
+                return
+            self.detectCoaddSources.run(dataRef)
 
     def runMergeDetections(self, cache, dataIdList):
         """Run detection merging on a patch
@@ -180,11 +183,12 @@ class MultiBandTask(BatchPoolTask):
         cache: Pool cache, containing butler
         dataIdList: List of data identifiers for the patch in different filters
         """
-        dataRefList = [getDataRef(cache.butler, dataId, self.config.coaddName + "Coadd") for
-                       dataId in dataIdList]
-        if dataRefList[0].datasetExists(self.config.coaddName + "Coadd_mergeDet"):
-            return
-        self.mergeCoaddDetections.run(dataRefList)
+        with self.logOperation("merge detections from %s" % (dataIdList,)):
+            dataRefList = [getDataRef(cache.butler, dataId, self.config.coaddName + "Coadd") for
+                           dataId in dataIdList]
+            if dataRefList[0].datasetExists(self.config.coaddName + "Coadd_mergeDet"):
+                return
+            self.mergeCoaddDetections.run(dataRefList)
 
     def runMeasureMerged(self, cache, dataId):
         """Run measurement on a patch for a single filter
@@ -194,10 +198,11 @@ class MultiBandTask(BatchPoolTask):
         cache: Pool cache, with butler
         dataId: Data identifier for patch
         """
-        dataRef = getDataRef(cache.butler, dataId, self.config.coaddName + "Coadd")
-        if dataRef.datasetExists(self.config.coaddName + "Coadd_meas"):
-            return
-        self.measureCoaddSources.run(dataRef)
+        with self.logOperation("measurement on %s" % (dataId,)):
+            dataRef = getDataRef(cache.butler, dataId, self.config.coaddName + "Coadd")
+            if dataRef.datasetExists(self.config.coaddName + "Coadd_meas"):
+                return
+            self.measureCoaddSources.run(dataRef)
 
     def runMergeMeasurements(self, cache, dataIdList):
         """Run measurement merging on a patch
@@ -207,11 +212,12 @@ class MultiBandTask(BatchPoolTask):
         cache: Pool cache, containing butler
         dataIdList: List of data identifiers for the patch in different filters
         """
-        dataRefList = [getDataRef(cache.butler, dataId, self.config.coaddName + "Coadd") for
-                       dataId in dataIdList]
-        if dataRefList[0].datasetExists(self.config.coaddName + "Coadd_ref"):
-            return
-        self.mergeCoaddMeasurements.run(dataRefList)
+        with self.logOperation("merge measurements from %s" % (dataIdList,)):
+            dataRefList = [getDataRef(cache.butler, dataId, self.config.coaddName + "Coadd") for
+                           dataId in dataIdList]
+            if dataRefList[0].datasetExists(self.config.coaddName + "Coadd_ref"):
+                return
+            self.mergeCoaddMeasurements.run(dataRefList)
 
     def runForcedPhot(self, cache, dataId):
         """Run forced photometry on a patch for a single filter
@@ -221,10 +227,11 @@ class MultiBandTask(BatchPoolTask):
         cache: Pool cache, with butler
         dataId: Data identifier for patch
         """
-        dataRef = getDataRef(cache.butler, dataId, self.config.coaddName + "Coadd")
-        if dataRef.datasetExists(self.config.coaddName + "Coadd_forced_src"):
-            return
-        self.forcedPhotCoadd.run(dataRef)
+        with self.logOperation("forced photometry on %s" % (dataId,)):
+            dataRef = getDataRef(cache.butler, dataId, self.config.coaddName + "Coadd")
+            if dataRef.datasetExists(self.config.coaddName + "Coadd_forced_src"):
+                return
+            self.forcedPhotCoadd.run(dataRef)
 
     def writeMetadata(self, dataRef):
         """We don't collect any metadata, so skip"""
