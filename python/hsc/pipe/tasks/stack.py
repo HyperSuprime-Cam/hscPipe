@@ -363,6 +363,7 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
 
 
 class ProcessCoaddConfig(Config):
+    coaddName = Field(dtype=str, default="deep", doc="Name of coadd")
     detectCoaddSources = ConfigurableField(target=DetectCoaddSourcesTask, doc="Detect sources on coadd")
     deblend = ConfigurableField(target=SourceDeblendTask, doc="Split detections into their components")
     measurement = ConfigurableField(target=SourceMeasurementTask, doc="Measure deblended detections")
@@ -512,6 +513,8 @@ class StackConfig(Config):
             raise RuntimeError("assembleCoadd.coaddName and coaddName don't match")
         if self.backgroundReference.coaddName != self.coaddName:
             raise RuntimeError("backgroundReference.coaddName and coaddName don't match")
+        if self.processCoadd.coaddName != self.coaddName:
+            raise RuntimeError("processCoadd.coaddName and coaddName don't match")
 
 class TractDataIdContainer(CoaddDataIdContainer):
     def makeDataRefList(self, namespace):
