@@ -719,13 +719,14 @@ class SafeClipAssembleCoaddTask(SimpleAssembleCoaddTask):
                     keep=True
                     keepIndex = [clipIndex[0]]
 
-                # Test if there are clipped objects that overlap two different visits
-                clipIndex = numpy.where(overlap > self.config.minClipFootOverlapDouble)[0]
-                if len(clipIndex) == 2 and len(overlap) >= 3:
-                    clipIndexComp = numpy.where(overlap < self.config.minClipFootOverlapDouble)[0]
-                    if numpy.max(overlap[clipIndexComp]) < self.config.maxClipFootOverlapDouble:
-                        keep=True
-                        keepIndex = clipIndex
+                else:
+                    # Test if there are clipped objects that overlap two different visits
+                    clipIndex = numpy.where(overlap > self.config.minClipFootOverlapDouble)[0]
+                    if len(clipIndex) == 2 and len(overlap) >= 3:
+                        clipIndexComp = numpy.where(overlap <= self.config.minClipFootOverlapDouble)[0]
+                        if numpy.max(overlap[clipIndexComp]) < self.config.maxClipFootOverlapDouble:
+                            keep=True
+                            keepIndex = clipIndex
 
             if not keep:
                 continue
