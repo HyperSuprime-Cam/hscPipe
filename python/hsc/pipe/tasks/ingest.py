@@ -64,3 +64,8 @@ class PoolIngestTask(BatchCmdLineTask, HscIngestTask):
         if not ingested:
             return None
         return hduInfoList
+
+    def writeConfig(self, *args, **kwargs):
+        pass
+    def writeMetadata(self, *args, **kwargs):
+        pass
