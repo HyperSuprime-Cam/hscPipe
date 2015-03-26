@@ -2,10 +2,8 @@ setupRequired(hscPipeBase)
 setupRequired(pipe_tasks)
 setupRequired(hscAstrom)
 
-setupOptional(pbasf2)
 setupOptional(meas_mosaic)
 setupOptional(solvetansip)
-setupOptional(runOnsite)
 setupOptional(matplotlib)
 
 setupOptional(meas_extensions_photometryKron)
