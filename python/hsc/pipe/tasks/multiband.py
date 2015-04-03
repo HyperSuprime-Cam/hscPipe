@@ -89,14 +89,17 @@ class MultiBandTask(BatchPoolTask):
     ConfigClass = MultiBandConfig
     _DefaultName = "multiband"
 
-    def __init__(self, *args, **kwargs):
-        BatchPoolTask.__init__(self, *args, **kwargs)
-        self.makeSubtask("detectCoaddSources")
+    def __init__(self, butler=None, **kwargs):
+        BatchPoolTask.__init__(self, **kwargs)
+        self.makeSubtask("detectCoaddSources", butler=butler) # Schema may have been written in stack.py
         self.makeSubtask("mergeCoaddDetections", schema=afwTable.Schema(self.detectCoaddSources.schema))
-        self.makeSubtask("measureCoaddSources", schema=afwTable.Schema(self.mergeCoaddDetections.schema),
+        self.makeSubtask("measureCoaddSources", butler=butler,
+                         schema=afwTable.Schema(self.mergeCoaddDetections.schema),
                          peakSchema=afwTable.Schema(self.mergeCoaddDetections.merged.getPeakSchema()))
-        self.makeSubtask("mergeCoaddMeasurements", schema=afwTable.Schema(self.measureCoaddSources.schema))
-        self.makeSubtask("forcedPhotCoadd", schema=afwTable.Schema(self.mergeCoaddMeasurements.schema))
+        self.makeSubtask("mergeCoaddMeasurements", butler=butler,
+                         schema=afwTable.Schema(self.measureCoaddSources.schema))
+        self.makeSubtask("forcedPhotCoadd", butler=butler,
+                         schema=afwTable.Schema(self.mergeCoaddMeasurements.schema))
 
     @classmethod
     def _makeArgumentParser(cls, *args, **kwargs):
