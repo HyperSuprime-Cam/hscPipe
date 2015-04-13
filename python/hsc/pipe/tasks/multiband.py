@@ -84,6 +84,14 @@ class MultiBandConfig(Config):
                 raise RuntimeError("%s.coaddName (%s) doesn't match root coaddName (%s)" %
                                    (subtask, coaddName, self.coaddName))
 
+def unpickler(func, args, kwargs):
+    """Function to call a function by its args and kwargs
+
+    Used for unpickling objects by providing a callable (like a class) and
+    its arguments.
+    """
+    return func(*args, **kwargs)
+
 class MultiBandTask(BatchPoolTask):
     """Multi-node driver for multiband processing"""
     ConfigClass = MultiBandConfig
@@ -91,7 +99,8 @@ class MultiBandTask(BatchPoolTask):
 
     def __init__(self, butler=None, **kwargs):
         BatchPoolTask.__init__(self, **kwargs)
-        self.makeSubtask("detectCoaddSources", butler=butler) # Schema may have been written in stack.py
+        self.butler = butler
+        self.makeSubtask("detectCoaddSources")
         self.makeSubtask("mergeCoaddDetections", schema=afwTable.Schema(self.detectCoaddSources.schema))
         self.makeSubtask("measureCoaddSources", butler=butler,
                          schema=afwTable.Schema(self.mergeCoaddDetections.schema),
@@ -100,6 +109,11 @@ class MultiBandTask(BatchPoolTask):
                          schema=afwTable.Schema(self.measureCoaddSources.schema))
         self.makeSubtask("forcedPhotCoadd", butler=butler,
                          schema=afwTable.Schema(self.mergeCoaddMeasurements.schema))
+
+    def __reduce__(self):
+        """Pickler"""
+        return unpickler, (self.__class__, (self.butler,), dict(config=self.config, name=self._name,
+                                                                parentTask=self._parentTask, log=None))
 
     @classmethod
     def _makeArgumentParser(cls, *args, **kwargs):
