@@ -555,7 +555,7 @@ class SafeClipAssembleCoaddConfig(SimpleAssembleCoaddConfig):
         self.clipDetection.returnOriginalFootprints = False
         self.clipDetection.thresholdPolarity = "both"
         self.clipDetection.thresholdValue = 2
-        self.clipDetection.nSigmaToGrow = 4
+        self.clipDetection.nSigmaToGrow = 2
         self.clipDetection.minPixels = 4
         self.clipDetection.isotropicGrow = True
         self.clipDetection.thresholdType = "pixel_stdev"
@@ -694,7 +694,7 @@ class SafeClipAssembleCoaddTask(SimpleAssembleCoaddTask):
                 totPixel = nPixel - ignore
 
                 # If we have more bad pixels than detection skip
-                if ignore > overlapDet or totPixel == 0 or overlapDet == 0:
+                if ignore > overlapDet:
                     continue
                 overlap.append(overlapDet/float(totPixel))
                 maskList.append(tmpExpMask)
