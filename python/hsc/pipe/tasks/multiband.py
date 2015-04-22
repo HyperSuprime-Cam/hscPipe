@@ -101,14 +101,11 @@ class MultiBandTask(BatchPoolTask):
         BatchPoolTask.__init__(self, **kwargs)
         self.butler = butler
         self.makeSubtask("detectCoaddSources")
-        self.makeSubtask("mergeCoaddDetections", schema=afwTable.Schema(self.detectCoaddSources.schema))
-        self.makeSubtask("measureCoaddSources", butler=butler,
-                         schema=afwTable.Schema(self.mergeCoaddDetections.schema),
-                         peakSchema=afwTable.Schema(self.mergeCoaddDetections.merged.getPeakSchema()))
-        self.makeSubtask("mergeCoaddMeasurements", butler=butler,
-                         schema=afwTable.Schema(self.measureCoaddSources.schema))
-        self.makeSubtask("forcedPhotCoadd", butler=butler,
-                         schema=afwTable.Schema(self.mergeCoaddMeasurements.schema))
+        self.makeSubtask("mergeCoaddDetections", butler=butler, schema=self.detectCoaddSources.schema)
+        self.makeSubtask("measureCoaddSources", butler=butler, schema=self.mergeCoaddDetections.schema,
+                         peakSchema=self.mergeCoaddDetections.merged.getPeakSchema())
+        self.makeSubtask("mergeCoaddMeasurements", butler=butler, schema=self.measureCoaddSources.schema)
+        self.makeSubtask("forcedPhotCoadd", butler=butler, schema=self.mergeCoaddMeasurements.schema)
 
     def __reduce__(self):
         """Pickler"""
