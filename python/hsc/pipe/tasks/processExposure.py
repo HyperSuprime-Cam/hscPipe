@@ -10,6 +10,7 @@ import lsst.afw.cameraGeom as afwCg
 import hsc.pipe.base.butler as hscButler
 from lsst.pipe.base import Struct, ArgumentParser
 from lsst.pex.config import Config, Field, ConfigurableField, ListField
+from lsst.meas.algorithms import CurveOfGrowthMeasurementTask
 from hsc.pipe.tasks.processCcd import SubaruProcessCcdTask
 from hsc.pipe.tasks.photometricSolution import PhotometricSolutionTask
 from hsc.pipe.tasks.focusTask import ProcessFocusTask
@@ -24,11 +25,13 @@ class ProcessExposureConfig(Config):
     processCcd = ConfigurableField(target=SubaruProcessCcdTask, doc="CCD processing task")
     focus = ConfigurableField(target=ProcessFocusTask, doc="Focus processing task")
     photometricSolution = ConfigurableField(target=PhotometricSolutionTask, doc="Global photometric solution")
+    curveOfGrowth = ConfigurableField(target=CurveOfGrowthMeasurementTask, doc="Curve of growth measurement")
     instrument = Field(dtype=str, default="suprimecam", doc="Instrument name, for solvetansip")
     doSolveTansip = Field(dtype=bool, default=True, doc="Run solvetansip?")
     solveTansip = ConfigurableField(target=SolveTansipTask, doc="Global astrometric solution")
     doPhotometricSolution = Field(dtype=bool, default=False, doc="Run global photometric solution?")
     doFocus = Field(dtype=bool, default=True, doc="Run focus analysis?")
+    doCurveOfGrowth = Field(dtype=bool, default=True, doc="Run global curve of growth measurement?")
     ignoreCcdList = ListField(dtype=int, default=[], doc="List of CCDs to ignore when processing")
 
     def setDefaults(self):
@@ -38,6 +41,7 @@ class ProcessExposureConfig(Config):
         self.processCcd.doWriteSources = False
         self.processCcd.doWriteHeavyFootprintsInSources = False
         self.processCcd.doFinalWrite = False
+        self.processCcd.calibrate.doCurveOfGrowth = False # We're doing it globally
 
 
 class ProcessExposureTask(BatchPoolTask):
@@ -62,6 +66,8 @@ class ProcessExposureTask(BatchPoolTask):
         self.makeSubtask("focus")
         self.makeSubtask("photometricSolution", schema=self.processCcd.schema)
         self.makeSubtask("solveTansip")
+        if self.config.doCurveOfGrowth:
+            self.makeSubtask("curveOfGrowth", schema=self.processCcd.schema)
 
     @classmethod
     def batchWallTime(cls, time, parsedCmd, numNodes, numProcs):
@@ -105,14 +111,16 @@ class ProcessExposureTask(BatchPoolTask):
         wcsList = self.solveAstrometry(matchLists, expRef, butler)
         filterName = self.getFilterName(structList)
         fluxMag0 = self.solvePhotometry(matchLists.values(), filterName)
+        curveOfGrowth = self.solveCurveOfGrowth({s.ccdId: s.calibSources for s in structList if
+                                                 s is not None and s.calibSources is not None})
         focusMd = self.solveFocus(expRef, [s.focus for s in structList if
                                            s is not None and s.focus is not None])
         ccdIdList = dataIdList.keys()
 
         # Scatter with data from root: save CCDs with update astrometric/photometric solutions
         solutionList = [Struct(ccdId=ccdId, fluxMag0=fluxMag0, dataId=dataIdList[ccdId],
-                               wcs=wcsList[ccdId] if ccdId in wcsList else None)
-                        for ccdId in ccdIdList]
+                               wcs=wcsList[ccdId] if ccdId in wcsList else None,
+                               curveOfGrowth=curveOfGrowth.get(ccdId, None)) for ccdId in ccdIdList]
         pool.mapToPrevious(self.write, solutionList, focusMd)
 
     def process(self, cache, dataId):
@@ -127,6 +135,7 @@ class ProcessExposureTask(BatchPoolTask):
         dataRef = hscButler.getDataRef(cache.butler, dataId)
         ccdId = dataRef.get("ccdExposureId")
         with self.logOperation("processing %s (ccdId=%d)" % (dataId, ccdId)):
+            calibSources = None
             matches = None
             filterName = None
             focus = None
@@ -146,13 +155,15 @@ class ProcessExposureTask(BatchPoolTask):
             if result is not None:
                 # Cache the results (in particular, the image)
                 cache.result = result
+                calibSources = result.calib.sources
                 filterName = result.exposure.getFilter().getName()
 
                 # Reformat the matches for MPI transfer
                 if result.matches is not None and result.matchMeta is not None:
                     matches = afwTable.ReferenceMatchVector(result.matches)
 
-            return Struct(ccdId=ccdId, matches=matches, filterName=filterName, focus=focus)
+            return Struct(ccdId=ccdId, matches=matches, filterName=filterName, focus=focus,
+                          calibSources=calibSources)
 
     def getFilterName(self, structList):
         """Determine the filter name from the list of structs returned by process().
@@ -204,6 +215,26 @@ class ProcessExposureTask(BatchPoolTask):
             self.log.warn("Failed to determine global photometric zero-point: %s" % e)
         return None
 
+    def solveCurveOfGrowth(self, catalogDict):
+        """Determine a global curve of growth for the exposure.
+
+        Only the master executes this method.
+        """
+        if not self.config.doCurveOfGrowth:
+            return None
+
+        cog = self.curveOfGrowth.run(*catalogDict.values()).curveOfGrowth.result
+
+        # Identify which sources were used (so we don't have to transfer the entire catalog back
+        # to the slave nodes)
+        result = {}
+        candidatesKey = self.curveOfGrowth.curveOfGrowthCandidateKey
+        usedKey = self.curveOfGrowth.curveOfGrowthUsedKey
+        for ccdId, cat in catalogDict.iteritems():
+            result[ccdId] = Struct(curveOfGrowth=cog, candidates=cat[candidatesKey], used=cat[usedKey])
+
+        return result
+
     def solveFocus(self, dataRef, focusList):
         if not self.config.doFocus:
             return None
@@ -242,6 +273,25 @@ class ProcessExposureTask(BatchPoolTask):
             dataRef = hscButler.getDataRef(cache.butler, dataId)
             wcs = struct.wcs
             fluxMag0 = struct.fluxMag0
+
+            if self.config.doCurveOfGrowth and struct.curveOfGrowth is not None:
+                cogTask = self.processCcd.calibrate.measureCurveOfGrowth
+                for key, column in [
+                        (cogTask.curveOfGrowthCandidateKey, struct.curveOfGrowth.candidates),
+                        (cogTask.curveOfGrowthUsedKey, struct.curveOfGrowth.used)
+                        ]:
+                    # Need to set each row independently, since the numpy column view is read-only
+                    for s, value in zip(cache.result.calib.sources, column):
+                        s.set(key, bool(value))
+
+                cog = struct.curveOfGrowth.curveOfGrowth
+                # Fix up the calib sources so it looks like we updated them originally
+                cog.apply(self.config.processCcd.calibrate.measurement, catalog=cache.result.calib.sources,
+                          algorithms=self.config.processCcd.calibrate.measurement.slots.calibFlux)
+                # Fix up the final measurements so it looks like the update to the calib sources flowed down
+                cog.apply(self.config.processCcd.calibrate.measurement, catalog=cache.result.sources,
+                          calib=cache.result.exposure.getCalib(),
+                          apCorr=cache.result.exposure.getInfo().getApCorrMap(), log=self.log)
 
             self.processCcd.write(dataRef, cache.result, wcs=wcs, fluxMag0=fluxMag0, focusMd=focusMd)
             del cache.result
