@@ -1054,7 +1054,10 @@ class StackTask(BatchPoolTask):
 
         with self.logOperation("processing %s" % (patchRef.dataId,), catch=True):
             self.processCoadd.run(patchRef, coadd, cache.coaddType)
-        self.assembleCoadd.writeCoaddOutput(patchRef, coadd) # now that background subtraction has been done
+
+        # write background-subtracted image
+        patchRef.put(coadd, self.config.coaddName + "Coadd_calexp")
+        #self.assembleCoadd.writeCoaddOutput(patchRef, coadd) # now that background subtraction has been done
 
 
     def selectExposures(self, patchRef, selectDataList):
