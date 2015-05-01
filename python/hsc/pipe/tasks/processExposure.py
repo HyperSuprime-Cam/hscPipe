@@ -67,7 +67,7 @@ class ProcessExposureTask(BatchPoolTask):
         self.makeSubtask("photometricSolution", schema=self.processCcd.schema)
         self.makeSubtask("solveTansip")
         if self.config.doCurveOfGrowth:
-            self.makeSubtask("curveOfGrowth", schema=self.processCcd.schema)
+            self.makeSubtask("curveOfGrowth", schema=self.processCcd.calibrate.schema)
 
     @classmethod
     def batchWallTime(cls, time, parsedCmd, numNodes, numProcs):
@@ -275,7 +275,7 @@ class ProcessExposureTask(BatchPoolTask):
             fluxMag0 = struct.fluxMag0
 
             if self.config.doCurveOfGrowth and struct.curveOfGrowth is not None:
-                cogTask = self.processCcd.calibrate.measureCurveOfGrowth
+                cogTask = self.curveOfGrowth
                 for key, column in [
                         (cogTask.curveOfGrowthCandidateKey, struct.curveOfGrowth.candidates),
                         (cogTask.curveOfGrowthUsedKey, struct.curveOfGrowth.used)
