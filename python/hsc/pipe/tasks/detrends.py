@@ -451,7 +451,11 @@ class DetrendTask(BatchPoolTask):
         self.log.info("Processing %s on %s" % (ccdId, NODE))
         sensorRef = hscButler.getDataRef(cache.butler, ccdId)
         if self.config.clobber or not sensorRef.datasetExists(outputName):
-            exposure = self.processSingle(sensorRef)
+            try:
+                exposure = self.processSingle(sensorRef)
+            except Exception as e:
+                self.log.warn("Unable to process %s: %s" % (ccdId, e))
+                return None
             self.processWrite(sensorRef, exposure)
         else:
             exposure = sensorRef.get(outputName, immediate=True)
@@ -852,10 +856,10 @@ class FlatTask(DetrendTask):
         """
         # Format background measurements into a matrix
         indices = dict((name, i) for i, name in enumerate(ccdIdLists.keys()))
-        bgMatrix = numpy.array([[0] * len(expList) for expList in ccdIdLists.values()])
+        bgMatrix = numpy.array([[0.0] * len(expList) for expList in ccdIdLists.values()])
         for name in ccdIdLists.keys():
             i = indices[name]
-            bgMatrix[i] = data[name]
+            bgMatrix[i] = [d if d is not None else numpy.nan for d in data[name]]
 
         numpyPrint = numpy.get_printoptions()
         numpy.set_printoptions(threshold='nan')
