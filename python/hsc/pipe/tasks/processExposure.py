@@ -287,10 +287,11 @@ class ProcessExposureTask(BatchPoolTask):
                 cog = struct.curveOfGrowth.curveOfGrowth
                 # Fix up the calib sources so it looks like we updated them originally
                 cog.apply(self.config.processCcd.calibrate.measurement, catalog=cache.result.calib.sources,
+                          matches=cache.result.calib.matches,
                           algorithms=self.config.processCcd.calibrate.measurement.slots.calibFlux)
                 # Fix up the final measurements so it looks like the update to the calib sources flowed down
                 cog.apply(self.config.processCcd.calibrate.measurement, catalog=cache.result.sources,
-                          calib=cache.result.exposure.getCalib(),
+                          matches=cache.result.matches, calib=cache.result.exposure.getCalib(),
                           apCorr=cache.result.exposure.getInfo().getApCorrMap(), log=self.log)
 
             self.processCcd.write(dataRef, cache.result, wcs=wcs, fluxMag0=fluxMag0, focusMd=focusMd)
