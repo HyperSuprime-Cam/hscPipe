@@ -221,7 +221,7 @@ class ProcessExposureTask(BatchPoolTask):
         Only the master executes this method.
         """
         if not self.config.doCurveOfGrowth:
-            return None
+            return {ccdId: None for ccdId in catalogDict}
 
         cog = self.curveOfGrowth.run(*catalogDict.values()).curveOfGrowth.result
 
