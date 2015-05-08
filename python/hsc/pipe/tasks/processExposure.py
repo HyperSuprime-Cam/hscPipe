@@ -31,7 +31,7 @@ class ProcessExposureConfig(Config):
     solveTansip = ConfigurableField(target=SolveTansipTask, doc="Global astrometric solution")
     doPhotometricSolution = Field(dtype=bool, default=False, doc="Run global photometric solution?")
     doFocus = Field(dtype=bool, default=True, doc="Run focus analysis?")
-    doCurveOfGrowth = Field(dtype=bool, default=True, doc="Run global curve of growth measurement?")
+    doCurveOfGrowth = Field(dtype=bool, default=False, doc="Run global curve of growth measurement?")
     ignoreCcdList = ListField(dtype=int, default=[], doc="List of CCDs to ignore when processing")
 
     def setDefaults(self):
