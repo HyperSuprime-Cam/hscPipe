@@ -8,7 +8,8 @@ class PhotometricSolutionConfig(PhotoCalTask.ConfigClass):
     photocal = ConfigurableField(target=PhotoCalTask, doc="Photometric calibration")
 
     def setDefaults(self):
-        self.outputField = "classification.exposure.photometric"
+        self.candidateSourceField = "calib.exposure.photocal.candidate"
+        self.usedSourceField = "calib.exposure.photocal.used"
 
 class PhotometricSolutionTask(PhotoCalTask):
     ConfigClass = PhotometricSolutionConfig
