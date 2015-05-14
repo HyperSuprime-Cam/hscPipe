@@ -244,7 +244,12 @@ class ProcessExposureTask(BatchPoolTask):
 
         camera = dataRef.get("camera")
         plotName = dataRef.get("focusPlot_filename")
-        focus = self.focus.measureFocus(focusList, camera, plotName)
+        try:
+            focus = self.focus.measureFocus(focusList, camera, plotName)
+        except Exception as e:
+            self.log.warn("Failed to solve focus: %s" % e)
+            return None
+
         self.log.info("Focus solution: %s" % (focus,))
 
         metadata = dafBase.PropertyList()
