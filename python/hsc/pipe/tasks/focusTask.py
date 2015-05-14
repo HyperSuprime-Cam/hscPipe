@@ -36,7 +36,10 @@ class ProcessFocusConfig(Config):
         """
         super(ProcessFocusConfig, self).setDefaults()
         zemaxBase = os.path.join(os.environ["OBS_SUBARU_DIR"], "hsc", "zemax_config%d_0.0.dat")
-        self.zemax = dict([(f, zemaxBase % n) for f,n in [('g', 9), ('r', 1), ('i', 3), ('z', 5), ('y', 7)]])
+        self.zemax = dict([(f, zemaxBase % n) for f,n in [
+                    ('g', 9), ('r', 1), ('i', 3), ('z', 5), ('y', 7),
+                    ('N921', 5), ('N816', 3), ('N1010', 7), ('N387', 9), ('N515', 9),
+                    ]])
         self.load(os.path.join(os.environ["OBS_SUBARU_DIR"], "config", "hsc", "isr.py"))
         self.initialPsf.fwhm = 1.5 # arcsec
         self.initialPsf.size = 21 # pixels
