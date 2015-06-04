@@ -71,6 +71,11 @@ class MultiBandConfig(Config):
     mergeCoaddMeasurements = ConfigurableField(target=MergeMeasurementsTask, doc="Merge measurements")
     forcedPhotCoadd = ConfigurableField(target=ForcedPhotCoaddTask,
                                         doc="Forced measurement on coadded images")
+    clobberDetections = Field(dtype=bool, default=False, doc="Clobber existing detections?")
+    clobberMergedDetections = Field(dtype=bool, default=False, doc="Clobber existing merged detections?")
+    clobberMeasurements = Field(dtype=bool, default=False, doc="Clobber existing measurements?")
+    clobberMergedMeasurements = Field(dtype=bool, default=False, doc="Clobber existing merged measurements?")
+    clobberForcedPhotometry = Field(dtype=bool, default=False, doc="Clobber existing forced photometry?")
 
     def setDefaults(self):
         Config.setDefaults(self)
@@ -171,7 +176,8 @@ class MultiBandTask(BatchPoolTask):
         """
         with self.logOperation("detection on %s" % (dataId,)):
             dataRef = getDataRef(cache.butler, dataId, self.config.coaddName + "Coadd")
-            if dataRef.datasetExists(self.config.coaddName + "Coadd_det"):
+            if (not self.config.clobberDetections and
+                dataRef.datasetExists(self.config.coaddName + "Coadd_det")):
                 return
             self.detectCoaddSources.run(dataRef)
 
@@ -186,7 +192,8 @@ class MultiBandTask(BatchPoolTask):
         with self.logOperation("merge detections from %s" % (dataIdList,)):
             dataRefList = [getDataRef(cache.butler, dataId, self.config.coaddName + "Coadd") for
                            dataId in dataIdList]
-            if dataRefList[0].datasetExists(self.config.coaddName + "Coadd_mergeDet"):
+            if (not self.config.clobberMergedDetections and
+                dataRefList[0].datasetExists(self.config.coaddName + "Coadd_mergeDet")):
                 return
             self.mergeCoaddDetections.run(dataRefList)
 
@@ -200,7 +207,8 @@ class MultiBandTask(BatchPoolTask):
         """
         with self.logOperation("measurement on %s" % (dataId,)):
             dataRef = getDataRef(cache.butler, dataId, self.config.coaddName + "Coadd")
-            if dataRef.datasetExists(self.config.coaddName + "Coadd_meas"):
+            if (not self.config.clobberMeasurements and
+                dataRef.datasetExists(self.config.coaddName + "Coadd_meas")):
                 return
             self.measureCoaddSources.run(dataRef)
 
@@ -215,7 +223,8 @@ class MultiBandTask(BatchPoolTask):
         with self.logOperation("merge measurements from %s" % (dataIdList,)):
             dataRefList = [getDataRef(cache.butler, dataId, self.config.coaddName + "Coadd") for
                            dataId in dataIdList]
-            if dataRefList[0].datasetExists(self.config.coaddName + "Coadd_ref"):
+            if (not self.config.clobberMergedMeasurements and
+                dataRefList[0].datasetExists(self.config.coaddName + "Coadd_ref")):
                 return
             self.mergeCoaddMeasurements.run(dataRefList)
 
@@ -229,7 +238,8 @@ class MultiBandTask(BatchPoolTask):
         """
         with self.logOperation("forced photometry on %s" % (dataId,)):
             dataRef = getDataRef(cache.butler, dataId, self.config.coaddName + "Coadd")
-            if dataRef.datasetExists(self.config.coaddName + "Coadd_forced_src"):
+            if (not self.config.clobberForcedPhotometry and
+                dataRef.datasetExists(self.config.coaddName + "Coadd_forced_src")):
                 return
             self.forcedPhotCoadd.run(dataRef)
 
