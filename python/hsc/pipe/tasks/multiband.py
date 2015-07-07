@@ -196,35 +196,38 @@ class MultiBandTask(BatchPoolTask):
         try:
             reprocessed = pool.map(self.runMeasureMerged, dataIdList)
         finally:
-            patchReprocessing = {}
-            for dataId, reprocess in zip(dataIdList, reprocessed):
-                patchId = dataId["patch"]
-                patchReprocessing[patchId] = patchReprocessing.get(patchId, False) or reprocess
-            # Persist the determination, to make error recover easier
-            reprocessDataset = self.config.coaddName + "Coadd_multibandReprocessing"
+            if self.config.reprocessing:
+                patchReprocessing = {}
+                for dataId, reprocess in zip(dataIdList, reprocessed):
+                    patchId = dataId["patch"]
+                    patchReprocessing[patchId] = patchReprocessing.get(patchId, False) or reprocess
+                # Persist the determination, to make error recover easier
+                reprocessDataset = self.config.coaddName + "Coadd_multibandReprocessing"
+                for patchId in patchReprocessing:
+                    if not patchReprocessing[patchId]:
+                        continue
+                    dataId = dict(tract=tract, patch=patchId)
+                    if patchReprocessing[patchId]:
+                        filename = butler.get(reprocessDataset + "_filename", dataId)[0]
+                        open(filename, 'a').close() # Touch file
+                    elif butler.datasetExists(reprocessDataset, dataId):
+                        # We must have failed at some point while reprocessing and we're starting over
+                        patchReprocessing[patchId] = True
+
+        # Only process patches that have been identified as needing it
+        pool.map(self.runMergeMeasurements, [idList for patchId, idList in patches.iteritems() if
+                                             not self.config.reprocessing or patchReprocessing[patchId]])
+        pool.map(self.runForcedPhot, [dataId for dataId in dataIdList if not self.config.reprocessing or
+                                      patchReprocessing[dataId["patch"]]])
+
+        # Remove persisted reprocessing determination
+        if self.config.reprocessing:
             for patchId in patchReprocessing:
                 if not patchReprocessing[patchId]:
                     continue
                 dataId = dict(tract=tract, patch=patchId)
-                if patchReprocessing[patchId]:
-                    filename = butler.get(reprocessDataset + "_filename", dataId)[0]
-                    open(filename, 'a').close() # Touch file
-                elif butler.datasetExists(reprocessDataset, dataId):
-                    # We must have failed at some point while reprocessing and we're starting over
-                    patchReprocessing[patchId] = True
-
-        # Only process patches that have been identified as needing it
-        pool.map(self.runMergeMeasurements, [dataIdList for patchId, dataIdList in patches.iteritems() if
-                                             patchReprocessing[patchId]])
-        pool.map(self.runForcedPhot, [dataId for dataId in dataIdList if patchReprocessing[dataId["patch"]]])
-
-        # Remove persisted reprocessing determination
-        for patchId in patchReprocessing:
-            if not patchReprocessing[patchId]:
-                continue
-            dataId = dict(tract=tract, patch=patchId)
-            filename = butler.get(reprocessDataset + "_filename", dataId)[0]
-            os.unlink(filename)
+                filename = butler.get(reprocessDataset + "_filename", dataId)[0]
+                os.unlink(filename)
 
     def runDetect(self, cache, dataId):
         """Run detection on a patch for a single filter
