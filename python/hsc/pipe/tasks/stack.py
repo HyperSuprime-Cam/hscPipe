@@ -1045,6 +1045,10 @@ class StackTask(BatchPoolTask):
                 coaddResults = self.assembleCoadd.run(patchRef, selectDataList)
                 if coaddResults is not None:
                     coadd = coaddResults.coaddExposure
+                    ##
+                    ## for fast processing for DR S15A
+                    ##
+                    self.assembleCoadd.writeCoaddOutput(patchRef, coadd) # now that background subtraction has been done
             elif patchRef.datasetExists(cache.coaddType):
                 self.log.info("%s: Reading coadd %s" % (NODE, patchRef.dataId))
                 coadd = patchRef.get(cache.coaddType, immediate=True)
@@ -1052,9 +1056,13 @@ class StackTask(BatchPoolTask):
         if coadd is None:
             return
 
-        with self.logOperation("processing %s" % (patchRef.dataId,), catch=True):
-            self.processCoadd.run(patchRef, coadd, cache.coaddType)
-        self.assembleCoadd.writeCoaddOutput(patchRef, coadd) # now that background subtraction has been done
+        ##
+        ## for fast processing for DR S15A
+        ##
+        if False:
+            with self.logOperation("processing %s" % (patchRef.dataId,), catch=True):
+                self.processCoadd.run(patchRef, coadd, cache.coaddType)
+                self.assembleCoadd.writeCoaddOutput(patchRef, coadd) # now that background subtraction has been done
 
 
     def selectExposures(self, patchRef, selectDataList):
