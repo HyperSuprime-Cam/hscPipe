@@ -51,7 +51,8 @@ class NullSelectImagesTask(BaseSelectImagesTask):
 
 class SimpleAssembleCoaddConfig(AssembleCoaddConfig):
     matchBackgrounds = ConfigurableField(target=MatchBackgroundsTask, doc="Background matching")
-    removeMaskPlanes = ListField(dtype=str, default=["CROSSTALK"], doc="Mask planes to remove before coadding")
+    removeMaskPlanes = ListField(dtype=str, default=["CROSSTALK", "NOT_DEBLENDED"],
+                                 doc="Mask planes to remove before coadding")
 
     def setDefaults(self):
         AssembleCoaddConfig.setDefaults(self)
@@ -358,7 +359,12 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
 
             if self.config.removeMaskPlanes:
                 mask = maskedImage.getMask()
-                mask &= ~mask.getPlaneBitMask(self.config.removeMaskPlanes)
+                for maskPlane in self.config.removeMaskPlanes:
+                    try:
+                        mask &= ~mask.getPlaneBitMask(maskPlane)
+                    except Exception as e:
+                        self.log.warn("Unable to remove mask plane %s: %s" % (maskPlane, e))
+
 
             maskedImageList.append(maskedImage)
 
