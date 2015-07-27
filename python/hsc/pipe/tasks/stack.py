@@ -358,7 +358,12 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
 
             if self.config.removeMaskPlanes:
                 mask = maskedImage.getMask()
-                mask &= ~mask.getPlaneBitMask(self.config.removeMaskPlanes)
+                for maskPlane in self.config.removeMaskPlanes:
+                    try:
+                        mask &= ~mask.getPlaneBitMask(maskPlane)
+                    except Exception as e:
+                        self.log.warn("Unable to remove mask plane %s: %s" % (maskPlane, e))
+
 
             maskedImageList.append(maskedImage)
 
