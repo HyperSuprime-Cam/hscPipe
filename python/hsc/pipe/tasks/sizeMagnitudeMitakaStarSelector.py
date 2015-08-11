@@ -109,6 +109,16 @@ class SizeMagnitudeMitakaStarSelectorConfig(pexConfig.Config):
         ###default = 2.5, # a bit broad
         default = 3., # broad
         )
+    nSampleToSwitchSortOrder = pexConfig.Field(
+        dtype = int,
+        doc = 'Smallest number of objects to switch sorting order from size first to mag first. If (num of fwhmrough sources after automated maglim cut) > (this number), which implies relatively good condition, we will select the n-brightest sources first and then n-smallest sources. If not, the n-smallest sources first followed by n-brightest sources',
+        default = 10000,
+        )
+    exptimeToSwitchSortOrder = pexConfig.Field(
+        dtype = float,
+        doc = 'Smallest exptime to switch sorting order from size first to mag first. If exptime > this number, which implies we would have more CRs than usual, we will select the n-brightest sources first and then n-smallest sources.',
+        default = 600.0,
+        )
     psfSeqStatNsigma = pexConfig.Field(
         dtype = float,
         doc = 'How many sigmas around the peak fwhm are used for calculating statistics of PSF sequence',
@@ -665,6 +675,7 @@ class SizeMagnitudeMitakaStarSelector(object):
 
     def getFwhmRough(self, dataRef, data, magLimSeq, exposure):
 #    def getFwhmRough(self, magListAll, fwhmListAll, indicesSourcesFwhmRange, magLim):
+        import pudb;pudb.set_trace()
 
         """Estimating roughly-estimated FWHM for sources with mag < magLim"""
         # saturated sources are already filtered in data.indicesSourcesFwhmRange
@@ -694,7 +705,12 @@ class SizeMagnitudeMitakaStarSelector(object):
 
         # extracting the given number of most compact sources
 
-        if True:
+        ## experimental, but we may have to switch a way of sorting based on band or exptime
+        filterName = dataRef.dataId['filter'] # 'NB0816'
+        expTime = dataRef.dataId['expTime'] # 900.0
+        nCandSources = len(fwhmListForRoughFwhm)
+
+        if expTime < self.config.exptimeToSwitchSortOrder and nCandSources < self.config.nSampleToSwitchSortOrder:
             # (1) first pick n compact sources, then pick n bright sources of them
             #  -- better in poor condition, where PSF objects getting fainter than extended objects
             if self.config.doUndistort:
@@ -704,7 +720,7 @@ class SizeMagnitudeMitakaStarSelector(object):
             magListForRoughFwhmSmall = magListForRoughFwhm[indicesSourcesSmall]
             indicesSourcesBrightOfSmall = numpy.argsort(magListForRoughFwhmSmall)[:self.config.nBrightSampleRoughFwhm]
             indicesSourcesPsfLike = indicesSourcesSmall[indicesSourcesBrightOfSmall]
-        elif False:
+        else:
             # (2) first pick n brightest sources, then pick n compact sources of them
             #  -- better in good condition, where PSF objects reliably brighter than extended objects
             indicesSourcesBright = numpy.argsort(magListForRoughFwhm)[:self.config.nBrightSampleRoughFwhm]
@@ -715,7 +731,7 @@ class SizeMagnitudeMitakaStarSelector(object):
                 fwhmListForRoughFwhmBright = fwhmListForRoughFwhm[indicesSourcesBright]
                 indicesSourcesSmallOfBright = numpy.argsort(fwhmListForRoughFwhmBright)[:self.config.nSmallSampleRoughFwhm]
             indicesSourcesPsfLike = indicesSourcesBright[indicesSourcesSmallOfBright]
-        else: # old; not optimized for edge CCDs where psf elongated and so psf sequence is broad in fwhm axis
+        if False: # old; not optimized for edge CCDs where psf elongated and so psf sequence is broad in fwhm axis
             if self.config.doUndistort:
                 indicesSourcesPsfLike = numpy.argsort(fwhmUndistListForRoughFwhm)[:self.config.nSmallSampleRoughFwhm]
             else:
