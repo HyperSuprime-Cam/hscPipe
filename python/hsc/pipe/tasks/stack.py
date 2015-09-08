@@ -393,130 +393,6 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
                                ContainerClass=SelectDataIdContainer)
         return parser
 
-class ProcessCoaddConfig(Config):
-    coaddName = Field(dtype=str, default="deep", doc="Name of coadd")
-    detectCoaddSources = ConfigurableField(target=DetectCoaddSourcesTask, doc="Detect sources on coadd")
-    deblend = ConfigurableField(target=SourceDeblendTask, doc="Split detections into their components")
-    measurement = ConfigurableField(target=SourceMeasurementTask, doc="Measure deblended detections")
-    astrometry = ConfigurableField(target=AstrometryTask, doc = "Astrometric matching")
-    setPrimaryFlags = ConfigurableField(target=SetPrimaryFlagsTask, doc="Set flags for primary in tract/patch")
-    propagateFlags = ConfigurableField(target=PropagateVisitFlagsTask, doc="Propagate flags to coadd")
-
-    def setDefaults(self):
-        Config.setDefaults(self)
-        self.measurement.doReplaceWithNoise = True
-        self.deblend.maxNumberOfPeaks = 20
-        self.astrometry.forceKnownWcs = True
-        self.astrometry.solver.calculateSip = False
-
-class ProcessCoaddTask(Task):
-    """Process a coadd through detection, deblend and measurement
-
-    This differs from the lsst.pipe.tasks.ProcessCoadd because it uses
-    the DetectCoaddSourcesTask and writes the detections separately so
-    they can be used for the rest of the multiband processing scheme).
-    """
-
-    ConfigClass = ProcessCoaddConfig
-
-    def __init__(self, *args, **kwargs):
-        Task.__init__(self, *args, **kwargs)
-        self.makeSubtask("detectCoaddSources")
-
-        # Because the detectCoaddSources results are saved separately (so we can use for the multiband
-        # processing scheme), we need a separate schema for measurement
-        schema = self.detectCoaddSources.schema
-        self.schemaMapper = afwTable.SchemaMapper(schema)
-        self.schemaMapper.addMinimalSchema(schema)
-        self.schema = self.schemaMapper.getOutputSchema()
-
-        self.makeSubtask("deblend", schema=self.schema)
-        self.makeSubtask("measurement", schema=self.schema)
-        self.makeSubtask("setPrimaryFlags", schema=self.schema)
-        self.makeSubtask("propagateFlags", schema=self.schema)
-        self.makeSubtask("astrometry", schema=self.schema)
-
-    def makeIdFactory(self, dataRef):
-        """Return an IdFactory for setting the detection identifiers
-
-        The actual parameters used in the IdFactory are provided by
-        the butler (through the provided data reference).
-        """
-        expBits = dataRef.get(self.config.coaddName + "Coadd_src" + "_bits")
-        expId = long(dataRef.get(self.config.coaddName + "Coadd_src"))
-        return afwTable.IdFactory.makeSource(expId, 64 - expBits)
-
-    def run(self, patchRef, exposure, coaddType="deepCoadd"):
-        """!Run detection, deblending, measurement and matching to the reference catalog
-
-        @param patchRef: Data reference for patch
-        @param exposure: Coadd exposure to measure
-        @param coaddType: Name of coadd for butler
-        @return Struct(detection: results from DetectCoaddSourcesTask,
-                       sources: SourceCatalog from measurement,
-                       matches: results from source matching
-                       )
-        """
-        idFactory = self.detectCoaddSources.makeIdFactory(patchRef)
-        detResults = self.detectCoaddSources.runDetection(exposure, idFactory.clone()) # incl. background sub
-        self.detectCoaddSources.write(detResults, patchRef)
-        srcName = coaddType + "_src"
-        matchName = coaddType + "_srcMatch"
-        sources = self.measureSources(exposure, detResults.sources, idFactory.clone())
-        skyInfo = getSkyInfo(self.config.coaddName, patchRef)
-        self.setPrimaryFlags.run(sources, skyInfo.skyMap, skyInfo.tractInfo, skyInfo.patchInfo,
-                                 includeDeblend=True)
-        self.propagateFlags.run(patchRef.getButler(), sources,
-                                self.propagateFlags.getCcdInputs(exposure), exposure.getWcs())
-        patchRef.put(sources, srcName)
-        try:
-            matches = self.matchSources(exposure, sources)
-            patchRef.put(matches.normalized, matchName)
-            patchRef.put(matches.full, matchName + "Full")
-        except Exception as e:
-            self.log.warn("Unable to match to reference catalog: %s" % e)
-            matches = None
-        return Struct(detection=detResults, sources=sources, matches=matches)
-
-    def measureSources(self, exposure, detections, idFactory):
-        """!Measure sources on exposure
-
-        We produce a new SourceCatalog with the measurements, because
-        the detections catalog doesn't have the correct schema.
-
-        @param exposure: Coadd exposure to measure
-        @param detections: SourceCatalog of detections
-        @param idFactory: IdFactory for measurement catalog
-        @return SourceCatalog of measurements
-        """
-        # Convert detections catalog to new schema for measurement
-        table = afwTable.SourceTable.make(self.schema, idFactory)
-        sources = afwTable.SourceCatalog(table)
-        sources.extend(detections, self.schemaMapper)
-        self.deblend.run(exposure, sources, exposure.getPsf())
-        self.measurement.run(exposure, sources)
-        return sources
-
-    def matchSources(self, exposure, sources):
-        """!Match the sources to the astrometric reference catalog
-
-        Both normalised and denormalised catalogs are returned.
-
-        @param exposure: Coadd exposure for matching
-        @param detections: Detections to match
-        @return Struct(matches: matched sources;
-                       matchMetadata: metadata from matching;
-                       normalized: normalized match catalog;
-                       full: full (denormalized) match catalog
-                       )
-        """
-        self.log.info("Matching src to reference catalogue")
-        result = self.astrometry.astrometer.useKnownWcs(sources, exposure=exposure)
-        result.normalized = afwTable.packMatches(result.matches)
-        result.normalized.table.setMetadata(result.matchMetadata)
-        result.full = matchesToCatalog(result.matches, result.matchMetadata)
-        return result
-
 
 def countMaskFromFootprint(mask,footprint, bitmask, ignoreMask):
     """Function to count the number of pixels with a specific mask in a footprint
@@ -813,9 +689,8 @@ class StackConfig(Config):
     doBackgroundReference = Field(dtype=bool, default=True, doc="Build background reference?")
     backgroundReference = ConfigurableField(target=BackgroundReferenceTask, doc="Build background reference")
     assembleCoadd = ConfigurableField(target=SafeClipAssembleCoaddTask, doc="Assemble warps into coadd")
-    processCoadd = ConfigurableField(target=ProcessCoaddTask, doc="Detection and measurement")
+    detectCoaddSources = ConfigurableField(target=DetectCoaddSourcesTask, doc="Detect sources on coadd")
     doOverwriteCoadd = Field(dtype=bool, default=False, doc="Overwrite coadd?")
-    doOverwriteOutput = Field(dtype=bool, default=False, doc="Overwrite processing outputs?")
 
     def setDefaults(self):
         self.select.retarget(WcsSelectImagesTask)
@@ -833,8 +708,6 @@ class StackConfig(Config):
             raise RuntimeError("assembleCoadd.coaddName and coaddName don't match")
         if self.backgroundReference.coaddName != self.coaddName:
             raise RuntimeError("backgroundReference.coaddName and coaddName don't match")
-        if self.processCoadd.coaddName != self.coaddName:
-            raise RuntimeError("processCoadd.coaddName and coaddName don't match")
 
 class TractDataIdContainer(CoaddDataIdContainer):
     def makeDataRefList(self, namespace):
@@ -898,7 +771,7 @@ class StackTask(BatchPoolTask):
         self.makeSubtask("makeCoaddTempExp")
         self.makeSubtask("backgroundReference")
         self.makeSubtask("assembleCoadd")
-        self.makeSubtask("processCoadd")
+        self.makeSubtask("detectCoaddSources")
 
     @classmethod
     def _makeArgumentParser(cls, doBatch=False, **kwargs):
@@ -1065,8 +938,12 @@ class StackTask(BatchPoolTask):
         if coadd is None:
             return
 
-        with self.logOperation("processing %s" % (patchRef.dataId,), catch=True):
-            self.processCoadd.run(patchRef, coadd, cache.coaddType)
+        with self.logOperation("detection on %s" % (patchRef.dataId,), catch=True):
+            idFactory = self.detectCoaddSources.makeIdFactory(patchRef)
+            # This includes background subtraction, so do it before writing the coadd
+            detResults = self.detectCoaddSources.runDetection(coadd, idFactory)
+            self.detectCoaddSources.write(detResults, patchRef)
+
         self.assembleCoadd.writeCoaddOutput(patchRef, coadd) # now that background subtraction has been done
 
 
