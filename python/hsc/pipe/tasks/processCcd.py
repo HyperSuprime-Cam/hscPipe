@@ -22,9 +22,9 @@ class SubaruProcessCcdConfig(ProcessCcdTask.ConfigClass):
     )
     qa = pexConfig.ConfigurableField(target = QaTask, doc = "QA analysis")
 
-
-def applyOverrides(root):
-    root.doWriteCalibrate = False # We will write it after getting QA metadata
+    def setDefaults(self):
+        ProcessCcdTask.ConfigClass.setDefaults(self)
+        self.doWriteCalibrate = False # We will write it after getting QA metadata
 
 
 def packMatches(matches, matchMeta):
@@ -38,7 +38,6 @@ class SubaruProcessCcdTask(ProcessCcdTask):
     matches, and --rerun support.
     """
     ConfigClass = SubaruProcessCcdConfig
-    overrides = (applyOverrides,)
 
     def __init__(self, *args, **kwargs):
         super(SubaruProcessCcdTask, self).__init__(*args, **kwargs)
