@@ -944,7 +944,7 @@ class StackTask(BatchPoolTask):
             detResults = self.detectCoaddSources.runDetection(coadd, idFactory)
             self.detectCoaddSources.write(detResults, patchRef)
 
-        self.assembleCoadd.writeCoaddOutput(patchRef, coadd) # now that background subtraction has been done
+        self.assembleCoadd.writeCoaddOutput(patchRef, coadd, "calexp")
 
 
     def selectExposures(self, patchRef, selectDataList):
