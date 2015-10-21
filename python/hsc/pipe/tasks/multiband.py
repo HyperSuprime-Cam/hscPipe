@@ -22,7 +22,7 @@ class MultiBandDataIdContainer(CoaddDataIdContainer):
         tract: there is no data product solely at the tract level.  Instead, we
         generate a list of data references for patches within the tract.
         """
-        datasetType = namespace.config.coaddName + "Coadd"
+        datasetType = namespace.config.coaddName + "Coadd_calexp"
         getPatchRefList = lambda tract: [namespace.butler.dataRef(datasetType=datasetType,
                                                                   tract=tract.getId(),
                                                                   filter=dataId["filter"],
@@ -144,7 +144,7 @@ class MultiBandTask(BatchPoolTask):
     def _makeArgumentParser(cls, *args, **kwargs):
         kwargs.pop("doBatch", False)
         parser = ArgumentParser(name="multiband", *args, **kwargs)
-        parser.add_id_argument("--id", "deepCoadd", help="data ID, e.g. --id tract=12345 patch=1,2",
+        parser.add_id_argument("--id", "deepCoadd_calexp", help="data ID, e.g. --id tract=12345 patch=1,2",
                                ContainerClass=TractDataIdContainer)
         return parser
 
@@ -179,7 +179,7 @@ class MultiBandTask(BatchPoolTask):
         pool.storeSet(butler=butler)
 
         patchRefList = [patchRef for patchRef in patchRefList if
-                           patchRef.datasetExists(self.config.coaddName + "Coadd")]
+                        patchRef.datasetExists(self.config.coaddName + "Coadd_calexp")]
         dataIdList = [patchRef.dataId for patchRef in patchRefList]
 
         # Group by patch
@@ -265,7 +265,7 @@ class MultiBandTask(BatchPoolTask):
         dataIdList: List of data identifiers for the patch in different filters
         """
         with self.logOperation("merge detections from %s" % (dataIdList,)):
-            dataRefList = [getDataRef(cache.butler, dataId, self.config.coaddName + "Coadd") for
+            dataRefList = [getDataRef(cache.butler, dataId, self.config.coaddName + "Coadd_calexp") for
                            dataId in dataIdList]
             if (not self.config.clobberMergedDetections and
                 dataRefList[0].datasetExists(self.config.coaddName + "Coadd_mergeDet")):
@@ -283,7 +283,7 @@ class MultiBandTask(BatchPoolTask):
         Returns whether the patch requires reprocessing.
         """
         with self.logOperation("measurement on %s" % (dataId,)):
-            dataRef = getDataRef(cache.butler, dataId, self.config.coaddName + "Coadd")
+            dataRef = getDataRef(cache.butler, dataId, self.config.coaddName + "Coadd_calexp")
             reprocessing = False # Does this patch require reprocessing?
             if (not self.config.clobberMeasurements and
                 dataRef.datasetExists(self.config.coaddName + "Coadd_meas")):
@@ -318,7 +318,7 @@ class MultiBandTask(BatchPoolTask):
         dataIdList: List of data identifiers for the patch in different filters
         """
         with self.logOperation("merge measurements from %s" % (dataIdList,)):
-            dataRefList = [getDataRef(cache.butler, dataId, self.config.coaddName + "Coadd") for
+            dataRefList = [getDataRef(cache.butler, dataId, self.config.coaddName + "Coadd_calexp") for
                            dataId in dataIdList]
             if (not self.config.clobberMergedMeasurements and
                 not self.config.reprocessing and
@@ -335,7 +335,7 @@ class MultiBandTask(BatchPoolTask):
         dataId: Data identifier for patch
         """
         with self.logOperation("forced photometry on %s" % (dataId,)):
-            dataRef = getDataRef(cache.butler, dataId, self.config.coaddName + "Coadd")
+            dataRef = getDataRef(cache.butler, dataId, self.config.coaddName + "Coadd_calexp")
             if (not self.config.clobberForcedPhotometry and
                 not self.config.reprocessing and
                 dataRef.datasetExists(self.config.coaddName + "Coadd_forced_src")):
