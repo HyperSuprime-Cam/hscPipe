@@ -439,7 +439,7 @@ class SafeClipAssembleCoaddConfig(SimpleAssembleCoaddConfig):
     )
 
     def setDefaults(self):
-        Config.setDefaults(self)
+        SimpleAssembleCoaddConfig.setDefaults(self)
         self.clipDetection.reEstimateBackground = False
         self.clipDetection.returnOriginalFootprints = False
         self.clipDetection.thresholdPolarity = "both"
