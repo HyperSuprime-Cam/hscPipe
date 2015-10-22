@@ -11,8 +11,34 @@ from hsc.pipe.tasks.stack import TractDataIdContainer
 from hsc.pipe.base.parallel import BatchPoolTask
 from hsc.pipe.base.pool import Pool, abortOnError
 from hsc.pipe.base.butler import getDataRef
+from hsc.pipe.base.matches import matchesToCatalog
 
 import lsst.afw.table as afwTable
+
+
+class HscMeasureMergedCoaddSourcesTask(MeasureMergedCoaddSourcesTask):
+    """HSC-specific measurement task that also writes denormalised matches
+
+    The denormalised match catalog aids HSC database ingestion.
+    """
+
+    def writeMatches(self, dataRef, exposure, sources):
+        """Write matches of the sources to the astrometric reference catalog
+
+        We use the Wcs in the exposure to match sources.
+
+        We also write a denormalised match catalog.
+
+        dataRef: data reference
+        exposure: exposure with Wcs
+        sources: source catalog
+        """
+        result = MeasureMergedCoaddSourcesTask.writeMatches(self, dataRef, exposure, sources)
+        if result.matches:
+            dataRef.put(matchesToCatalog(result.matches, result.matchMetadata),
+                        self.config.coaddName + "Coadd_measMatchFull")
+        return result
+
 
 class MultiBandDataIdContainer(CoaddDataIdContainer):
     def makeDataRefList(self, namespace):
@@ -67,7 +93,7 @@ class MultiBandConfig(Config):
     coaddName = Field(dtype=str, default="deep", doc="Name of coadd")
     detectCoaddSources = ConfigurableField(target=DetectCoaddSourcesTask, doc="Detect sources on coadd")
     mergeCoaddDetections = ConfigurableField(target=MergeDetectionsTask, doc="Merge detections")
-    measureCoaddSources = ConfigurableField(target=MeasureMergedCoaddSourcesTask,
+    measureCoaddSources = ConfigurableField(target=HscMeasureMergedCoaddSourcesTask,
                                             doc="Measure merged detections")
     mergeCoaddMeasurements = ConfigurableField(target=MergeMeasurementsTask, doc="Merge measurements")
     forcedPhotCoadd = ConfigurableField(target=ForcedPhotCoaddTask,
