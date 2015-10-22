@@ -55,14 +55,6 @@ class MultiBandDataIdContainer(CoaddDataIdContainer):
         self.refList = tractRefs.values()
 
 
-class MultiBandTaskRunner(CoaddTaskRunner):
-    @staticmethod
-    def getTargetList(parsedCmd, **kwargs):
-        """Get bare butler into Task"""
-        kwargs["butler"] = parsedCmd.butler
-        return [(parsedCmd.id.refList, kwargs),]
-
-
 class MultiBandConfig(Config):
     coaddName = Field(dtype=str, default="deep", doc="Name of coadd")
     mergeCoaddDetections = ConfigurableField(target=MergeDetectionsTask, doc="Merge detections")
@@ -98,10 +90,16 @@ class MultiBandConfig(Config):
                                    (subtask, coaddName, self.coaddName))
 
 class MultiBandTaskRunner(TaskRunner):
+    """TaskRunner for running MultiBandTask
+
+    This is similar to the lsst.pipe.base.ButlerInitializedTaskRunner,
+    except that we have a list of data references instead of a single
+    data reference being passed to the Task.run.
+    """
     def makeTask(self, parsedCmd=None, args=None):
         """A variant of the base version that passes a butler argument to the task's constructor
 
-        parsedCmd or args must be specified
+        parsedCmd or args must be specified.
         """
         if parsedCmd is not None:
             butler = parsedCmd.butler
