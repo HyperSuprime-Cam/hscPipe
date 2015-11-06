@@ -675,7 +675,7 @@ class BiasTask(DetrendTask):
         config.isr.doBias = False
         config.isr.doDark = False
         config.isr.doFlat = False
-#        config.isr.doFringe = False
+        config.isr.doFringe = False
 
 
 class DarkConfig(DetrendConfig):
@@ -713,7 +713,7 @@ class DarkTask(DetrendTask):
         """Overrides to apply for dark construction"""
         config.isr.doDark = False
         config.isr.doFlat = False
-#        config.isr.doFringe = False
+        config.isr.doFringe = False
 
     def processSingle(self, sensorRef):
         """Divide each processed image by the dark time to generate images of the dark rate"""
@@ -834,7 +834,7 @@ class FlatTask(DetrendTask):
     def applyOverrides(cls, config):
         """Overrides for flat construction"""
         config.isr.doFlat = False
-#        config.isr.doFringe = False
+        config.isr.doFringe = False
 
 
     def __init__(self, *args, **kwargs):
