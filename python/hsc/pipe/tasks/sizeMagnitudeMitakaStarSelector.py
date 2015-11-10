@@ -675,7 +675,6 @@ class SizeMagnitudeMitakaStarSelector(object):
 
     def getFwhmRough(self, dataRef, data, magLimSeq, exposure):
 #    def getFwhmRough(self, magListAll, fwhmListAll, indicesSourcesFwhmRange, magLim):
-        import pudb;pudb.set_trace()
 
         """Estimating roughly-estimated FWHM for sources with mag < magLim"""
         # saturated sources are already filtered in data.indicesSourcesFwhmRange
