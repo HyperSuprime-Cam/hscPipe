@@ -596,6 +596,7 @@ class SizeMagnitudeMitakaStarSelector(object):
 
         # -- Estimating mag limit based no the cumlative mag histogram
         magLim = None
+        zpFrame = None
 
         # handling slight dependency on filter kinds
         filterName = exposure.getFilter().getName()
