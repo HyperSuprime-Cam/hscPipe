@@ -717,7 +717,7 @@ class TractDataIdContainer(CoaddDataIdContainer):
         tract: there is no data product solely at the tract level.  Instead, we
         generate a list of data references for patches within the tract.
         """
-        datasetType = namespace.config.coaddName + "Coadd"
+        datasetType = namespace.config.coaddName + "Coadd_calexp"
         validKeys = set(["tract", "filter", "patch",])
 
         getPatchRefList = lambda tract: [namespace.butler.dataRef(datasetType=datasetType, tract=tract.getId(),
@@ -734,7 +734,7 @@ class TractDataIdContainer(CoaddDataIdContainer):
                 if key not in dataId:
                     raise argparse.ArgumentError(None, "--id must include " + key)
 
-            skymap = self.getSkymap(namespace, datasetType)
+            skymap = self.getSkymap(namespace)
 
             if "tract" in dataId:
                 tractId = dataId["tract"]

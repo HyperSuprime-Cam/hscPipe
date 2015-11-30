@@ -45,10 +45,13 @@ class SubaruProcessCcdTask(ProcessCcdTask):
 
     def run(self, sensorRef):
         result = ProcessCcdTask.run(self, sensorRef)
-        if self.config.qa.useIcsources and self.config.doCalibrate:
-            self.qa.run(sensorRef, result.exposure, result.calib.sources)
-        elif self.config.doMeasurement:
-            self.qa.run(sensorRef, result.exposure, result.sources)
+        try:
+            if self.config.qa.useIcsources and self.config.doCalibrate:
+                self.qa.run(sensorRef, result.exposure, result.calib.sources)
+            elif self.config.doMeasurement:
+                self.qa.run(sensorRef, result.exposure, result.sources)
+        except Exception as e:
+            self.log.warn("Unable to run QA on %s: %s" % (sensorRef.dataId, e))
 
         if self.config.doFinalWrite:
             self.write(sensorRef, result)
