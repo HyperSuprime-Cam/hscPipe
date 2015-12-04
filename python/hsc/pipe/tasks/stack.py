@@ -114,6 +114,10 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
             varArray = coaddExp.getMaskedImage().getVariance().getArray()
             varArray[:] = numpy.where(varArray > 0, varArray, numpy.inf)
 
+        if self.config.doMaskBrightObjects:
+            brightObjectMasks = self.readBrightObjectMasks(dataRef)
+            self.setBrightObjectMasks(coaddExp, dataRef.dataId, brightObjectMasks)
+
         if self.config.doWrite:
             self.writeCoaddOutput(dataRef, coaddExp)
 
