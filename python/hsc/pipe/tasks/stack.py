@@ -64,10 +64,7 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
     ConfigClass = SimpleAssembleCoaddConfig
 
     def __init__(self, *args, **kwargs):
-        super(SimpleAssembleCoaddTask, self).__init__(*args, **kwargs)
-        self.makeSubtask("interpImage")
-        self.makeSubtask("matchBackgrounds")
-        self.makeSubtask("scaleZeroPoint")
+        AssembleCoaddTask.__init__(self, *args, **kwargs)
         self.debug = False
 
     def run(self, dataRef, selectDataList=[]):
