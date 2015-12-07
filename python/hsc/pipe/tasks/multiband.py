@@ -203,7 +203,8 @@ class MultiBandTask(BatchPoolTask):
         pool.storeSet(butler=butler)
 
         patchRefList = [patchRef for patchRef in patchRefList if
-                        patchRef.datasetExists(self.config.coaddName + "Coadd_calexp")]
+                        patchRef.datasetExists(self.config.coaddName + "Coadd_calexp") and
+                        patchRef.datasetExists(self.config.coaddName + "Coadd_det")]
         dataIdList = [patchRef.dataId for patchRef in patchRefList]
 
         # Group by patch
