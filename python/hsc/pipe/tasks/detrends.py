@@ -854,6 +854,10 @@ class FlatTask(DetrendTask):
         We convert everything to logarithms so we can work linearly.  This
         algorithm comes from Eugene Magnier and Pan-STARRS.
         """
+        assert len(ccdIdLists.values()) > 0, "No successful CCDs"
+        lengths = set([len(expList) for expList in ccdIdLists.values()])
+        assert len(lengths) == 1, "Number of successful exposures for each CCD differs"
+        assert tuple(lengths)[0] > 0, "No successful exposures"
         # Format background measurements into a matrix
         indices = dict((name, i) for i, name in enumerate(ccdIdLists.keys()))
         bgMatrix = numpy.array([[0.0] * len(expList) for expList in ccdIdLists.values()])
