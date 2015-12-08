@@ -64,10 +64,7 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
     ConfigClass = SimpleAssembleCoaddConfig
 
     def __init__(self, *args, **kwargs):
-        super(SimpleAssembleCoaddTask, self).__init__(*args, **kwargs)
-        self.makeSubtask("interpImage")
-        self.makeSubtask("matchBackgrounds")
-        self.makeSubtask("scaleZeroPoint")
+        AssembleCoaddTask.__init__(self, *args, **kwargs)
         self.debug = False
 
     def run(self, dataRef, selectDataList=[]):
@@ -116,6 +113,10 @@ class SimpleAssembleCoaddTask(AssembleCoaddTask):
             # Non-positive is bad for variance
             varArray = coaddExp.getMaskedImage().getVariance().getArray()
             varArray[:] = numpy.where(varArray > 0, varArray, numpy.inf)
+
+        if self.config.doMaskBrightObjects:
+            brightObjectMasks = self.readBrightObjectMasks(dataRef)
+            self.setBrightObjectMasks(coaddExp, dataRef.dataId, brightObjectMasks)
 
         if self.config.doWrite:
             self.writeCoaddOutput(dataRef, coaddExp)
