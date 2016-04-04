@@ -595,7 +595,7 @@ class SizeMagnitudeMitakaStarSelector(object):
 
         # handling slight dependency on filter kinds
         filterName = exposure.getFilter().getName()
-        if filterName in ['g', 'B']:
+        if filterName in ['g', 'B', 'V', 'N515']:
             fracSrcIni = self.config.fracSrcIni * (2./3.)
         else:
             fracSrcIni = self.config.fracSrcIni
