@@ -595,8 +595,10 @@ class SizeMagnitudeMitakaStarSelector(object):
 
         # handling slight dependency on filter kinds
         filterName = exposure.getFilter().getName()
-        if filterName in ['g', 'B', 'V', 'N515']:
+        if filterName in ['g', 'B', 'V']:
             fracSrcIni = self.config.fracSrcIni * (2./3.)
+        elif filterName in ['N515']:
+            fracSrcIni = self.config.fracSrcIni * (1./2.)
         else:
             fracSrcIni = self.config.fracSrcIni
         self.log.info("Filter: %s -> fraction for guessing magnitude limit is set to: %f" % (filterName, fracSrcIni))
