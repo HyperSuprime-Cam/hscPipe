@@ -14,11 +14,13 @@ from lsst.meas.algorithms import CurveOfGrowthMeasurementTask
 from hsc.pipe.tasks.processCcd import SubaruProcessCcdTask
 from hsc.pipe.tasks.photometricSolution import PhotometricSolutionTask
 from hsc.pipe.tasks.focusTask import ProcessFocusTask
+from hsc.pipe.tasks.hscIswWithGlobalSkySubtractionTask import HscIsrWithGlobalSkySubtractionTask
 from hsc.pipe.base.pool import abortOnError, NODE, Pool, Debugger
 from hsc.pipe.base.parallel import BatchPoolTask
 from hsc.meas.tansip.solvetansip import SolveTansipTask
 
 Debugger().enabled = True
+
 
 
 class ProcessExposureConfig(Config):
@@ -33,6 +35,10 @@ class ProcessExposureConfig(Config):
     doFocus = Field(dtype=bool, default=True, doc="Run focus analysis?")
     doCurveOfGrowth = Field(dtype=bool, default=False, doc="Run global curve of growth measurement?")
     ignoreCcdList = ListField(dtype=int, default=[], doc="List of CCDs to ignore when processing")
+    doGlobalSkySubtraction = Field(dtype=bool, default=False, doc="Run global sky subtraction?")
+    hscIsrWithGlobalSkySubtraction = ConfigurableField(target=HscIsrWithGlobalSkySubtractionTask, doc="GlobalSkySubtractionTask")
+    skyPatternDir = Field(dtype=str, default='', doc="sky pattern dir")
+
 
     def setDefaults(self):
         # We will do persistence ourselves
@@ -42,6 +48,8 @@ class ProcessExposureConfig(Config):
         self.processCcd.doWriteHeavyFootprintsInSources = False
         self.processCcd.doFinalWrite = False
         self.processCcd.calibrate.doCurveOfGrowth = False # We're doing it globally
+        if self.doGlobalSkySubtraction:
+            self.processCcd.doIsr = False
 
 
 class ProcessExposureTask(BatchPoolTask):
@@ -68,6 +76,7 @@ class ProcessExposureTask(BatchPoolTask):
         self.makeSubtask("solveTansip")
         if self.config.doCurveOfGrowth:
             self.makeSubtask("curveOfGrowth", schema=self.processCcd.calibrate.schema)
+        self.makeSubtask("hscIsrWithGlobalSkySubtraction")
 
     @classmethod
     def batchWallTime(cls, time, parsedCmd, numNodes, numProcs):
@@ -98,6 +107,11 @@ class ProcessExposureTask(BatchPoolTask):
         dataIdList = dict([(ccdRef.get("ccdExposureId"), ccdRef.dataId)
                            for ccdRef in expRef.subItems("ccd") if ccdRef.datasetExists("raw")])
         dataIdList = collections.OrderedDict(sorted(dataIdList.items()))
+
+        if self.config.doGlobalSkySubtraction:
+            assert self.processCcd.config.doIsr == False
+            ccdRefList = [ref for ref in expRef.subItems("ccd") if ccdRef.datasetExists("raw")]
+            self.hscIsrWithGlobalSkySubtraction.run(pool, ccdRefList, butler, self.config.skyPatternDir)
 
         # Scatter: process CCDs independently
         structList = pool.map(self.process, dataIdList.values())
