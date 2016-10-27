@@ -1,5 +1,5 @@
 from lsst.pex.config import Config, ConfigField, ConfigurableField, Field, ListField
-from lsst.pipe.base import Struct, ArgumentParser, TaskRunner
+from lsst.pipe.base import Task, Struct, ArgumentParser, TaskRunner
 import lsst.afw.detection as afwDet
 import lsst.afw.display.ds9 as ds9
 import lsst.afw.image as afwImage
@@ -14,16 +14,46 @@ from hsc.pipe.base.pool import Pool, NODE, Debugger as PoolDebugger
 import hsc.pipe.base.butler as hscButler
 
 
+class SmoothConfig(Config):
+    detection = ConfigurableField(target=measAlg.SourceDetectionTask, doc="Detection configuration")
+    background = ConfigField(dtype=measAlg.BackgroundConfig, doc="Background configuration")
+
+    def setDefaults(self):
+        super(SmoothConfig, self).setDefaults()
+        self.detection.thresholdValue=3.0
+        self.detection.reEstimateBackground = False
+        self.detection.doFootprintBackground = True
+        self.detection.footprintBackground.useApprox = True
+        self.background.useApprox = False
+        self.background.binSize = 512
+
+
+class SmoothTask(Task):
+    _DefaultName = 'smooth'
+    ConfigClass = SmoothConfig
+
+    def __init__(self, *args, **kwargs):
+        super(SmoothTask, self).__init__(*args, **kwargs)
+        self.makeSubtask("detection")
+
+    def run(self, exp):
+        tmpExp = exp.__class__(exp, True) # copy
+        self.detection.detectFootprints(tmpExp, sigma=5.)
+        image = exp.getMaskedImage().getImage()
+        image <<= measAlg.getBackground(tmpExp.getMaskedImage(), self.config.background).getImageF()
+
+
 class MakeSkyPatternConfig(Config):
     isr = ConfigurableField(target=hscIsr.SubaruIsrTask, doc="ISR configuration")
     detection = ConfigurableField(target=measAlg.SourceDetectionTask, doc="Detection configuration")
     detectSigma = Field(dtype=float, default=5.0, doc="Detection PSF gaussian sigma")
-
     mask = ListField(doc="Mask planes to respect", dtype=str, default=["BAD", "SAT", "DETECTED", "INTRP", "NO_DATA"])
-    combine = Field(doc="Statistic to use for combination (from lsst.afw.math)", dtype=int, default=afwMath.MEANCLIP)
+    combine = Field(doc="Statistic to use for combination (from lsst.afw.math)", dtype=int, default=afwMath.MEDIAN)
     clip = Field(doc="Clipping threshold for combination", dtype=float, default=3.0)
     iter = Field(doc="Clipping iterations for combination", dtype=int, default=3)
     rows = Field(doc="Number of rows to read at a time", dtype=int, default=512)
+    doSmooth = Field(doc="do smooth?", dtype=bool, default=True)
+    smooth = ConfigurableField(target=SmoothTask, doc="smooth configuration")
 
     def setDefaults(self):
         super(MakeSkyPatternConfig, self).setDefaults()
@@ -62,6 +92,7 @@ class MakeSkyPatternTask(BatchPoolTask):
         super(MakeSkyPatternTask, self).__init__(*args, **kwargs)
         self.makeSubtask("detection")
         self.makeSubtask("isr")
+        self.makeSubtask("smooth")
 
 
     def run(self, refList, parsedCmd):
@@ -126,20 +157,24 @@ class MakeSkyPatternTask(BatchPoolTask):
                 self.config.combine,
                 stats).getImage()
 
-        self._maskNans(templateExposure, combined)
+        self._makeCombinedExposure(templateExposure, combined)
         self._writeCombined(templateExposure, ccd, cache.outputDir)
 
 
-    def _maskNans(self, template, combined):
+    def _makeCombinedExposure(self, template, combined):
         image = template.getMaskedImage().getImage()
         image <<= combined
         imageArray = image.getArray()
         mask = template.getMaskedImage().getMask()
         maskArray = mask.getArray()
-        bad = numpy.isnan(imageArray)
-        maskArray.fill(0)
-        maskArray[bad] = 1 << mask.addMaskPlane('BAD')
-        imageArray[bad] = numpy.median(imageArray[numpy.logical_not(bad)])
+
+        if self.config.doSmooth:
+            self.smooth.run(template)
+        else:
+            bad = numpy.isnan(imageArray)
+            maskArray.fill(0)
+            maskArray[bad] = 1 << mask.addMaskPlane('BAD')
+            imageArray[bad] = numpy.median(imageArray[numpy.logical_not(bad)])
 
 
     def _writeCombined(self, combined, ccd, outputDir):
