@@ -25,7 +25,7 @@ class SmoothConfig(Config):
         self.detection.doFootprintBackground = True
         self.detection.footprintBackground.useApprox = True
         self.background.useApprox = False
-        self.background.binSize = 512
+        self.background.binSize = 256
 
 
 class SmoothTask(Task):
@@ -45,6 +45,7 @@ class SmoothTask(Task):
 
 class MakeSkyPatternConfig(Config):
     isr = ConfigurableField(target=hscIsr.SubaruIsrTask, doc="ISR configuration")
+    doDetection = Field(doc="do detection?", dtype=bool, default=True)
     detection = ConfigurableField(target=measAlg.SourceDetectionTask, doc="Detection configuration")
     detectSigma = Field(dtype=float, default=5.0, doc="Detection PSF gaussian sigma")
     mask = ListField(doc="Mask planes to respect", dtype=str, default=["BAD", "SAT", "DETECTED", "INTRP", "NO_DATA"])
@@ -193,7 +194,8 @@ class MakeSkyPatternTask(BatchPoolTask):
         # isr
         exposure = self.isr.run(ref).exposure
         # mask objects
-        self.detection.detectFootprints(exposure, sigma=self.config.detectSigma)
+        if self.config.doDetection:
+            self.detection.detectFootprints(exposure, sigma=self.config.detectSigma)
         # write to disk
         ref.put(exposure, 'postISRCCD')
 
