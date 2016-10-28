@@ -234,7 +234,8 @@ class SkyPatternSubtractionTask(Task):
         self.log.info('subtracting sky pattern: ccd = {}'.format(ccd))
         skyPattern = afwImage.ExposureF('{}/{}.fits'.format(skyPatternDir, ccd))
         skyPatternMi = skyPattern.getMaskedImage()
-        skyPatternMi *= median
+        self.log.info('median={}'.format(median))
+        skyPatternMi *= float(median)
         postISRCCDMi = cache.postISRCCD.getMaskedImage()
         postISRCCDMi -= skyPatternMi
 
