@@ -24,7 +24,9 @@ class SmoothConfig(Config):
         self.detection.reEstimateBackground = False
         self.detection.doFootprintBackground = True
         self.detection.footprintBackground.useApprox = True
+        self.background.isNanSafe = True
         self.background.useApprox = False
+        self.background.algorithm = 'AKIMA_SPLINE'
         self.background.binSize = 256
 
 
@@ -205,24 +207,32 @@ class MakeSkyPatternTask(BatchPoolTask):
         visitData = {}
         for visit in self.visitList:
             visitData[visit] = [ref for ref in refList if ref.dataId['visit'] == visit]
-        medianList = self.pool.map(self._getVisitMedianSingle, visitData.values())
+        medianList = self.pool.map(self._getVisitMedianSingle, [visitData[visit] for visit in self.visitList])
         return dict(zip(self.visitList, medianList))
 
 
     def _getVisitMedianSingle(self, cache, refList):
         arrays = []
         self.log.info('determining median of visit=%d...' % refList[0].dataId['visit'])
+        totalPixels = 0
+        okPixels = 0
         for ref in refList:
             if ref.dataId['ccd'] == 9:
                 continue
             exp = ref.get('postISRCCD')
             imageArray = exp.getMaskedImage().getImage().getArray()
             maskArray = exp.getMaskedImage().getMask().getArray()
-            arrays.append(imageArray[numpy.logical_or(
-                numpy.isnan(imageArray),
-                maskArray & self._errorBit(exp)
-            )])
-        return float(numpy.median(numpy.concatenate(arrays)))
+            ok = numpy.logical_and(
+                numpy.isfinite(imageArray),
+                maskArray & self._errorBit(exp) == 0
+            )
+            arrays.append(imageArray[ok])
+            totalPixels += imageArray.size
+            okPixels += ok.sum()
+        median = float(numpy.median(numpy.concatenate(arrays)))
+        self.log.info('median={}'.format(median))
+        self.log.info('using {}% of data for determining the median'.format(100 * okPixels / totalPixels))
+        return median
 
 
     def _errorBit(self, exposure):

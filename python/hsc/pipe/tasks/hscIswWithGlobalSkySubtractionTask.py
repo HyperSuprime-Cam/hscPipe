@@ -32,7 +32,9 @@ class LargeScaleBackgroundSubtractionConfig(Config):
         self.detection.doFootprintBackground = True
         self.detection.footprintBackground.useApprox = True
         self.detection.footprintBackground.approxOrder = 3
+        self.background.isNanSafe = True
         self.background.useApprox = False
+        self.background.algorithm = 'AKIMA_SPLINE'
         self.background.binSize = 600
 
 
