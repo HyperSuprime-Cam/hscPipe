@@ -81,10 +81,10 @@ class LargeScaleBackgroundSubtractionTask(Task):
         # I01 - I11
         #  |     |
         # I00 - I10
-        I00 = imageIndexMap(focalPlaneBackgroundArray, FXI + x0,     FYI + y0)[0]
-        I10 = imageIndexMap(focalPlaneBackgroundArray, FXI + x0 + 1, FYI + y0)[0]
-        I01 = imageIndexMap(focalPlaneBackgroundArray, FXI + x0,     FYI + y0 + 1)[0]
-        I11 = imageIndexMap(focalPlaneBackgroundArray, FXI + x0 + 1, FYI + y0 + 1)[0]
+        I00 = imageIndexMap(focalPlaneBackgroundArray, FXI - x0,     FYI - y0)[0]
+        I10 = imageIndexMap(focalPlaneBackgroundArray, FXI - x0 + 1, FYI - y0)[0]
+        I01 = imageIndexMap(focalPlaneBackgroundArray, FXI - x0,     FYI - y0 + 1)[0]
+        I11 = imageIndexMap(focalPlaneBackgroundArray, FXI - x0 + 1, FYI - y0 + 1)[0]
         ccdBackgroundArray = (
             (I00*(1 - FXR) + I10*FXR) * (1 - FYR) +
             (I01*(1 - FXR) + I11*FXR) * FYR
@@ -170,7 +170,6 @@ class LargeScaleBackgroundSubtractionTask(Task):
         bbox = afwGeom.Box2D(
             afwGeom.Point2D(minX, minY),
             afwGeom.Point2D(maxX, maxY))
-
         target = afwImage.MaskedImageF(bboxDouble2Int(bbox))
         return target
 
