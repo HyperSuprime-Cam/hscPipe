@@ -11,3 +11,5 @@ setupRequired(meas_extensions_psfex)
 setupRequired(meas_extensions_shapeHSM)
 setupRequired(meas_modelfit)
 setupRequired(meas_mosaic)
+
+setupRequired(display_ds9)
