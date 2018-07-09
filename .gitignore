@@ -13,4 +13,5 @@
 .sconsign.dblite
 tests/.tests
 config.log
-python/hsc/pipe/tasks/version.py
+python/hsc/pipe/version.py
+bin/*
