@@ -4,10 +4,10 @@ MAINTAINER paprice
 LABEL description="Hyper Suprime-Cam pipeline" \
       name="paprice/hscPipe"
 
-ARG DEVTOOLSET=6
+ARG DEVTOOLSET=7
 ARG INSTALL_PFS_ARGS
 ARG INSTALL_DIR=/opt/hsc
-ARG HSCPIPE_VERSION=6.7
+ARG HSCPIPE_VERSION=7.0
 
 # Set to something unique, like $(date +%s), to force rebuild
 # https://stackoverflow.com/a/47017887
@@ -15,12 +15,13 @@ ARG FORCE=XXX
 
 ENV OMP_NUM_THREADS=1
 ENV SCONSFLAGS="-j 2"
+ENV MAKEFLAGS="-j 2"
 
 SHELL ["/bin/bash", "-c"]
 
 USER root
 
-# Upgrade compiler using devtoolset-6
+# Upgrade compiler using devtoolset
 RUN yum -y update \
  && yum install -y centos-release-scl \
  && yum install -y \
@@ -32,7 +33,7 @@ RUN yum -y update \
 
 # LSST stack prerequisites
 RUN yum -y update \
- && yum install -y bison curl blas bzip2-devel bzip2 flex fontconfig \
+ && yum install -y bison curl curl-devel blas bzip2-devel bzip2 flex fontconfig \
         freetype-devel git libuuid-devel \
         libXext libXrender libXt-devel make openssl-devel patch perl \
         readline-devel tar zlib-devel ncurses-devel cmake glib2-devel \
@@ -50,12 +51,14 @@ RUN mkdir -p ${INSTALL_DIR} && chown hsc:hsc ${INSTALL_DIR}
 USER hsc
 WORKDIR ${INSTALL_DIR}
 
+RUN . /opt/rh/devtoolset-${DEVTOOLSET}/enable \
+ && git clone https://github.com/HyperSuprime-Cam/lsstsw.git \
+ && lsstsw/bin/deploy
+
 # Strips out anything excess after the install
 RUN . /opt/rh/devtoolset-${DEVTOOLSET}/enable \
- && curl -OL http://master.ipmu.jp/~price/packages-hscPipe6/newinstall.sh \
- && bash newinstall.sh -bct \
- && source loadLSST.bash \
- && eups distrib install hscPipe ${HSCPIPE_VERSION} \
+ && . lsstsw/bin/setup.sh \
+ && rebuild hscPipe \
  && ( find ${INSTALL_DIR} -exec strip --strip-unneeded --preserve-dates {} + \
       > /dev/null 2>&1 || true ) \
  && ( find ${INSTALL_DIR} -maxdepth 5 -name tests -type d -exec rm -rf {} + \
