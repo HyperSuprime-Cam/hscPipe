@@ -1,10 +1,5 @@
 setupRequired(pipe_drivers)
-
 setupRequired(obs_subaru)
-setupRequired(obs_decam)
-setupRequired(obs_cfht)
-setupRequired(obs_lsstSim)
-
 setupRequired(meas_extensions_convolved)
 setupRequired(meas_extensions_photometryKron)
 setupRequired(meas_extensions_psfex)
