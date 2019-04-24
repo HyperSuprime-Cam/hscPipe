@@ -1,5 +1,5 @@
-TAG=latest
-VERSION=7.0
+TAG=latest  # tag to give docker container on build
+VERSION=master  # version of hscPipe to build
 
 all:	hscPipe
 

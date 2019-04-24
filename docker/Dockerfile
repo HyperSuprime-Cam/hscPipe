@@ -7,7 +7,7 @@ LABEL description="Hyper Suprime-Cam pipeline" \
 ARG DEVTOOLSET=7
 ARG INSTALL_PFS_ARGS
 ARG INSTALL_DIR=/opt/hsc
-ARG HSCPIPE_VERSION=7.0
+ARG HSCPIPE_VERSION=master
 
 # Set to something unique, like $(date +%s), to force rebuild
 # https://stackoverflow.com/a/47017887
@@ -58,7 +58,7 @@ RUN . /opt/rh/devtoolset-${DEVTOOLSET}/enable \
 # Strips out anything excess after the install
 RUN . /opt/rh/devtoolset-${DEVTOOLSET}/enable \
  && . lsstsw/bin/setup.sh \
- && rebuild -u hscPipe \
+ && rebuild -u -b ${HSCPIPE_VERSION} hscPipe \
  && ( find ${INSTALL_DIR} -exec strip --strip-unneeded --preserve-dates {} + \
       > /dev/null 2>&1 || true ) \
  && ( find ${INSTALL_DIR} -maxdepth 5 -name tests -type d -exec rm -rf {} + \
