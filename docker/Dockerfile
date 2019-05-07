@@ -58,7 +58,7 @@ RUN . /opt/rh/devtoolset-${DEVTOOLSET}/enable \
 # Strips out anything excess after the install
 RUN . /opt/rh/devtoolset-${DEVTOOLSET}/enable \
  && . lsstsw/bin/setup.sh \
- && rebuild -u -r ${HSCPIPE_VERSION} hscPipe \
+ && rebuild -u -r ${HSCPIPE_VERSION} -t current hscPipe \
  && ( find ${INSTALL_DIR} -exec strip --strip-unneeded --preserve-dates {} + \
       > /dev/null 2>&1 || true ) \
  && ( find ${INSTALL_DIR} -maxdepth 5 -name tests -type d -exec rm -rf {} + \
