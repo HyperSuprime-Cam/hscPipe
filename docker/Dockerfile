@@ -69,7 +69,7 @@ RUN . /opt/rh/devtoolset-${DEVTOOLSET}/enable \
       > /dev/null 2>&1 || true )
 
 WORKDIR /home/hsc
-RUN echo $'. '${INSTALL_DIR}'/loadLSST.bash\n\
-setup hscPipe\n' >> /home/hsc/.bashrc
+RUN echo ". ${INSTALL_DIR}/lsstsw/bin/setup.sh\n\
+setup hscPipe\n" >> /home/hsc/.bashrc
 
 CMD /bin/bash
