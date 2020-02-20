@@ -2,7 +2,7 @@
 
 # Configuration parameters
 HERE=$(pwd)  # Starting directory (where the package is checked out)
-WORKDIR=/tigress/pprice/hscPipe7  # Working directory
+WORKDIR=/tigress/pprice/hscPipe8  # Working directory
 DISTRIB_SRC=$WORKDIR/distrib/src  # Distribution directory for sources
 DISTRIB_BIN=$WORKDIR/distrib/Linux64  # Distribution directory for binary tarballs
 export SCONSFLAGS="-j 4"  # SCons build flags
@@ -10,7 +10,8 @@ export EUPSPKG_NJOBS=4  # Number of build jobs
 
 # Need these on tiger to get the right environment
 . /etc/profile  # Get "module"
-module load rh/devtoolset/6  # Get modern compiler
+module load rh/devtoolset/8  # Get modern compiler
+module load git  # Get git-lfs
 
 set -ev
 
