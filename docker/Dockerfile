@@ -4,7 +4,7 @@ MAINTAINER paprice
 LABEL description="Hyper Suprime-Cam pipeline" \
       name="paprice/hscPipe"
 
-ARG DEVTOOLSET=7
+ARG DEVTOOLSET=8
 ARG INSTALL_PFS_ARGS
 ARG INSTALL_DIR=/opt/hsc
 ARG HSCPIPE_VERSION=master
@@ -33,8 +33,10 @@ RUN yum -y update \
 
 # LSST stack prerequisites
 RUN yum -y update \
+ && yum install -y epel-release \
+ && curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.rpm.sh | bash \
  && yum install -y bison curl curl-devel blas bzip2-devel bzip2 flex fontconfig \
-        freetype-devel git libuuid-devel \
+        freetype-devel git git-lfs libuuid-devel \
         libXext libXrender libXt-devel make openssl-devel patch perl \
         readline-devel tar zlib-devel ncurses-devel cmake glib2-devel \
         java-1.8.0-openjdk gettext perl-ExtUtils-MakeMaker \
